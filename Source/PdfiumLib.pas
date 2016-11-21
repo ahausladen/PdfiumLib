@@ -3129,6 +3129,7 @@ type
   TImportFuncRec = record
     P: PPointer;
     N: PAnsiChar;
+    Quirk: Boolean;
   end;
 
 const
@@ -3165,7 +3166,7 @@ const
   AT48 = '@48';
   AT52 = '@52';
   {$ENDIF CPUX64}
-  ImportFuncs: array[0..132 {$IFDEF MSWINDOWS}+ 1{$ENDIF}] of TImportFuncRec = (
+  ImportFuncs: array[0..133 {$IFDEF MSWINDOWS}+ 1{$ENDIF}] of TImportFuncRec = (
     (P: @@FPDF_InitLibrary;                   N: UC + 'FPDF_InitLibrary' + AT0),
     (P: @@FPDF_DestroyLibrary;                N: UC + 'FPDF_DestroyLibrary' + AT0),
     (P: @@FPDF_SetSandBoxPolicy;              N: UC + 'FPDF_SetSandBoxPolicy' + AT8),
@@ -3273,7 +3274,10 @@ const
     (P: @@FPDF_SetSystemFontInfo;             N: UC + 'FPDF_SetSystemFontInfo' + AT4),
     (P: @@FPDF_GetDefaultSystemFontInfo;      N: UC + 'FPDF_GetDefaultSystemFontInfo' + AT0),
     (P: @@FSDK_SetUnSpObjProcessHandler;      N: UC + 'FSDK_SetUnSpObjProcessHandler' + AT4),
-    (P: @@FPDFDoc_GetPageMode;                N: 'FPDFDoc_GetPageMode'), // no UC, no ATx
+
+    (P: @@FPDFDoc_GetPageMode;                N: UC + 'FPDFDoc_GetPageMode' + AT4; Quirk: True),
+    (P: @@FPDFDoc_GetPageMode;                N: 'FPDFDoc_GetPageMode'), // no UC, no ATx (older pdfium.dll versions)
+
     (P: @@FPDFAvail_Create;                   N: UC + 'FPDFAvail_Create' + AT8),
     (P: @@FPDFAvail_Destroy;                  N: UC + 'FPDFAvail_Destroy' + AT4),
     (P: @@FPDFAvail_IsDocAvail;               N: UC + 'FPDFAvail_IsDocAvail' + AT8),
@@ -3307,6 +3311,19 @@ const
 var
   PdfiumModule: HMODULE;
 
+procedure NotLoaded; stdcall;
+begin
+  raise Exception.CreateRes(@RsPdfiumNotLoaded);
+end;
+
+procedure Init;
+var
+  I: Integer;
+begin
+  for I := 0 to Length(ImportFuncs) - 1 do
+    ImportFuncs[I].P^ := @NotLoaded;
+end;
+
 procedure InitPDFium(const DllPath: string);
 const
   pdfium_dll = 'pdfium.dll';
@@ -3326,29 +3343,24 @@ begin
 
   for I := 0 to Length(ImportFuncs) - 1 do
   begin
-    ImportFuncs[I].P^ := GetProcAddress(PdfiumModule, ImportFuncs[I].N);
-    if ImportFuncs[I].P^ = nil then
+    if ImportFuncs[I].P^ = @NotLoaded then
     begin
-      FreeLibrary(PdfiumModule);
-      PdfiumModule := 0;
-      raise Exception.CreateResFmt(@RsFailedToLoadProc, [ImportFuncs[I].N]);
+      ImportFuncs[I].P^ := GetProcAddress(PdfiumModule, ImportFuncs[I].N);
+      if ImportFuncs[I].P^ = nil then
+      begin
+        ImportFuncs[I].P^ := @NotLoaded;
+        if not ImportFuncs[I].Quirk then
+        begin
+          FreeLibrary(PdfiumModule);
+          PdfiumModule := 0;
+          Init; // reset all functions to @NotLoaded
+          raise Exception.CreateResFmt(@RsFailedToLoadProc, [ImportFuncs[I].N]);
+        end;
+      end;
     end;
   end;
 
   FPDF_InitLibrary;
-end;
-
-procedure NotLoaded; stdcall;
-begin
-  raise Exception.CreateRes(@RsPdfiumNotLoaded);
-end;
-
-procedure Init;
-var
-  I: Integer;
-begin
-  for I := 0 to Length(ImportFuncs) - 1 do
-    ImportFuncs[I].P^ := @NotLoaded;
 end;
 
 initialization
