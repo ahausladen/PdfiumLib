@@ -415,9 +415,9 @@ end;
 constructor TPdfDocument.Create;
 begin
   inherited Create;
-  InitLib;
-  FFileHandle := INVALID_HANDLE_VALUE;
   FPages := TObjectList.Create;
+  FFileHandle := INVALID_HANDLE_VALUE;
+  InitLib;
 end;
 
 destructor TPdfDocument.Destroy;
