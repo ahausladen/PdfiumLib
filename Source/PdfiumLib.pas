@@ -864,21 +864,21 @@ const
 //
 //////////////////////////////////////////////////////////////////////
 
-// Function: FPDFPageObj_NewImgeObj
+// Function: FPDFPageObj_NewImageObj
 //      Create a new Image Object.
 // Parameters:
 //      document    -  Handle to document. Returned by FPDF_LoadDocument or FPDF_CreateNewDocument function.
 // Return Value:
 //      Handle of image object.
 var
-  FPDFPageObj_NewImgeObj: function(document: FPDF_DOCUMENT): FPDF_PAGEOBJECT; stdcall;
+  FPDFPageObj_NewImageObj: function(document: FPDF_DOCUMENT): FPDF_PAGEOBJECT; stdcall;
 
 // Function: FPDFImageObj_LoadJpegFile
 //      Load Image from a JPEG image file and then set it to an image object.
 // Parameters:
 //      pages         -  Pointers to the start of all loaded pages, could be NULL.
 //      nCount        -  Number of pages, could be 0.
-//      image_object  -  Handle of image object returned by FPDFPageObj_NewImgeObj.
+//      image_object  -  Handle of image object returned by FPDFPageObj_NewImageObj.
 //      fileAccess    -  The custom file access handler, which specifies the JPEG image file.
 //  Return Value:
 //      TRUE if successful, FALSE otherwise.
@@ -892,7 +892,7 @@ var
 // Function: FPDFImageObj_SetMatrix
 //      Set the matrix of an image object.
 // Parameters:
-//      image_object  -  Handle of image object returned by FPDFPageObj_NewImgeObj.
+//      image_object  -  Handle of image object returned by FPDFPageObj_NewImageObj.
 //      a             -  The coefficient "a" of the matrix.
 //      b             -  The coefficient "b" of the matrix.
 //      c             -  The coefficient "c" of the matrix.
@@ -909,7 +909,7 @@ var
 // Parameters:
 //      pages         -  Pointer's to the start of all loaded pages.
 //      nCount        -  Number of pages.
-//      image_object  -  Handle of image object returned by FPDFPageObj_NewImgeObj.
+//      image_object  -  Handle of image object returned by FPDFPageObj_NewImageObj.
 //      bitmap        -  The handle of the bitmap which you want to set it to the image object.
 // Return value:
 //      TRUE if successful, FALSE otherwise.
@@ -3005,7 +3005,7 @@ const
   FPDF_FORMFIELD_TEXTFIELD   = 6;   // text field type.
 
 //**
-//* Function: FPDPage_HasFormFieldAtPoint
+//* Function: FPDFPage_HasFormFieldAtPoint
 //*      Check the form filed position by point.
 //* Parameters:
 //*      hHandle    -  Handle to the form fill module. Returned by FPDFDOC_InitFormFillEnvironment.
@@ -3016,7 +3016,7 @@ const
 //*      Return the type of the formfiled; -1 indicates no fields.
 //**
 var
-  FPDPage_HasFormFieldAtPoint: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; page_x, page_y: Double): Integer; stdcall;
+  FPDFPage_HasFormFieldAtPoint: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; page_x, page_y: Double): Integer; stdcall;
 
 //**
 //* Function: FPDF_SetFormFieldHighlightColor
@@ -3166,7 +3166,7 @@ const
   AT48 = '@48';
   AT52 = '@52';
   {$ENDIF CPUX64}
-  ImportFuncs: array[0..133 {$IFDEF MSWINDOWS}+ 1{$ENDIF}] of TImportFuncRec = (
+  ImportFuncs: array[0..135 {$IFDEF MSWINDOWS}+ 1{$ENDIF}] of TImportFuncRec = (
     (P: @@FPDF_InitLibrary;                   N: UC + 'FPDF_InitLibrary' + AT0),
     (P: @@FPDF_DestroyLibrary;                N: UC + 'FPDF_DestroyLibrary' + AT0),
     (P: @@FPDF_SetSandBoxPolicy;              N: UC + 'FPDF_SetSandBoxPolicy' + AT8),
@@ -3218,7 +3218,10 @@ const
     (P: @@FPDFPageObj_HasTransparency;        N: UC + 'FPDFPageObj_HasTransparency' + AT4),
     (P: @@FPDFPageObj_Transform;              N: UC + 'FPDFPageObj_Transform' + AT52),
     (P: @@FPDFPage_TransformAnnots;           N: UC + 'FPDFPage_TransformAnnots' + AT52),
-    (P: @@FPDFPageObj_NewImgeObj;             N: UC + 'FPDFPageObj_NewImgeObj' + AT4),
+    
+    (P: @@FPDFPageObj_NewImageObj;            N: UC + 'FPDFPageObj_NewImageObj' + AT4; Quirk: True),
+    (P: @@FPDFPageObj_NewImageObj;            N: UC + 'FPDFPageObj_NewImgeObj' + AT4), // typo in name (older pdfium.dll versions)
+    
     (P: @@FPDFImageObj_LoadJpegFile;          N: UC + 'FPDFImageObj_LoadJpegFile' + AT16),
     (P: @@FPDFImageObj_SetMatrix;             N: UC + 'FPDFImageObj_SetMatrix' + AT52),
     (P: @@FPDFImageObj_SetBitmap;             N: UC + 'FPDFImageObj_SetBitmap' + AT16),
@@ -3301,7 +3304,10 @@ const
     (P: @@FORM_OnKeyUp;                       N: UC + 'FORM_OnKeyUp' + AT16),
     (P: @@FORM_OnChar;                        N: UC + 'FORM_OnChar' + AT16),
     (P: @@FORM_ForceToKillFocus;              N: UC + 'FORM_ForceToKillFocus' + AT4),
-    (P: @@FPDPage_HasFormFieldAtPoint;        N: UC + 'FPDPage_HasFormFieldAtPoint' + AT24),
+
+    (P: @@FPDFPage_HasFormFieldAtPoint;       N: UC + 'FPDFPage_HasFormFieldAtPoint' + AT24; Quirk: True),
+    (P: @@FPDFPage_HasFormFieldAtPoint;       N: UC + 'FPDPage_HasFormFieldAtPoint' + AT24), // typo in name (older pdfium.dll versions)
+
     (P: @@FPDF_SetFormFieldHighlightColor;    N: UC + 'FPDF_SetFormFieldHighlightColor' + AT12),
     (P: @@FPDF_SetFormFieldHighlightAlpha;    N: UC + 'FPDF_SetFormFieldHighlightAlpha' + AT8),
     (P: @@FPDF_RemoveFormFieldHighlight;      N: UC + 'FPDF_RemoveFormFieldHighlight' + AT4),
