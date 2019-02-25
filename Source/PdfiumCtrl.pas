@@ -155,7 +155,7 @@ type
 
     function GotoNextPage(ScrollTransition: Boolean = False): Boolean;
     function GotoPrevPage(ScrollTransition: Boolean = False): Boolean;
-    function ScrollContent(XOffset, YOffset: Integer; Smooth: Boolean = False): Boolean;
+    function ScrollContent(XOffset, YOffset: Integer; Smooth: Boolean = False): Boolean; virtual;
     function ScrollContentTo(X, Y: Integer; Smooth: Boolean = False): Boolean;
 
     property Document: TPdfDocument read FDocument;
