@@ -770,7 +770,7 @@ var
 // Return value:
 //      The number of the page object.
 var
-  FPDFPage_CountObject: function(page: FPDF_PAGE): Integer; stdcall;
+  FPDFPage_CountObjects: function(page: FPDF_PAGE): Integer; stdcall;
 
 // Function: FPDFPage_GetObject
 //      Get page object by index.
@@ -1574,10 +1574,10 @@ var
 //      document  -  Handle to the document.
 //      dest      -  Handle to the destination.
 // Return value:
-//      The page index. Starting from 0 for the first page.
+//      The page index. Starting from 0 for the first page. Returns -1 on error.
 //
 var
-  FPDFDest_GetPageIndex: function(document: FPDF_DOCUMENT; dest: FPDF_DEST): LongWord; stdcall;
+  FPDFDest_GetDestPageIndex: function(document: FPDF_DOCUMENT; dest: FPDF_DEST): LongWord; stdcall;
 
 // Function: FPDFLink_GetLinkAtPoint
 //      Find a link at specified point on a document page.
@@ -3211,7 +3211,7 @@ const
     (P: @@FPDFPage_GetRotation;               N: UC + 'FPDFPage_GetRotation' + AT4),
     (P: @@FPDFPage_SetRotation;               N: UC + 'FPDFPage_SetRotation' + AT8),
     (P: @@FPDFPage_InsertObject;              N: UC + 'FPDFPage_InsertObject' + AT8),
-    (P: @@FPDFPage_CountObject;               N: UC + 'FPDFPage_CountObject' + AT4),
+    (P: @@FPDFPage_CountObjects;              N: UC + 'FPDFPage_CountObjects' + AT4),
     (P: @@FPDFPage_GetObject;                 N: UC + 'FPDFPage_GetObject' + AT8),
     (P: @@FPDFPage_HasTransparency;           N: UC + 'FPDFPage_HasTransparency' + AT4),
     (P: @@FPDFPage_GenerateContent;           N: UC + 'FPDFPage_GenerateContent' + AT4),
@@ -3264,7 +3264,7 @@ const
     (P: @@FPDFBookmark_GetAction;             N: UC + 'FPDFBookmark_GetAction' + AT4),
     (P: @@FPDFAction_GetDest;                 N: UC + 'FPDFAction_GetDest' + AT8),
     (P: @@FPDFAction_GetURIPath;              N: UC + 'FPDFAction_GetURIPath' + AT16),
-    (P: @@FPDFDest_GetPageIndex;              N: UC + 'FPDFDest_GetPageIndex' + AT8),
+    (P: @@FPDFDest_GetDestPageIndex;          N: UC + 'FPDFDest_GetDestPageIndex' + AT8),
     (P: @@FPDFLink_GetLinkAtPoint;            N: UC + 'FPDFLink_GetLinkAtPoint' + AT20),
     (P: @@FPDFLink_GetDest;                   N: UC + 'FPDFLink_GetDest' + AT8),
     (P: @@FPDFLink_GetAction;                 N: UC + 'FPDFLink_GetAction' + AT4),
