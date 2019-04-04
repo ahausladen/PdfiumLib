@@ -120,6 +120,11 @@ type
     function GetSelectionRects: TPdfControlRectArray;
     function GetWebLinkIndex(X, Y: Integer): Integer;
     procedure DestroyWnd; override;
+
+    property DrawX: Integer read FDrawX;
+    property DrawY: Integer read FDrawY;
+    property DrawWidth: Integer read FDrawWidth;
+    property DrawHeight: Integer read FDrawHeight;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -155,7 +160,7 @@ type
 
     function GotoNextPage(ScrollTransition: Boolean = False): Boolean;
     function GotoPrevPage(ScrollTransition: Boolean = False): Boolean;
-    function ScrollContent(XOffset, YOffset: Integer; Smooth: Boolean = False): Boolean;
+    function ScrollContent(XOffset, YOffset: Integer; Smooth: Boolean = False): Boolean; virtual;
     function ScrollContentTo(X, Y: Integer; Smooth: Boolean = False): Boolean;
 
     property Document: TPdfDocument read FDocument;
