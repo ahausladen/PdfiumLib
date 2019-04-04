@@ -84,6 +84,15 @@ type
     dpmUseAttachments = 5   // Attachments panel visible
   );
 
+  TPdfPrintMode = (
+    pmEMF = 0,
+    pmTextMode = 1,
+    pmPostScript2 = 2,
+    pmPostScript3 = 3,
+    pmPostScriptPassThrough2 = 4,
+    pmPostScriptPassThrough3 = 5
+  );
+
   TPdfBitmapFormat = (
     bfGrays = FPDFBitmap_Gray, // Gray scale bitmap, one byte per pixel.
     bfBGR   = FPDFBitmap_BGR,  // 3 bytes per pixel, byte order: blue, green, red.
@@ -241,6 +250,7 @@ type
     function ApplyViewerPreferences(Source: TPdfDocument): Boolean;
 
     function GetMetaText(const TagName: string): string;
+    class function SetPrintMode(PrintMode: TPdfPrintMode): Boolean; static;
 
     property FileName: string read FFileName;
     property PageCount: Integer read GetPageCount;
@@ -888,6 +898,12 @@ begin
   Result := FPDF_VIEWERREF_GetNumCopies(FDocument);
 end;
 
+class function TPdfDocument.SetPrintMode(PrintMode: TPdfPrintMode): Boolean;
+begin
+  InitLib;
+  Result := FPDF_SetPrintMode(Ord(PrintMode)) <> 0;
+end;
+
 { TPdfPage }
 
 constructor TPdfPage.Create(ADocument: TPdfDocument; APage: FPDF_PAGE);
@@ -926,7 +942,7 @@ begin
   begin
     FPDF_ClosePage(FPage);
     FPage := nil;
-  end
+  end;
 end;
 
 procedure TPdfPage.Open;

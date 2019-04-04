@@ -65,7 +65,9 @@ begin
 
   edtZoom.Value := FCtrl.ZoomPercentage;
 
-  if OpenDialog1.Execute(Handle) then
+  if FileExists(ParamStr(1)) then
+    FCtrl.LoadFromFile(ParamStr(1))
+  else if OpenDialog1.Execute(Handle) then
     FCtrl.LoadFromFile(OpenDialog1.FileName)
   else
   begin
