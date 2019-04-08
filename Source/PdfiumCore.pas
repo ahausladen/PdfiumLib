@@ -6,12 +6,14 @@ unit PdfiumCore;
 interface
 
 uses
-  Windows, Types, SysUtils, Classes, Contnrs, PdfiumLib;
+  Windows, Types, SysUtils, Classes, Contnrs, PdfiumLib, Graphics;
 
 type
   EPdfException = class(Exception);
   EPdfUnsupportedFeatureException = class(EPdfException);
   EPdfArgumentOutOfRange = class(EPdfException);
+
+  TPdfUnsupportedFeatureHandler = procedure(nType: Integer; const Typ: string) of object;
 
   TPdfDocument = class;
   TPdfPage = class;
@@ -39,6 +41,8 @@ type
       0: (Left, Top, Right, Bottom: Double);
       1: (TopLeft: TPdfPoint; BottomRight: TPdfPoint);
   end;
+
+  TPdfRectArray = array of TPdfRect;
 
   TPdfDocumentCustomReadProc = function(Param: Pointer; Position: LongWord; Buffer: PByte; Size: LongWord): Boolean;
 
@@ -100,6 +104,17 @@ type
     bfBGRA  = FPDFBitmap_BGRA  // 4 bytes per pixel, byte order: blue, green, red, alpha.
   );
 
+  TPdfFormFieldType = (
+    fftUnknown,
+    fftPushButton,
+    fftCheckBox,
+    fftRadioButton,
+    fftComboBox,
+    fftListBox,
+    fftTextField,
+    fftSignature
+  );
+
   _TPdfBitmapHideCtor = class(TObject)
   private
     procedure Create;
@@ -128,6 +143,12 @@ type
     property Bitmap: FPDF_BITMAP read FBitmap;
   end;
 
+  PPdfFormFillHandler = ^TPdfFormFillHandler;
+  TPdfFormFillHandler = record
+    FormFillInfo: FPDF_FORMFILLINFO;
+    Document: TPdfDocument;
+  end;
+
   TPdfPage = class(TObject)
   private
     FDocument: TPdfDocument;
@@ -146,6 +167,11 @@ type
     function BeginText: Boolean;
     function BeginWebLinks: Boolean;
     class function GetDrawFlags(const Options: TPdfPageRenderOptions): Integer; static;
+    procedure AfterOpen;
+    function IsValidForm: Boolean;
+    function GetMouseModifier(const Shift: TShiftState): Integer;
+    function GetKeyModifier(KeyData: LPARAM): Integer;
+    function GetHandle: FPDF_PAGE;
   public
     destructor Destroy; override;
     procedure Close;
@@ -154,6 +180,8 @@ type
       const Options: TPdfPageRenderOptions = []);
     procedure DrawToPdfBitmap(APdfBitmap: TPdfBitmap; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation = prNormal;
       const Options: TPdfPageRenderOptions = []);
+    procedure DrawFormToPdfBitmap(APdfBitmap: TPdfBitmap; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation = prNormal;
+      const Options: TPdfPageRenderOptions = []);
 
     function DeviceToPage(X, Y, Width, Height: Integer; DeviceX, DeviceY: Integer; Rotate: TPdfPageRotation = prNormal): TPdfPoint; overload;
     function PageToDevice(X, Y, Width, Height: Integer; PageX, PageY: Double; Rotate: TPdfPageRotation = prNormal): TPoint; overload;
@@ -161,6 +189,15 @@ type
     function PageToDevice(X, Y, Width, Height: Integer; const R: TPdfRect; Rotate: TPdfPageRotation = prNormal): TRect; overload;
 
     procedure ApplyChanges;
+
+    function FormEventFocus(const Shift: TShiftState; PageX, PageY: Double): Boolean;
+    function FormEventMouseMove(const Shift: TShiftState; PageX, PageY: Double): Boolean;
+    function FormEventLButtonDown(const Shift: TShiftState; PageX, PageY: Double): Boolean;
+    function FormEventLButtonUp(const Shift: TShiftState; PageX, PageY: Double): Boolean;
+    function FormEventKeyDown(KeyCode: Word; KeyData: LPARAM): Boolean;
+    function FormEventKeyUp(KeyCode: Word; KeyData: LPARAM): Boolean;
+    function FormEventKeyPress(Key: Word; KeyData: LPARAM): Boolean;
+    procedure FormEventKillFocus;
 
     function BeginFind(const SearchString: string; MatchCase, MatchWholeWord: Boolean; FromEnd: Boolean): Boolean;
     function FindNext(var CharIndex, Count: Integer): Boolean;
@@ -179,16 +216,23 @@ type
     function GetTextRectCount(CharIndex, Count: Integer): Integer;
     function GetTextRect(RectIndex: Integer): TPdfRect;
 
+    function HasFormFieldAtPoint(X, Y: Double): TPdfFormFieldType;
+
     function GetWebLinkCount: Integer;
     function GetWebLinkURL(LinkIndex: Integer): string;
     function GetWebLinkRectCount(LinkIndex: Integer): Integer;
     function GetWebLinkRect(LinkIndex, RectIndex: Integer): TPdfRect;
 
+    property Handle: FPDF_PAGE read GetHandle;
     property Width: Double read FWidth;
     property Height: Double read FHeight;
     property Transparency: Boolean read FTransparency;
     property Rotation: TPdfPageRotation read FRotation write SetRotation;
   end;
+
+  TPdfFormInvalidateEvent = procedure(Document: TPdfDocument; Page: TPdfPage; const PageRect: TPdfRect) of object;
+  TPdfFormOutputSelectedRectEvent = procedure(Document: TPdfDocument; Page: TPdfPage; const PageRect: TPdfRect) of object;
+  TPdfFormGetCurrentPage = procedure(Document: TPdfDocument; var CurrentPage: TPdfPage) of object;
 
   TPdfDocument = class(TObject)
   private type
@@ -207,7 +251,18 @@ type
     FBuffer: PByte;
     FBytes: TBytes;
     FClosing: Boolean;
+    FUnsupportedFeatures: Boolean;
     FCustomLoadData: PCustomLoadDataRec;
+
+    FForm: FPDF_FORMHANDLE;
+    FFormFillHandler: TPdfFormFillHandler;
+    FFormFieldHighlightColor: TColor;
+    FFormFieldHighlightAlpha: Integer;
+    FPrintHidesFormFieldHighlight: Boolean;
+    FFormModified: Boolean;
+    FOnFormInvalidate: TPdfFormInvalidateEvent;
+    FOnFormOutputSelectedRect: TPdfFormOutputSelectedRectEvent;
+    FOnFormGetCurrentPage: TPdfFormGetCurrentPage;
 
     procedure InternLoadFromMem(Buffer: PByte; Size: Integer; const APassword: AnsiString);
     procedure InternLoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord; AParam: Pointer; const APassword: AnsiString);
@@ -224,8 +279,11 @@ type
     function GetPageSize(Index: Integer): TPdfPoint;
     function GetPageMode: TPdfDocumentPageMode;
     function GetNumCopies: Integer;
-  protected
-    property Document: FPDF_DOCUMENT read FDocument;
+    procedure DocumentLoaded;
+    procedure SetFormFieldHighlightAlpha(Value: Integer);
+    procedure SetFormFieldHighlightColor(const Value: TColor);
+    function FindPage(Page: FPDF_PAGE): TPdfPage;
+    procedure UpdateFormFieldHighlight;
   public
     constructor Create;
     destructor Destroy; override;
@@ -264,7 +322,24 @@ type
     property DocPermissions: Integer read GetDocPermissions;
     property FileVersion: Integer read GetFileVersion;
     property PageMode: TPdfDocumentPageMode read GetPageMode;
+
+    // if UnsupportedFeatures is True, then the document has unsupported features. It is updated
+    // after accessing a page.
+    property UnsupportedFeatures: Boolean read FUnsupportedFeatures;
+    property Handle: FPDF_DOCUMENT read FDocument;
+    property FormHandle: FPDF_FORMHANDLE read FForm;
+
+    property FormFieldHighlightColor: TColor read FFormFieldHighlightColor write SetFormFieldHighlightColor default $FFE4DD;
+    property FormFieldHighlightAlpha: Integer read FFormFieldHighlightAlpha write SetFormFieldHighlightAlpha default 100;
+    property PrintHidesFormFieldHighlight: Boolean read FPrintHidesFormFieldHighlight write FPrintHidesFormFieldHighlight default True;
+
+    property FormModified: Boolean read FFormModified write FFormModified;
+    property OnFormInvalidate: TPdfFormInvalidateEvent read FOnFormInvalidate write FOnFormInvalidate;
+    property OnFormOutputSelectedRect: TPdfFormOutputSelectedRectEvent read FOnFormOutputSelectedRect write FOnFormOutputSelectedRect;
+    property OnFormGetCurrentPage: TPdfFormGetCurrentPage read FOnFormGetCurrentPage write FOnFormGetCurrentPage;
   end;
+
+function SetThreadPdfUnsupportedFeatureHandler(const Handler: TPdfUnsupportedFeatureHandler): TPdfUnsupportedFeatureHandler;
 
 var
   PDFiumDllDir: string = '';
@@ -285,52 +360,72 @@ resourcestring
   RsPdfErrorSecurity = 'Security schema is not support';
   RsPdfErrorPage     = 'Page does not exist or data error';
 
-procedure UnsupportedHandler(pThis: PUNSUPPORT_INFO; nType: Integer); cdecl;
-var
-  Typ: string;
+threadvar
+  ThreadPdfUnsupportedFeatureHandler: TPdfUnsupportedFeatureHandler;
+  UnsupportedFeatureCurrentDocument: TPdfDocument;
+
+function SetThreadPdfUnsupportedFeatureHandler(const Handler: TPdfUnsupportedFeatureHandler): TPdfUnsupportedFeatureHandler;
+begin
+  Result := ThreadPdfUnsupportedFeatureHandler;
+  ThreadPdfUnsupportedFeatureHandler := Handler;
+end;
+
+function GetUnsupportedFeatureName(nType: Integer): string;
 begin
   case nType of
     FPDF_UNSP_DOC_XFAFORM:
-      Typ := 'XFA';
+      Result := 'XFA';
 
     FPDF_UNSP_DOC_PORTABLECOLLECTION:
-      Typ := 'Portfolios_Packages';
+      Result := 'Portfolios_Packages';
 
     FPDF_UNSP_DOC_ATTACHMENT,
     FPDF_UNSP_ANNOT_ATTACHMENT:
-      Typ := 'Attachment';
+      Result := 'Attachment';
 
     FPDF_UNSP_DOC_SECURITY:
-      Typ := 'Rights_Management';
+      Result := 'Rights_Management';
 
     FPDF_UNSP_DOC_SHAREDREVIEW:
-      Typ := 'Shared_Review';
+      Result := 'Shared_Review';
 
     FPDF_UNSP_DOC_SHAREDFORM_ACROBAT,
     FPDF_UNSP_DOC_SHAREDFORM_FILESYSTEM,
     FPDF_UNSP_DOC_SHAREDFORM_EMAIL:
-      Typ := 'Shared_Form';
+      Result := 'Shared_Form';
 
     FPDF_UNSP_ANNOT_3DANNOT:
-      Typ := '3D';
+      Result := '3D';
 
     FPDF_UNSP_ANNOT_MOVIE:
-      Typ := 'Movie';
+      Result := 'Movie';
 
     FPDF_UNSP_ANNOT_SOUND:
-      Typ := 'Sound';
+      Result := 'Sound';
 
     FPDF_UNSP_ANNOT_SCREEN_MEDIA,
     FPDF_UNSP_ANNOT_SCREEN_RICHMEDIA:
-      Typ := 'Screen';
+      Result := 'Screen';
 
     FPDF_UNSP_ANNOT_SIG:
-      Typ := 'Digital_Signature';
+      Result := 'Digital_Signature';
 
   else
-    Typ := 'Unknown';
+    Result := 'Unknown';
   end;
-  raise EPdfUnsupportedFeatureException.CreateResFmt(@RsUnsupportedFeature, [Typ]);
+end;
+
+procedure UnsupportedHandler(pThis: PUNSUPPORT_INFO; nType: Integer); cdecl;
+var
+  Document: TPdfDocument;
+begin
+  Document := UnsupportedFeatureCurrentDocument;
+  if Document <> nil then
+    Document.FUnsupportedFeatures := True;
+
+  if Assigned(ThreadPdfUnsupportedFeatureHandler) then
+    ThreadPdfUnsupportedFeatureHandler(nType, GetUnsupportedFeatureName(nType));
+  //raise EPdfUnsupportedFeatureException.CreateResFmt(@RsUnsupportedFeature, [GetUnsupportedFeatureName]);
 end;
 
 var
@@ -382,6 +477,195 @@ begin
   end;
 end;
 
+procedure FFI_Invalidate(pThis: PFPDF_FORMFILLINFO; page: FPDF_PAGE; left, top, right, bottom: Double); cdecl;
+var
+  Handler: PPdfFormFillHandler;
+  Pg: TPdfPage;
+  R: TPdfRect;
+begin
+  Handler := PPdfFormFillHandler(pThis);
+  if Assigned(Handler.Document.OnFormInvalidate) then
+  begin
+    Pg := Handler.Document.FindPage(page);
+    if Pg <> nil then
+    begin
+      R.Left := left;
+      R.Top := top;
+      R.Right := right;
+      R.Bottom := bottom;
+      Handler.Document.OnFormInvalidate(Handler.Document, Pg, R);
+    end;
+  end;
+end;
+
+procedure FFI_Change(pThis: PFPDF_FORMFILLINFO); cdecl;
+var
+  Handler: PPdfFormFillHandler;
+begin
+  Handler := PPdfFormFillHandler(pThis);
+  Handler.Document.FormModified := True;
+end;
+
+procedure FFI_OutputSelectedRect(pThis: PFPDF_FORMFILLINFO; page: FPDF_PAGE; left, top, right, bottom: Double); cdecl;
+var
+  Handler: PPdfFormFillHandler;
+  Pg: TPdfPage;
+  R: TPdfRect;
+begin
+  Handler := PPdfFormFillHandler(pThis);
+  if Assigned(Handler.Document.OnFormOutputSelectedRect) then
+  begin
+    Pg := Handler.Document.FindPage(Page);
+    if Pg <> nil then
+    begin
+      R.Left := left;
+      R.Top := top;
+      R.Right := right;
+      R.Bottom := bottom;
+      Handler.Document.OnFormOutputSelectedRect(Handler.Document, Pg, R);
+    end;
+  end;
+end;
+
+var
+  FFITimers: array of record
+    Id: UINT;
+    Proc: TFPDFTimerCallback;
+  end;
+  FFITimersCritSect: TRTLCriticalSection;
+
+procedure FormTimerProc(hwnd: HWND; uMsg: UINT; timerId: UINT; dwTime: DWORD); stdcall;
+var
+  I: Integer;
+  Proc: TFPDFTimerCallback;
+begin
+  Proc := nil;
+  EnterCriticalSection(FFITimersCritSect);
+  try
+    for I := 0 to Length(FFITimers) - 1 do
+    begin
+      if FFITimers[I].Id = timerId then
+      begin
+        Proc := FFITimers[I].Proc;
+        Break;
+      end;
+    end;
+  finally
+    LeaveCriticalSection(FFITimersCritSect);
+  end;
+
+  if Assigned(Proc) then
+    Proc(timerId);
+end;
+
+function FFI_SetTimer(pThis: PFPDF_FORMFILLINFO; uElapse: Integer; lpTimerFunc: TFPDFTimerCallback): Integer; cdecl;
+var
+  I: Integer;
+  Id: UINT;
+begin
+  Id := SetTimer(0, 0, uElapse, @FormTimerProc);
+  Result := Integer(Id);
+  if Id <> 0 then
+  begin
+    EnterCriticalSection(FFITimersCritSect);
+    try
+      for I := 0 to Length(FFITimers) - 1 do
+      begin
+        if FFITimers[I].Id = 0 then
+        begin
+          FFITimers[I].Id := Id;
+          FFITimers[I].Proc := lpTimerFunc;
+          Exit;
+        end;
+      end;
+      I := Length(FFITimers);
+      SetLength(FFITimers, I + 1);
+      FFITimers[I].Id := Id;
+      FFITimers[I].Proc := lpTimerFunc;
+    finally
+      LeaveCriticalSection(FFITimersCritSect);
+    end;
+  end;
+end;
+
+procedure FFI_KillTimer(pThis: PFPDF_FORMFILLINFO; nTimerID: Integer); cdecl;
+var
+  I: Integer;
+begin
+  if nTimerID <> 0 then
+  begin
+    KillTimer(0, nTimerID);
+
+    EnterCriticalSection(FFITimersCritSect);
+    try
+      for I := 0 to Length(FFITimers) - 1 do
+      begin
+        if FFITimers[I].Id = UINT(nTimerID) then
+        begin
+          FFITimers[I].Id := 0;
+          FFITimers[I].Proc := nil;
+        end;
+      end;
+
+      I := Length(FFITimers) - 1;
+      while (I >= 0) and (FFITimers[I].Id = 0) do
+        Dec(I);
+      SetLength(FFITimers, I + 1);
+    finally
+      LeaveCriticalSection(FFITimersCritSect);
+    end;
+  end;
+end;
+
+function FFI_GetLocalTime(pThis: PFPDF_FORMFILLINFO): FPDF_SYSTEMTIME; cdecl;
+begin
+  GetLocalTime(PSystemTime(@Result)^);
+end;
+
+function FFI_GetPage(pThis: PFPDF_FORMFILLINFO; document: FPDF_DOCUMENT; nPageIndex: Integer): FPDF_PAGE; cdecl;
+var
+  Handler: PPdfFormFillHandler;
+begin
+  Handler := PPdfFormFillHandler(pThis);
+  Result := nil;
+  if (Handler.Document <> nil) and (Handler.Document.FDocument = document) then
+  begin
+    if (nPageIndex >= 0) and (nPageIndex < Handler.Document.PageCount) then
+      Result := Handler.Document.Pages[nPageIndex].FPage;
+  end;
+end;
+
+function FFI_GetCurrentPage(pThis: PFPDF_FORMFILLINFO; document: FPDF_DOCUMENT): FPDF_PAGE; cdecl;
+var
+  Handler: PPdfFormFillHandler;
+  Pg: TPdfPage;
+begin
+  Handler := PPdfFormFillHandler(pThis);
+  Result := nil;
+  if (Handler.Document <> nil) and (Handler.Document.FDocument = document) and Assigned(Handler.Document.OnFormGetCurrentPage) then
+  begin
+    Pg := nil;
+    Handler.Document.OnFormGetCurrentPage(Handler.Document, Pg);
+    Result := nil;
+    if Pg <> nil then
+      Result := Pg.FPage;
+  end;
+end;
+
+function FFI_GetRotation(pThis: PFPDF_FORMFILLINFO; page: FPDF_PAGE): Integer; cdecl;
+begin
+  Result := 0;
+end;
+
+procedure FFI_SetCursor(pThis: PFPDF_FORMFILLINFO; nCursorType: Integer); cdecl;
+begin
+end;
+
+procedure FFI_SetTextFieldFocus(pThis: PFPDF_FORMFILLINFO; value: FPDF_WIDESTRING; valueLen: FPDF_DWORD; is_focus: FPDF_BOOL); cdecl;
+begin
+end;
+
+
 { TPdfRect }
 
 procedure TPdfRect.Offset(XOffset, YOffset: Double);
@@ -427,6 +711,10 @@ begin
   inherited Create;
   FPages := TObjectList.Create;
   FFileHandle := INVALID_HANDLE_VALUE;
+  FFormFieldHighlightColor := $FFE4DD;
+  FFormFieldHighlightAlpha := 100;
+  FPrintHidesFormFieldHighlight := True;
+
   InitLib;
 end;
 
@@ -442,9 +730,17 @@ begin
   FClosing := True;
   try
     FPages.Clear;
+    FUnsupportedFeatures := False;
 
     if FDocument <> nil then
     begin
+      if FForm <> nil then
+      begin
+        FORM_DoDocumentAAction(FForm, FPDFDOC_AACTION_WC);
+        FPDFDOC_ExitFormFillEnvironment(FForm);
+        FForm := nil;
+      end;
+
       FPDF_CloseDocument(FDocument);
       FDocument := nil;
     end;
@@ -479,6 +775,7 @@ begin
     end;
 
     FFileName := '';
+    FFormModified := False;
   finally
     FClosing := False;
   end;
@@ -641,6 +938,8 @@ end;
 
 procedure TPdfDocument.InternLoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord;
   AParam: Pointer; const APassword: AnsiString);
+var
+  OldCurDoc: TPdfDocument;
 begin
   if Assigned(ReadFunc) then
   begin
@@ -651,11 +950,14 @@ begin
     FCustomLoadData.FileAccess.m_GetBlock := GetLoadFromCustomBlock;
     FCustomLoadData.FileAccess.m_Param := Self;
 
-    FDocument := FPDF_LoadCustomDocument(@FCustomLoadData.FileAccess, PAnsiChar(APassword));
-    if FDocument = nil then
-      RaiseLastPdfError;
-
-    FPages.Count := FPDF_GetPageCount(FDocument);
+    OldCurDoc := UnsupportedFeatureCurrentDocument;
+    try
+      UnsupportedFeatureCurrentDocument := Self;
+      FDocument := FPDF_LoadCustomDocument(@FCustomLoadData.FileAccess, PAnsiChar(APassword));
+      DocumentLoaded;
+    finally
+      UnsupportedFeatureCurrentDocument := OldCurDoc;
+    end;
   end;
 end;
 
@@ -664,11 +966,47 @@ begin
   if Size > 0 then
   begin
     FDocument := FPDF_LoadMemDocument(Buffer, Size, PAnsiChar(Pointer(APassword)));
-    if FDocument = nil then
-      RaiseLastPdfError;
-
-    FPages.Count := FPDF_GetPageCount(FDocument);
+    DocumentLoaded;
   end;
+end;
+
+procedure TPdfDocument.DocumentLoaded;
+begin
+  FFormModified := False;
+  if FDocument = nil then
+    RaiseLastPdfError;
+
+  FPages.Count := FPDF_GetPageCount(FDocument);
+
+  FillChar(FFormFillHandler, SizeOf(TPdfFormFillHandler), 0);
+  FFormFillHandler.Document := Self;
+  FFormFillHandler.FormFillInfo.version := 1;
+  FFormFillHandler.FormFillInfo.FFI_Invalidate := FFI_Invalidate;
+  FFormFillHandler.FormFillInfo.FFI_OnChange := FFI_Change;
+  FFormFillHandler.FormFillInfo.FFI_OutputSelectedRect := FFI_OutputSelectedRect;
+  FFormFillHandler.FormFillInfo.FFI_SetTimer := FFI_SetTimer;
+  FFormFillHandler.FormFillInfo.FFI_KillTimer := FFI_KillTimer;
+  FFormFillHandler.FormFillInfo.FFI_GetLocalTime := FFI_GetLocalTime;
+  FFormFillHandler.FormFillInfo.FFI_GetPage := FFI_GetPage;
+  FFormFillHandler.FormFillInfo.FFI_GetCurrentPage := FFI_GetCurrentPage;
+  FFormFillHandler.FormFillInfo.FFI_GetRotation := FFI_GetRotation;
+  FFormFillHandler.FormFillInfo.FFI_SetCursor := FFI_SetCursor;
+  FFormFillHandler.FormFillInfo.FFI_SetTextFieldFocus := FFI_SetTextFieldFocus;
+
+  FForm := FPDFDOC_InitFormFillEnvironment(FDocument, @FFormFillHandler.FormFillInfo);
+  if FForm <> nil then
+  begin
+    UpdateFormFieldHighlight;
+
+    FORM_DoDocumentJSAction(FForm);
+    FORM_DoDocumentOpenAction(FForm);
+  end;
+end;
+
+procedure TPdfDocument.UpdateFormFieldHighlight;
+begin
+  FPDF_SetFormFieldHighlightColor(FForm, 0, {ColorToRGB}(FFormFieldHighlightColor));
+  FPDF_SetFormFieldHighlightAlpha(FForm, FFormFieldHighlightAlpha);
 end;
 
 function TPdfDocument.GetPage(Index: Integer): TPdfPage;
@@ -784,6 +1122,9 @@ begin
   FileWriteInfo.Inner.WriteBlock := @WriteBlockToStream;
   FileWriteInfo.Stream := Stream;
 
+  if FForm <> nil then
+    FORM_ForceToKillFocus(FForm); // also save the form field data that is currently focused
+
   if FileVersion <> -1 then
     FPDF_SaveWithVersion(FDocument, @FileWriteInfo, Ord(Option), FileVersion)
   else
@@ -808,6 +1149,7 @@ begin
   Close;
   FDocument := FPDF_CreateNewDocument;
   Result := FDocument <> nil;
+  FFormModified := False;
 end;
 
 procedure TPdfDocument.DeletePage(Index: Integer);
@@ -904,6 +1246,45 @@ begin
   Result := FPDF_SetPrintMode(Ord(PrintMode)) <> 0;
 end;
 
+procedure TPdfDocument.SetFormFieldHighlightAlpha(Value: Integer);
+begin
+  if Value < 0 then
+    Value := 0;
+  if Value > 255 then
+    Value := 255;
+
+  if Value <> FFormFieldHighlightAlpha then
+  begin
+    FFormFieldHighlightAlpha := Value;
+    if Active then
+      FPDF_SetFormFieldHighlightAlpha(FForm, FFormFieldHighlightAlpha);
+  end;
+end;
+
+procedure TPdfDocument.SetFormFieldHighlightColor(const Value: TColor);
+begin
+  if Value <> FFormFieldHighlightColor then
+  begin
+    FFormFieldHighlightColor := Value;
+    if Active then
+      FPDF_SetFormFieldHighlightColor(FForm, 0, {ColorToRGB}(FFormFieldHighlightColor));
+  end;
+end;
+
+function TPdfDocument.FindPage(Page: FPDF_PAGE): TPdfPage;
+var
+  I: Integer;
+begin
+  // The page must be already loaded
+  for I := 0 to PageCount - 1 do
+  begin
+    Result := TPdfPage(FPages[I]);
+    if (Result <> nil) and (Result.FPage = Page) then
+      Exit;
+  end;
+  Result := nil;
+end;
+
 { TPdfPage }
 
 constructor TPdfPage.Create(ADocument: TPdfDocument; APage: FPDF_PAGE);
@@ -911,7 +1292,8 @@ begin
   inherited Create;
   FDocument := ADocument;
   FPage := APage;
-  UpdateMetrics;
+
+  AfterOpen;
 end;
 
 destructor TPdfPage.Destroy;
@@ -921,8 +1303,38 @@ begin
   inherited Destroy;
 end;
 
+function TPdfPage.IsValidForm: Boolean;
+begin
+  Result := (FDocument <> nil) and (FDocument.FForm <> nil) and (FPage <> nil);
+end;
+
+procedure TPdfPage.AfterOpen;
+var
+  OldCurDoc: TPdfDocument;
+begin
+  if IsValidForm then
+  begin
+    OldCurDoc := UnsupportedFeatureCurrentDocument;
+    try
+      UnsupportedFeatureCurrentDocument := FDocument;
+      FORM_OnAfterLoadPage(FPage, FDocument.FForm);
+      FORM_DoPageAAction(FPage, FDocument.FForm, FPDFPAGE_AACTION_OPEN);
+    finally
+      UnsupportedFeatureCurrentDocument := OldCurDoc;
+    end;
+  end;
+
+  UpdateMetrics;
+end;
+
 procedure TPdfPage.Close;
 begin
+  if IsValidForm then
+  begin
+    FORM_DoPageAAction(FPage, FDocument.FForm, FPDFPAGE_AACTION_CLOSE);
+    FORM_OnBeforeClosePage(FPage, FDocument.FForm);
+  end;
+
   if FLinkHandle <> nil then
   begin
     FPDFLink_CloseWebLinks(FLinkHandle);
@@ -950,7 +1362,7 @@ begin
   if FPage = nil then
   begin
     FPage := FDocument.ReloadPage(Self);
-    UpdateMetrics;
+    AfterOpen;
   end;
 end;
 
@@ -978,9 +1390,55 @@ begin
 end;
 
 procedure TPdfPage.Draw(DC: HDC; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation; const Options: TPdfPageRenderOptions);
+var
+  BitmapInfo: TBitmapInfo;
+  Bmp, OldBmp: HBITMAP;
+  BmpBits: Pointer;
+  PdfBmp: TPdfBitmap;
+  BmpDC: HDC;
 begin
   Open;
-  FPDF_RenderPage(DC, FPage, X, Y, Width, Height, Ord(Rotate), GetDrawFlags(Options));
+
+  if proPrinting in Options then
+  begin
+    FPDF_RenderPage(DC, FPage, X, Y, Width, Height, Ord(Rotate), GetDrawFlags(Options));
+    Exit;
+  end;
+
+
+  FillChar(BitmapInfo, SizeOf(BitmapInfo), 0);
+  BitmapInfo.bmiHeader.biSize := SizeOf(BitmapInfo);
+  BitmapInfo.bmiHeader.biWidth := Width;
+  BitmapInfo.bmiHeader.biHeight := -Height;
+  BitmapInfo.bmiHeader.biPlanes := 1;
+  BitmapInfo.bmiHeader.biBitCount := 32;
+  BitmapInfo.bmiHeader.biCompression := BI_RGB;
+  BmpBits := nil;
+  Bmp := CreateDIBSection(DC, BitmapInfo, DIB_RGB_COLORS, BmpBits, 0, 0);
+  if Bmp <> 0 then
+  begin
+    try
+      PdfBmp := TPdfBitmap.Create(Width, Height, bfBGRA, BmpBits, Width * 4);
+      try
+        if Transparency then
+          PdfBmp.FillRect(0, 0, Width, Height, $00FFFFFF)
+        else
+          PdfBmp.FillRect(0, 0, Width, Height, $FFFFFFFF);
+        DrawToPdfBitmap(PdfBmp, 0, 0, Width, Height, Rotate, Options);
+        DrawFormToPdfBitmap(PdfBmp, 0, 0, Width, Height, Rotate, Options);
+      finally
+        PdfBmp.Free;
+      end;
+
+      BmpDC := CreateCompatibleDC(DC);
+      OldBmp := SelectObject(BmpDC, Bmp);
+      BitBlt(DC, X, Y, Width, Height, BmpDC, 0, 0, SRCCOPY);
+      SelectObject(BmpDC, OldBmp);
+      DeleteDC(BmpDC);
+    finally
+      DeleteObject(Bmp);
+    end;
+  end;
 end;
 
 procedure TPdfPage.DrawToPdfBitmap(APdfBitmap: TPdfBitmap; X, Y, Width, Height: Integer;
@@ -988,6 +1446,28 @@ procedure TPdfPage.DrawToPdfBitmap(APdfBitmap: TPdfBitmap; X, Y, Width, Height: 
 begin
   Open;
   FPDF_RenderPageBitmap(APdfBitmap.FBitmap, FPage, X, Y, Width, Height, Ord(Rotate), GetDrawFlags(Options));
+end;
+
+procedure TPdfPage.DrawFormToPdfBitmap(APdfBitmap: TPdfBitmap; X, Y, Width, Height: Integer;
+  Rotate: TPdfPageRotation; const Options: TPdfPageRenderOptions);
+begin
+  Open;
+  if IsValidForm then
+  begin
+    if proPrinting in Options then
+    begin
+      if FDocument.PrintHidesFormFieldHighlight then
+        FPDF_RemoveFormFieldHighlight(FDocument.FForm);
+        //FPDF_SetFormFieldHighlightAlpha(FDocument.FForm, 0); // hide the highlight
+      FORM_ForceToKillFocus(FDocument.FForm);
+    end;
+    try
+      FPDF_FFLDraw(FDocument.FForm, APdfBitmap.FBitmap, FPage, X, Y, Width, Height, Ord(Rotate), GetDrawFlags(Options));
+    finally
+      if (proPrinting in Options) and FDocument.PrintHidesFormFieldHighlight then
+        FDocument.UpdateFormFieldHighlight;
+    end;
+  end;
 end;
 
 procedure TPdfPage.UpdateMetrics;
@@ -1018,9 +1498,17 @@ begin
 end;
 
 function TPdfPage.PageToDevice(X, Y, Width, Height: Integer; const R: TPdfRect; Rotate: TPdfPageRotation): TRect;
+var
+  T: Integer;
 begin
   Result.TopLeft := PageToDevice(X, Y, Width, Height, R.Left, R.Top, Rotate);
   Result.BottomRight := PageToDevice(X, Y, Width, Height, R.Right, R.Bottom, Rotate);
+  if Result.Top > Result.Bottom then
+  begin
+    T := Result.Top;
+    Result.Top := Result.Bottom;
+    Result.Bottom := T;
+  end;
 end;
 
 procedure TPdfPage.SetRotation(const Value: TPdfPageRotation);
@@ -1257,6 +1745,126 @@ begin
     Result := TPdfRect.Empty;
 end;
 
+function TPdfPage.GetMouseModifier(const Shift: TShiftState): Integer;
+begin
+  Result := 0;
+  if ssShift in Shift then
+    Result := Result or FWL_EVENTFLAG_ShiftKey;
+  if ssCtrl in Shift then
+    Result := Result or FWL_EVENTFLAG_ControlKey;
+  if ssAlt in Shift then
+    Result := Result or FWL_EVENTFLAG_AltKey;
+  if ssLeft in Shift then
+    Result := Result or FWL_EVENTFLAG_LeftButtonDown;
+  if ssMiddle in Shift then
+    Result := Result or FWL_EVENTFLAG_MiddleButtonDown;
+  if ssRight in Shift then
+    Result := Result or FWL_EVENTFLAG_RightButtonDown;
+end;
+
+function TPdfPage.GetKeyModifier(KeyData: LPARAM): Integer;
+const
+  AltMask = $20000000;
+begin
+  Result := 0;
+  if GetKeyState(VK_SHIFT) < 0 then
+    Result := Result or FWL_EVENTFLAG_ShiftKey;
+  if GetKeyState(VK_CONTROL) < 0 then
+    Result := Result or FWL_EVENTFLAG_ControlKey;
+  if KeyData and AltMask <> 0 then
+    Result := Result or FWL_EVENTFLAG_AltKey;
+end;
+
+function TPdfPage.FormEventFocus(const Shift: TShiftState; PageX, PageY: Double): Boolean;
+begin
+  if IsValidForm then
+    Result := FORM_OnFocus(FDocument.FForm, FPage, GetMouseModifier(Shift), PageX, PageY) <> 0
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormEventMouseMove(const Shift: TShiftState; PageX, PageY: Double): Boolean;
+begin
+  if IsValidForm then
+    Result := FORM_OnMouseMove(FDocument.FForm, FPage, GetMouseModifier(Shift), PageX, PageY) <> 0
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormEventLButtonDown(const Shift: TShiftState; PageX, PageY: Double): Boolean;
+begin
+  if IsValidForm then
+    Result := FORM_OnLButtonDown(FDocument.FForm, FPage, GetMouseModifier(Shift), PageX, PageY) <> 0
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormEventLButtonUp(const Shift: TShiftState; PageX, PageY: Double): Boolean;
+begin
+  if IsValidForm then
+    Result := FORM_OnLButtonUp(FDocument.FForm, FPage, GetMouseModifier(Shift), PageX, PageY) <> 0
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormEventKeyDown(KeyCode: Word; KeyData: LPARAM): Boolean;
+begin
+  if IsValidForm then
+    Result := FORM_OnKeyDown(FDocument.FForm, FPage, KeyCode, GetKeyModifier(KeyData)) <> 0
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormEventKeyUp(KeyCode: Word; KeyData: LPARAM): Boolean;
+begin
+  if IsValidForm then
+    Result := FORM_OnKeyUp(FDocument.FForm, FPage, KeyCode, GetKeyModifier(KeyData)) <> 0
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormEventKeyPress(Key: Word; KeyData: LPARAM): Boolean;
+begin
+  if IsValidForm then
+    Result := FORM_OnChar(FDocument.FForm, FPage, Key, GetKeyModifier(KeyData)) <> 0
+  else
+    Result := False;
+end;
+
+procedure TPdfPage.FormEventKillFocus;
+begin
+  if IsValidForm then
+    FORM_ForceToKillFocus(FDocument.FForm);
+end;
+
+function TPdfPage.HasFormFieldAtPoint(X, Y: Double): TPdfFormFieldType;
+begin
+  case FPDFPage_HasFormFieldAtPoint(FDocument.FForm, FPage, X, Y) of
+    FPDF_FORMFIELD_PUSHBUTTON:
+      Result := fftPushButton;
+    FPDF_FORMFIELD_CHECKBOX:
+      Result := fftCheckBox;
+    FPDF_FORMFIELD_RADIOBUTTON:
+      Result := fftRadioButton;
+    FPDF_FORMFIELD_COMBOBOX:
+      Result := fftComboBox;
+    FPDF_FORMFIELD_LISTBOX:
+      Result := fftListBox;
+    FPDF_FORMFIELD_TEXTFIELD:
+      Result := fftTextField;
+    FPDF_FORMFIELD_SIGNATURE:
+      Result := fftSignature;
+  else
+    Result := fftUnknown;
+  end;
+end;
+
+function TPdfPage.GetHandle: FPDF_PAGE;
+begin
+  Open;
+  Result := FPage;
+end;
+
 { _TPdfBitmapHideCtor }
 
 procedure _TPdfBitmapHideCtor.Create;
@@ -1332,8 +1940,10 @@ end;
 
 initialization
   InitializeCriticalSectionAndSpinCount(PDFiumInitCritSect, 4000);
+  InitializeCriticalSectionAndSpinCount(FFITimersCritSect, 4000);
 
 finalization
+  DeleteCriticalSection(FFITimersCritSect);
   DeleteCriticalSection(PDFiumInitCritSect);
 
 end.
