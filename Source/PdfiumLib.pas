@@ -1,5 +1,5 @@
 {$A8,B-,E-,F-,G+,H+,I+,J-,K-,M-,N-,P+,Q-,R-,S-,T-,U-,V+,X+,Z1}
-{$STRINGCHECKS OFF} // It only slows down Delphi strings, doesn't help C++Builder migration and is finally gone in XE+
+{$STRINGCHECKS OFF} // It only slows down Delphi strings in Delphi 2009/2010
 
 // Use DLLs (x64, x86) from https://github.com/bblanchon/pdfium-binaries
 
@@ -14,10 +14,8 @@ unit PdfiumLib;
 
 interface
 
-{$IFDEF MSWINDOWS}
 uses
   Windows;
-{$ENDIF MSWINDOWS}
 
 // *** _FPDFVIEW_H_ ***
 
@@ -6568,6 +6566,9 @@ procedure InitPDFium(const DllPath: string = '');
 implementation
 
 uses
+  {$IFDEF CPUX64}
+  Math,
+  {$ENDIF CPUX64}
   SysUtils;
 
 resourcestring
@@ -7072,6 +7073,12 @@ var
 begin
   if PdfiumModule <> 0 then
     Exit;
+
+  {$IFDEF CPUX64}
+  // Pdfium requires all arithmetic exceptions to be masked in 64bit mode
+  if GetExceptionMask <> exAllArithmeticExceptions then
+    SetExceptionMask(exAllArithmeticExceptions);
+  {$ENDIF CPUX64}
 
   if DllPath <> '' then
     PdfiumModule := SafeLoadLibrary(IncludeTrailingPathDelimiter(DllPath) + pdfium_dll)
