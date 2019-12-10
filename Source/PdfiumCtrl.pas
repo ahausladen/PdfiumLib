@@ -688,7 +688,8 @@ begin
   if Value <> FPageIndex then
   begin
     ClearSelection;
-    if (FPageIndex < PageCount) and (FPageIndex = FRenderedPageIndex) then
+    // Close the previous page to keep memory usage low (especially for large PDF files)
+    if (FPageIndex >= 0) and (FPageIndex < PageCount) and FDocument.IsPageLoaded(FPageIndex) then
       FDocument.Pages[FPageIndex].Close;
     OldPageIndex := FPageIndex;
     FPageIndex := Value;
@@ -1534,24 +1535,21 @@ procedure TPdfControl.WMKeyDown(var Message: TWMKeyDown);
 begin
   if PdfiumFormEvents and IsPageValid and CurrentPage.FormEventKeyDown(Message.CharCode, Message.KeyData) then
     Exit;
-  if not DoKeyDown(Message) then
-    inherited;
+  inherited;
 end;
 
 procedure TPdfControl.WMKeyUp(var Message: TWMKeyUp);
 begin
   if PdfiumFormEvents and IsPageValid and CurrentPage.FormEventKeyUp(Message.CharCode, Message.KeyData) then
     Exit;
-  if not DoKeyUp(Message) then
-    inherited;
+  inherited;
 end;
 
 procedure TPdfControl.WMChar(var Message: TWMChar);
 begin
   if PdfiumFormEvents and IsPageValid and CurrentPage.FormEventKeyPress(Message.CharCode, Message.KeyData) then
     Exit;
-  if not DoKeyPress(Message) then
-    inherited;
+  inherited;
 end;
 
 procedure TPdfControl.WMKillFocus(var Message: TWMKillFocus);

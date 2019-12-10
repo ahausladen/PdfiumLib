@@ -175,6 +175,7 @@ type
   public
     destructor Destroy; override;
     procedure Close;
+    function IsLoaded: Boolean;
 
     procedure Draw(DC: HDC; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation = prNormal;
       const Options: TPdfPageRenderOptions = []);
@@ -306,6 +307,7 @@ type
     procedure DeletePage(Index: Integer);
     function NewPage(Width, Height: Double; Index: Integer = -1): TPdfPage;
     function ApplyViewerPreferences(Source: TPdfDocument): Boolean;
+    function IsPageLoaded(PageIndex: Integer): Boolean;
 
     function GetMetaText(const TagName: string): string;
     class function SetPrintMode(PrintMode: TPdfPrintMode): Boolean; static;
@@ -1007,6 +1009,14 @@ procedure TPdfDocument.UpdateFormFieldHighlight;
 begin
   FPDF_SetFormFieldHighlightColor(FForm, 0, {ColorToRGB}(FFormFieldHighlightColor));
   FPDF_SetFormFieldHighlightAlpha(FForm, FFormFieldHighlightAlpha);
+end;
+
+function TPdfDocument.IsPageLoaded(PageIndex: Integer): Boolean;
+var
+  Page: TPdfPage;
+begin
+  Page := TPdfPage(FPages[PageIndex]);
+  Result := (Page <> nil) and Page.IsLoaded;
 end;
 
 function TPdfDocument.GetPage(Index: Integer): TPdfPage;
@@ -1863,6 +1873,11 @@ function TPdfPage.GetHandle: FPDF_PAGE;
 begin
   Open;
   Result := FPage;
+end;
+
+function TPdfPage.IsLoaded: Boolean;
+begin
+  Result := FPage <> nil;
 end;
 
 { _TPdfBitmapHideCtor }
