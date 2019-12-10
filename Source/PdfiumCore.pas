@@ -1664,12 +1664,12 @@ var
 begin
   if (Count > 0) and BeginText then
   begin
-    SetLength(Result, Count);
-    Len := FPDFText_GetText(FTextHandle, CharIndex, Count + 1, PChar(Result)); // include #0 terminater
-    if Len = 0 then
+    SetLength(Result, Count); // we let GetText overwrite our #0 terminator with its #0
+    Len := FPDFText_GetText(FTextHandle, CharIndex, Count, PChar(Result)) - 1; // returned length includes the #0
+    if Len <= 0 then
       Result := ''
-    else if Len + 1 < Count then
-      SetLength(Result, Len - 1);
+    else if Len < Count then
+      SetLength(Result, Len);
   end
   else
     Result := '';
