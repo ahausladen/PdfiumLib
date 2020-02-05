@@ -1115,7 +1115,7 @@ end;
 type
   PFPDFFileWriteEx = ^TFPDFFileWriteEx;
   TFPDFFileWriteEx = record
-    Inner: TFPDFFileWrite;
+    Inner: TFPDFFileWrite; // emulate object inheritance
     Stream: TStream;
   end;
 
@@ -1144,14 +1144,19 @@ end;
 procedure TPdfDocument.SaveToBytes(var Bytes: TBytes; Option: TPdfDocumentSaveOption; FileVersion: Integer);
 var
   Stream: TBytesStream;
+  Size: NativeInt;
 begin
   Stream := TBytesStream.Create(nil);
   try
     SaveToStream(Stream, Option, FileVersion);
+    Size := Stream.Size;
     Bytes := Stream.Bytes;
   finally
     Stream.Free;
   end;
+  // Trim the byte array from the stream's capacity to the actual size
+  if Length(Bytes) <> Size then
+    SetLength(Bytes, Size);
 end;
 
 function TPdfDocument.NewDocument: Boolean;
