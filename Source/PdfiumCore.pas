@@ -50,7 +50,6 @@ type
     proAnnotations,            // Set if annotations are to be rendered.
     proLCDOptimized,           // Set if using text rendering optimized for LCD display.
     proNoNativeText,           // Don't use the native text output available on some platforms
-    proGrayscale,              // Grayscale output.
     proNoCatch,                // Set if you don't want to catch exception.
     proLimitedImageCacheSize,  // Limit image cache size.
     proForceHalftone,          // Always use halftone for image stretching.
@@ -153,8 +152,8 @@ type
   private
     FDocument: TPdfDocument;
     FPage: FPDF_PAGE;
-    FWidth: Double;
-    FHeight: Double;
+    FWidth: Single;
+    FHeight: Single;
     FTransparency: Boolean;
     FRotation: TPdfPageRotation;
     FTextHandle: FPDF_TEXTPAGE;
@@ -195,6 +194,8 @@ type
     function FormEventMouseMove(const Shift: TShiftState; PageX, PageY: Double): Boolean;
     function FormEventLButtonDown(const Shift: TShiftState; PageX, PageY: Double): Boolean;
     function FormEventLButtonUp(const Shift: TShiftState; PageX, PageY: Double): Boolean;
+    function FormEventRButtonDown(const Shift: TShiftState; PageX, PageY: Double): Boolean;
+    function FormEventRButtonUp(const Shift: TShiftState; PageX, PageY: Double): Boolean;
     function FormEventKeyDown(KeyCode: Word; KeyData: LPARAM): Boolean;
     function FormEventKeyUp(KeyCode: Word; KeyData: LPARAM): Boolean;
     function FormEventKeyPress(Key: Word; KeyData: LPARAM): Boolean;
@@ -225,8 +226,8 @@ type
     function GetWebLinkRect(LinkIndex, RectIndex: Integer): TPdfRect;
 
     property Handle: FPDF_PAGE read GetHandle;
-    property Width: Double read FWidth;
-    property Height: Double read FHeight;
+    property Width: Single read FWidth;
+    property Height: Single read FHeight;
     property Transparency: Boolean read FTransparency;
     property Rotation: TPdfPageRotation read FRotation write SetRotation;
   end;
@@ -345,6 +346,10 @@ function SetThreadPdfUnsupportedFeatureHandler(const Handler: TPdfUnsupportedFea
 
 var
   PDFiumDllDir: string = '';
+  PDFiumDllFileName: string = ''; // use this instead of PDFiumDllDir if you want to change the DLLs file name
+  {$IF declared(FPDF_InitEmbeddedLibraries)}
+  PDFiumResDir: string = '';
+  {$IFEND}
 
 implementation
 
@@ -449,7 +454,10 @@ begin
     try
       if Initialized = 0 then
       begin
-        InitPDFium(PDFiumDllDir);
+        if PDFiumDllFileName <> '' then
+          InitPDFiumEx(PDFiumDllFileName {$IF declared(FPDF_InitEmbeddedLibraries)}, PDFiumResDir{$ENDIF})
+        else
+          InitPDFium(PDFiumDllDir {$IF declared(FPDF_InitEmbeddedLibraries)}, PDFiumResDir{$ENDIF});
         FSDK_SetUnSpObjProcessHandler(@UnsupportInfo);
         Initialized := 1;
       end;
@@ -982,7 +990,7 @@ begin
 
   FillChar(FFormFillHandler, SizeOf(TPdfFormFillHandler), 0);
   FFormFillHandler.Document := Self;
-  FFormFillHandler.FormFillInfo.version := 1;
+  FFormFillHandler.FormFillInfo.version := 1; // will be set to 2 if we use an XFA-enabled DLL
   FFormFillHandler.FormFillInfo.FFI_Invalidate := FFI_Invalidate;
   FFormFillHandler.FormFillInfo.FFI_OnChange := FFI_Change;
   FFormFillHandler.FormFillInfo.FFI_OutputSelectedRect := FFI_OutputSelectedRect;
@@ -994,6 +1002,12 @@ begin
   FFormFillHandler.FormFillInfo.FFI_GetRotation := FFI_GetRotation;
   FFormFillHandler.FormFillInfo.FFI_SetCursor := FFI_SetCursor;
   FFormFillHandler.FormFillInfo.FFI_SetTextFieldFocus := FFI_SetTextFieldFocus;
+
+  if PDF_USE_XFA then
+  begin
+    FFormFillHandler.FormFillInfo.version := 2;
+    FFormFillHandler.FormFillInfo.xfa_disabled := 1; // Disable XFA support for now
+  end;
 
   FForm := FPDFDOC_InitFormFillEnvironment(FDocument, @FFormFillHandler.FormFillInfo);
   if FForm <> nil then
@@ -1390,8 +1404,6 @@ begin
     Result := Result or FPDF_LCD_TEXT;
   if proNoNativeText in Options then
     Result := Result or FPDF_NO_NATIVETEXT;
-  if proGrayscale in Options then
-    Result := Result or FPDF_GRAYSCALE;
   if proNoCatch in Options then
     Result := Result or FPDF_NO_CATCH;
   if proLimitedImageCacheSize in Options then
@@ -1474,7 +1486,7 @@ begin
       if FDocument.PrintHidesFormFieldHighlight then
         FPDF_RemoveFormFieldHighlight(FDocument.FForm);
         //FPDF_SetFormFieldHighlightAlpha(FDocument.FForm, 0); // hide the highlight
-      FORM_ForceToKillFocus(FDocument.FForm);
+      FormEventKillFocus;
     end;
     try
       FPDF_FFLDraw(FDocument.FForm, APdfBitmap.FBitmap, FPage, X, Y, Width, Height, Ord(Rotate), GetDrawFlags(Options));
@@ -1487,8 +1499,8 @@ end;
 
 procedure TPdfPage.UpdateMetrics;
 begin
-  FWidth := FPDF_GetPageWidth(FPage);
-  FHeight := FPDF_GetPageHeight(FPage);
+  FWidth := FPDF_GetPageWidthF(FPage);
+  FHeight := FPDF_GetPageHeightF(FPage);
   FTransparency := FPDFPage_HasTransparency(FPage) <> 0;
   FRotation := TPdfPageRotation(FPDFPage_GetRotation(FPage));
 end;
@@ -1818,6 +1830,22 @@ function TPdfPage.FormEventLButtonUp(const Shift: TShiftState; PageX, PageY: Dou
 begin
   if IsValidForm then
     Result := FORM_OnLButtonUp(FDocument.FForm, FPage, GetMouseModifier(Shift), PageX, PageY) <> 0
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormEventRButtonDown(const Shift: TShiftState; PageX, PageY: Double): Boolean;
+begin
+  if IsValidForm then
+    Result := FORM_OnRButtonDown(FDocument.FForm, FPage, GetMouseModifier(Shift), PageX, PageY) <> 0
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormEventRButtonUp(const Shift: TShiftState; PageX, PageY: Double): Boolean;
+begin
+  if IsValidForm then
+    Result := FORM_OnRButtonUp(FDocument.FForm, FPage, GetMouseModifier(Shift), PageX, PageY) <> 0
   else
     Result := False;
 end;

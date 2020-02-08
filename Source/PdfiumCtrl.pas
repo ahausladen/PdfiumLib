@@ -44,6 +44,7 @@ type
     FSelectionActive: Boolean;
     FAllowUserTextSelection: Boolean;
     FAllowUserPageChange: Boolean;
+    FAllowFormEvents: Boolean;
     FBufferedPageDraw: Boolean;
     FSmoothScroll: Boolean;
     FScrollTimerActive: Boolean;
@@ -65,7 +66,6 @@ type
     FOnWebLinkClick: TPdfControlWebLinkClickEvent;
     FOnPageChange: TNotifyEvent;
     FOnPaint: TNotifyEvent;
-    FPdfiumFormEvents: Boolean;
     FFormOutputSelectedRects: TPdfRectArray;
 
     procedure WMTimer(var Message: TWMTimer); message WM_TIMER;
@@ -194,12 +194,12 @@ type
     property BufferedPageDraw: Boolean read FBufferedPageDraw write FBufferedPageDraw default True;
     property AllowUserTextSelection: Boolean read FAllowUserTextSelection write FAllowUserTextSelection default True;
     property AllowUserPageChange: Boolean read FAllowUserPageChange write FAllowUserPageChange default True; // PgDn/PgUp
+    property AllowFormEvents: Boolean read FAllowFormEvents write FAllowFormEvents default True;
     property DrawOptions: TPdfPageRenderOptions read FDrawOptions write SetDrawOptions default cPdfControlDefaultDrawOptions;
     property SmoothScroll: Boolean read FSmoothScroll write FSmoothScroll default False;
     property ScrollTimer: Boolean read FScrollTimer write FScrollTimer default True;
     property OnWebLinkClick: TPdfControlWebLinkClickEvent read FOnWebLinkClick write FOnWebLinkClick;
     property OnPageChange: TNotifyEvent read FOnPageChange write FOnPageChange;
-    property PdfiumFormEvents: Boolean read FPdfiumFormEvents write FPdfiumFormEvents default True;
 
     property Align;
     property Anchors;
@@ -277,10 +277,10 @@ begin
   FRotation := prNormal;
   FAllowUserTextSelection := True;
   FAllowUserPageChange := True;
+  FAllowFormEvents := True;
   FDrawOptions := cPdfControlDefaultDrawOptions;
   FScrollTimer := True;
   FBufferedPageDraw := True;
-  FPdfiumFormEvents := True;
 
   FDocument := TPdfDocument.Create;
   FDocument.OnFormInvalidate := FormInvalidate;
@@ -1000,7 +1000,7 @@ begin
 
   if IsPageValid then
   begin
-    if PdfiumFormEvents then
+    if AllowFormEvents then
     begin
       PagePt := DeviceToPage(X, Y);
       if Button = mbLeft then
@@ -1009,8 +1009,12 @@ begin
           Exit;
       end
       else if Button = mbRight then
+      begin
         if CurrentPage.FormEventFocus(Shift, PagePt.X, PagePt.Y) then
           Exit;
+        if CurrentPage.FormEventRButtonDown(Shift, PagePt.X, PagePt.Y) then
+          Exit;
+      end;
     end;
 
     if AllowUserTextSelection then
@@ -1050,7 +1054,7 @@ var
 begin
   inherited MouseUp(Button, Shift, X, Y);
 
-  if PdfiumFormEvents and IsPageValid then
+  if AllowFormEvents and IsPageValid then
   begin
     PagePt := DeviceToPage(X, Y);
     if (Button = mbLeft) and CurrentPage.FormEventLButtonUp(Shift, PagePt.X, PagePt.Y) then
@@ -1062,6 +1066,8 @@ begin
       end;
       Exit;
     end;
+    if (Button = mbRight) and CurrentPage.FormEventRButtonUp(Shift, PagePt.X, PagePt.Y) then
+      Exit;
   end;
 
   if FMousePressed then
@@ -1087,7 +1093,7 @@ begin
   inherited MouseMove(Shift, X, Y);
   NewCursor := Cursor;
   try
-    if PdfiumFormEvents and IsPageValid then
+    if AllowFormEvents and IsPageValid then
     begin
       PagePt := DeviceToPage(X, Y);
       if CurrentPage.FormEventMouseMove(Shift, PagePt.X, PagePt.Y) then
@@ -1533,28 +1539,28 @@ end;
 
 procedure TPdfControl.WMKeyDown(var Message: TWMKeyDown);
 begin
-  if PdfiumFormEvents and IsPageValid and CurrentPage.FormEventKeyDown(Message.CharCode, Message.KeyData) then
+  if AllowFormEvents and IsPageValid and CurrentPage.FormEventKeyDown(Message.CharCode, Message.KeyData) then
     Exit;
   inherited;
 end;
 
 procedure TPdfControl.WMKeyUp(var Message: TWMKeyUp);
 begin
-  if PdfiumFormEvents and IsPageValid and CurrentPage.FormEventKeyUp(Message.CharCode, Message.KeyData) then
+  if AllowFormEvents and IsPageValid and CurrentPage.FormEventKeyUp(Message.CharCode, Message.KeyData) then
     Exit;
   inherited;
 end;
 
 procedure TPdfControl.WMChar(var Message: TWMChar);
 begin
-  if PdfiumFormEvents and IsPageValid and CurrentPage.FormEventKeyPress(Message.CharCode, Message.KeyData) then
+  if AllowFormEvents and IsPageValid and CurrentPage.FormEventKeyPress(Message.CharCode, Message.KeyData) then
     Exit;
   inherited;
 end;
 
 procedure TPdfControl.WMKillFocus(var Message: TWMKillFocus);
 begin
-  if PdfiumFormEvents and IsPageValid then
+  if AllowFormEvents and IsPageValid then
     CurrentPage.FormEventKillFocus;
   inherited;
 end;
@@ -2038,12 +2044,11 @@ procedure TPdfControl.FormInvalidate(Document: TPdfDocument; Page: TPdfPage;
 var
   R: TRect;
 begin
+  FRenderedPageIndex := -1; // content has changed => render into the background bitmap
   if HandleAllocated then
   begin
     R := InternPageToDevice(Page, PageRect);
-    InvalidatePage;
-    //FillRect(Canvas.Handle, R, GetStockObject(BLACK_BRUSH));
-    //InvalidatePageRect(Handle, R, True);
+    InvalidateRect(Handle, @R, True);
   end;
 end;
 
