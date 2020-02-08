@@ -72,7 +72,7 @@ type
   );
 
   TPdfDocumentLoadOption = (
-    dloNormal,   // load the whole file into memory
+    dloMemory,   // load the whole file into memory
     dloMMF,      // load the file by using a memory mapped file (file stays open)
     dloOnDemand  // load the file using the custom load function (file stays open)
   );
@@ -376,6 +376,11 @@ begin
   Result := ThreadPdfUnsupportedFeatureHandler;
   ThreadPdfUnsupportedFeatureHandler := Handler;
 end;
+
+{$IF not declared(GetFileSizeEx)}
+function GetFileSizeEx(hFile: THandle; var lpFileSize: Int64): Boolean; stdcall;
+  external kernel32 name 'GetFileSizeEx';
+{$IFEND}
 
 function GetUnsupportedFeatureName(nType: Integer): string;
 begin
@@ -806,37 +811,50 @@ end;
 
 procedure TPdfDocument.LoadFromFile(const AFileName: string; const APassword: AnsiString; ALoadOptions: TPdfDocumentLoadOption);
 var
-  Size, Offset: NativeInt;
+  Size: Int64;
+  Offset: NativeInt;
   NumRead: DWORD;
-  SizeHigh: DWORD;
+  LastError: DWORD;
 begin
   Close;
+  // We don't use FPDF_LoadDocument because it is limited to ANSI file names and dloOnDemand emulates it
 
   FFileHandle := CreateFile(PChar(AFileName), GENERIC_READ, FILE_SHARE_READ, nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
   if FFileHandle = INVALID_HANDLE_VALUE then
     RaiseLastOSError;
   try
-    Size := GetFileSize(FFileHandle, @SizeHigh);
-    if SizeHigh <> 0 then
+    if not GetFileSizeEx(FFileHandle, Size) then
+      RaiseLastOSError;
+    if Size > High(Integer) then // PDFium can only handle PDFS us to 2 GB (FX_FILESIZE in core/fxcrt/fx_system.h)
       raise EPdfException.CreateResFmt(@RsFileTooLarge, [ExtractFileName(AFileName)]);
 
     case ALoadOptions of
-      dloNormal:
+      dloMemory:
         begin
           if Size > 0 then
           begin
-            GetMem(FBuffer, Size);
-            Offset := 0;
-            while Offset < Size do
-            begin
-              if ((Size - Offset) and not $FFFFFFFF) <> 0 then
-                NumRead := $40000000
-              else
-                NumRead := Size - Offset;
+            try
+              GetMem(FBuffer, Size);
+              Offset := 0;
+              while Offset < Size do
+              begin
+                if ((Size - Offset) and not $FFFFFFFF) <> 0 then
+                  NumRead := $40000000
+                else
+                  NumRead := Size - Offset;
 
-              if not ReadFile(FFileHandle, FBuffer[Offset], NumRead, NumRead, nil) then
-                RaiseLastOSError;
-              Inc(Offset, NumRead);
+                if not ReadFile(FFileHandle, FBuffer[Offset], NumRead, NumRead, nil) then
+                begin
+                  LastError := GetLastError;
+                  FreeMem(FBuffer);
+                  FBuffer := nil;
+                  RaiseLastOSError(LastError);
+                end;
+                Inc(Offset, NumRead);
+              end;
+            finally
+              CloseHandle(FFileHandle);
+              FFileHandle := INVALID_HANDLE_VALUE;
             end;
 
             InternLoadFromMem(FBuffer, Size, APassword);
@@ -972,10 +990,18 @@ begin
 end;
 
 procedure TPdfDocument.InternLoadFromMem(Buffer: PByte; Size: Integer; const APassword: AnsiString);
+var
+  OldCurDoc: TPdfDocument;
 begin
   if Size > 0 then
   begin
-    FDocument := FPDF_LoadMemDocument(Buffer, Size, PAnsiChar(Pointer(APassword)));
+    OldCurDoc := UnsupportedFeatureCurrentDocument;
+    try
+      UnsupportedFeatureCurrentDocument := Self;
+      FDocument := FPDF_LoadMemDocument(Buffer, Size, PAnsiChar(Pointer(APassword)));
+    finally
+      UnsupportedFeatureCurrentDocument := OldCurDoc;
+    end;
     DocumentLoaded;
   end;
 end;
@@ -1142,6 +1168,8 @@ procedure TPdfDocument.SaveToStream(Stream: TStream; Option: TPdfDocumentSaveOpt
 var
   FileWriteInfo: TFPDFFileWriteEx;
 begin
+  CheckActive;
+
   FileWriteInfo.Inner.version := 1;
   FileWriteInfo.Inner.WriteBlock := @WriteBlockToStream;
   FileWriteInfo.Stream := Stream;
@@ -1160,6 +1188,8 @@ var
   Stream: TBytesStream;
   Size: NativeInt;
 begin
+  CheckActive;
+
   Stream := TBytesStream.Create(nil);
   try
     SaveToStream(Stream, Option, FileVersion);
@@ -1237,6 +1267,7 @@ end;
 
 function TPdfDocument.GetDocPermissions: Integer;
 begin
+  CheckActive;
   Result := Integer(FPDF_GetDocPermissions(FDocument));
 end;
 

@@ -145,8 +145,8 @@ type
     procedure LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord; AParam: Pointer; const APassword: AnsiString = '');
     procedure LoadFromActiveStream(Stream: TStream; const APassword: AnsiString = ''); // Stream must not be released until the document is closed
     procedure LoadFromActiveBuffer(Buffer: Pointer; Size: Integer; const APassword: AnsiString = ''); // Buffer must not be released until the document is closed
-    procedure LoadFromBytes(const ABytes: TBytes; const APassword: AnsiString = ''); overload;
-    procedure LoadFromBytes(const ABytes: TBytes; AIndex: Integer; ACount: Integer; const APassword: AnsiString = ''); overload;
+    procedure LoadFromBytes(const ABytes: TBytes; const APassword: AnsiString = ''); overload; // The content of the Bytes array must not be changed until the document is closed
+    procedure LoadFromBytes(const ABytes: TBytes; AIndex: Integer; ACount: Integer; const APassword: AnsiString = ''); overload; // The content of the Bytes array must not be changed until the document is closed
     procedure LoadFromStream(AStream: TStream; const APassword: AnsiString = '');
     procedure LoadFromFile(const AFileName: string; const APassword: AnsiString = ''; ALoadOptions: TPdfDocumentLoadOption = dloMMF);
     procedure Close;
