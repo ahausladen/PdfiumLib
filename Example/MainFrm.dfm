@@ -88,6 +88,18 @@ object frmMain: TfrmMain
     TabOrder = 7
     OnClick = btnPrintClick
   end
+  object ListViewAttachments: TListView
+    Left = 0
+    Top = 600
+    Width = 655
+    Height = 47
+    Align = alBottom
+    Columns = <>
+    TabOrder = 8
+    ViewStyle = vsList
+    Visible = False
+    OnDblClick = ListViewAttachmentsDblClick
+  end
   object PrintDialog1: TPrintDialog
     Left = 96
     Top = 32
@@ -97,6 +109,12 @@ object frmMain: TfrmMain
     Filter = 'PDF file (*.pdf)|*.pdf'
     Title = 'Open PDF file'
     Left = 32
+    Top = 32
+  end
+  object SaveDialog1: TSaveDialog
+    Options = [ofOverwritePrompt, ofHideReadOnly, ofPathMustExist, ofCreatePrompt, ofEnableSizing]
+    Title = 'Save attachment'
+    Left = 160
     Top = 32
   end
 end

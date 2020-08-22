@@ -144,11 +144,11 @@ type
 
     procedure LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord; AParam: Pointer; const APassword: AnsiString = '');
     procedure LoadFromActiveStream(Stream: TStream; const APassword: AnsiString = ''); // Stream must not be released until the document is closed
-    procedure LoadFromActiveBuffer(Buffer: Pointer; Size: Integer; const APassword: AnsiString = ''); // Buffer must not be released until the document is closed
+    procedure LoadFromActiveBuffer(Buffer: Pointer; Size: Int64; const APassword: AnsiString = ''); // Buffer must not be released until the document is closed
     procedure LoadFromBytes(const ABytes: TBytes; const APassword: AnsiString = ''); overload; // The content of the Bytes array must not be changed until the document is closed
     procedure LoadFromBytes(const ABytes: TBytes; AIndex: Integer; ACount: Integer; const APassword: AnsiString = ''); overload; // The content of the Bytes array must not be changed until the document is closed
     procedure LoadFromStream(AStream: TStream; const APassword: AnsiString = '');
-    procedure LoadFromFile(const AFileName: string; const APassword: AnsiString = ''; ALoadOptions: TPdfDocumentLoadOption = dloMMF);
+    procedure LoadFromFile(const AFileName: string; const APassword: AnsiString = ''; ALoadOption: TPdfDocumentLoadOption = dloMMF);
     procedure Close;
 
     function DeviceToPage(DeviceX, DeviceY: Integer): TPdfPoint; overload;
@@ -247,7 +247,7 @@ type
 implementation
 
 uses
-  Math, Clipbrd, Character, PdfiumLib;
+  Math, Clipbrd, Character;
 
 const
   cScrollTimerId = 1;
@@ -788,7 +788,7 @@ begin
   end;
 end;
 
-procedure TPdfControl.LoadFromActiveBuffer(Buffer: Pointer; Size: Integer; const APassword: AnsiString);
+procedure TPdfControl.LoadFromActiveBuffer(Buffer: Pointer; Size: Int64; const APassword: AnsiString);
 begin
   try
     FDocument.LoadFromActiveBuffer(Buffer, Size, APassword);
@@ -826,10 +826,10 @@ begin
 end;
 
 procedure TPdfControl.LoadFromFile(const AFileName: string; const APassword: AnsiString;
-  ALoadOptions: TPdfDocumentLoadOption);
+  ALoadOption: TPdfDocumentLoadOption);
 begin
   try
-    FDocument.LoadFromFile(AFileName, APassword, ALoadOptions);
+    FDocument.LoadFromFile(AFileName, APassword, ALoadOption);
   finally
     DocumentLoaded;
   end;
@@ -1918,10 +1918,20 @@ end;
 
 function TPdfControl.DoMouseWheel(Shift: TShiftState; WheelDelta: Integer;
   MousePos: TPoint): Boolean;
+var
+  PagePt: TPdfPoint;
 begin
   Result := inherited DoMouseWheel(Shift, WheelDelta, MousePos);
+
   if not Result then
   begin
+    if IsPageValid and AllowFormEvents then
+    begin
+      PagePt := DeviceToPage(MousePos.X, MousePos.Y);
+      if CurrentPage.FormEventMouseWheel(Shift, WheelDelta, PagePt.X, PagePt.Y) then
+        Exit;
+    end;
+
     if ssCtrl in Shift then
     begin
       if ScaleMode = smZoom then

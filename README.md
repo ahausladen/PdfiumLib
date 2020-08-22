@@ -5,7 +5,7 @@ Example of a PDF VCL Control using PDFium
 pdfium.dll (x86/x64) from the [pdfium-binaries](https://github.com/bblanchon/pdfium-binaries)
 
 ## Required pdfium.dll version
-chromium/4047
+chromium/4194
 
 ## Features
 - Multiple PDF load functions:
@@ -15,6 +15,8 @@ chromium/4047
   - Active buffer (buffer must not be released before the PDF document is closed)
   - Active TSteam (stream must not be released before the PDF document is closed)
   - Callback
+- File Attachments
+- Forms
 - PDF rotation (normal, 90° counter clockwise, 180°, 90° clockwise)
 - Highlighted text (e.g. for search results)
 - WebLink click support

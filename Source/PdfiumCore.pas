@@ -17,6 +17,7 @@ type
 
   TPdfDocument = class;
   TPdfPage = class;
+  TPdfAttachmentList = class;
 
   TPdfPoint = record
     X, Y: Double;
@@ -93,7 +94,13 @@ type
     pmPostScript2 = 2,
     pmPostScript3 = 3,
     pmPostScriptPassThrough2 = 4,
-    pmPostScriptPassThrough3 = 5
+    pmPostScriptPassThrough3 = 5,
+    pmEMFImageMasks = 6
+  );
+
+  TPdfFileIdType = (
+    pfiPermanent = 0,
+    pfiChanging = 1
   );
 
   TPdfBitmapFormat = (
@@ -112,6 +119,19 @@ type
     fftListBox,
     fftTextField,
     fftSignature
+  );
+
+  TPdfObjectType = (
+    otUnknown = FPDF_OBJECT_UNKNOWN,
+    otBoolean = FPDF_OBJECT_BOOLEAN,
+    otNumber = FPDF_OBJECT_NUMBER,
+    otString = FPDF_OBJECT_STRING,
+    otName = FPDF_OBJECT_NAME,
+    otArray = FPDF_OBJECT_ARRAY,
+    otDictinary = FPDF_OBJECT_DICTIONARY,
+    otStream = FPDF_OBJECT_STREAM,
+    otNullObj = FPDF_OBJECT_NULLOBJ,
+    otReference = FPDF_OBJECT_REFERENCE
   );
 
   _TPdfBitmapHideCtor = class(TObject)
@@ -191,6 +211,7 @@ type
     procedure ApplyChanges;
 
     function FormEventFocus(const Shift: TShiftState; PageX, PageY: Double): Boolean;
+    function FormEventMouseWheel(const Shift: TShiftState; WheelDelta: Integer; PageX, PageY: Double): Boolean;
     function FormEventMouseMove(const Shift: TShiftState; PageX, PageY: Double): Boolean;
     function FormEventLButtonDown(const Shift: TShiftState; PageX, PageY: Double): Boolean;
     function FormEventLButtonUp(const Shift: TShiftState; PageX, PageY: Double): Boolean;
@@ -199,7 +220,15 @@ type
     function FormEventKeyDown(KeyCode: Word; KeyData: LPARAM): Boolean;
     function FormEventKeyUp(KeyCode: Word; KeyData: LPARAM): Boolean;
     function FormEventKeyPress(Key: Word; KeyData: LPARAM): Boolean;
-    procedure FormEventKillFocus;
+    function FormEventKillFocus: Boolean;
+    function FormGetFocusedText: string;
+    function FormGetSelectedText: string;
+    function FormReplaceSelection(const ANewText: string): Boolean;
+    function FormSelectAllText: Boolean;
+    function FormCanUndo: Boolean;
+    function FormCanRedo: Boolean;
+    function FormUndo: Boolean;
+    function FormRedo: Boolean;
 
     function BeginFind(const SearchString: string; MatchCase, MatchWholeWord: Boolean; FromEnd: Boolean): Boolean;
     function FindNext(var CharIndex, Count: Integer): Boolean;
@@ -236,6 +265,64 @@ type
   TPdfFormOutputSelectedRectEvent = procedure(Document: TPdfDocument; Page: TPdfPage; const PageRect: TPdfRect) of object;
   TPdfFormGetCurrentPage = procedure(Document: TPdfDocument; var CurrentPage: TPdfPage) of object;
 
+  TPdfAttachment = record
+  private
+    FDocument: TPdfDocument;
+    FHandle: FPDF_ATTACHMENT;
+    procedure CheckValid;
+
+    function GetName: string;
+    function GetKeyValue(const Key: string): string;
+    procedure SetKeyValue(const Key, Value: string);
+    function GetContentSize: Integer;
+  public
+    // SetContent/LoadFromXxx clears the Values[] dictionary.
+    procedure SetContent(const ABytes: TBytes); overload;
+    procedure SetContent(const ABytes: TBytes; Index: NativeInt; Count: Integer); overload;
+    procedure SetContent(ABytes: PByte; Count: Integer); overload;
+    procedure SetContent(const Value: RawByteString); overload;
+    procedure SetContent(const Value: string; Encoding: TEncoding = nil); overload; // Default-encoding is UTF-8
+    procedure LoadFromStream(Stream: TStream);
+    procedure LoadFromFile(const FileName: string);
+
+    procedure GetContent(var ABytes: TBytes); overload;
+    procedure GetContent(Buffer: PByte); overload; // use ContentSize to allocate enough memory
+    procedure GetContent(var Value: RawByteString); overload;
+    procedure GetContent(var Value: string; Encoding: TEncoding = nil); overload;
+    function GetContentAsBytes: TBytes;
+    function GetContentAsRawByteString: RawByteString;
+    function GetContentAsString(Encoding: TEncoding = nil): string; // Default-encoding is UTF-8
+
+    procedure SaveToStream(Stream: TStream);
+    procedure SaveToFile(const FileName: string);
+
+    function HasContent: Boolean;
+
+    function HasKey(const Key: string): Boolean;
+    function GetValueType(const Key: string): TPdfObjectType;
+
+    property Name: string read GetName;
+    property Values[const Key: string]: string read GetKeyValue write SetKeyValue;
+    property ContentSize: Integer read GetContentSize;
+
+    property Handle: FPDF_ATTACHMENT read FHandle;
+  end;
+
+  TPdfAttachmentList = class(TObject)
+  private
+    FDocument: TPdfDocument;
+    function GetCount: Integer;
+    function GetItem(Index: Integer): TPdfAttachment;
+  public
+    constructor Create(ADocument: TPdfDocument);
+
+    function Add(const Name: string): TPdfAttachment;
+    procedure Delete(Index: Integer);
+
+    property Count: Integer read GetCount;
+    property Items[Index: Integer]: TPdfAttachment read GetItem; default;
+  end;
+
   TPdfDocument = class(TObject)
   private type
     PCustomLoadDataRec = ^TCustomLoadDataRec;
@@ -247,6 +334,7 @@ type
   private
     FDocument: FPDF_DOCUMENT;
     FPages: TObjectList;
+    FAttachments: TPdfAttachmentList;
     FFileName: string;
     FFileHandle: THandle;
     FFileMapping: THandle;
@@ -266,7 +354,7 @@ type
     FOnFormOutputSelectedRect: TPdfFormOutputSelectedRectEvent;
     FOnFormGetCurrentPage: TPdfFormGetCurrentPage;
 
-    procedure InternLoadFromMem(Buffer: PByte; Size: Integer; const APassword: AnsiString);
+    procedure InternLoadFromMem(Buffer: PByte; Size: NativeInt; const APassword: AnsiString);
     procedure InternLoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord; AParam: Pointer; const APassword: AnsiString);
     function GetPage(Index: Integer): TPdfPage;
     function GetPageCount: Integer;
@@ -292,11 +380,11 @@ type
 
     procedure LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord; AParam: Pointer; const APassword: AnsiString = '');
     procedure LoadFromActiveStream(Stream: TStream; const APassword: AnsiString = ''); // Stream must not be released until the document is closed
-    procedure LoadFromActiveBuffer(Buffer: Pointer; Size: Integer; const APassword: AnsiString = ''); // Buffer must not be released until the document is closed
+    procedure LoadFromActiveBuffer(Buffer: Pointer; Size: NativeInt; const APassword: AnsiString = ''); // Buffer must not be released until the document is closed
     procedure LoadFromBytes(const ABytes: TBytes; const APassword: AnsiString = ''); overload;
-    procedure LoadFromBytes(const ABytes: TBytes; AIndex: Integer; ACount: Integer; const APassword: AnsiString = ''); overload;
+    procedure LoadFromBytes(const ABytes: TBytes; AIndex: NativeInt; ACount: NativeInt; const APassword: AnsiString = ''); overload;
     procedure LoadFromStream(AStream: TStream; const APassword: AnsiString = '');
-    procedure LoadFromFile(const AFileName: string; const APassword: AnsiString = ''; ALoadOptions: TPdfDocumentLoadOption = dloMMF);
+    procedure LoadFromFile(const AFileName: string; const APassword: AnsiString = ''; ALoadOption: TPdfDocumentLoadOption = dloMMF);
     procedure Close;
 
     procedure SaveToFile(const AFileName: string; Option: TPdfDocumentSaveOption = dsoRemoveSecurity; FileVersion: Integer = -1);
@@ -310,13 +398,18 @@ type
     function ApplyViewerPreferences(Source: TPdfDocument): Boolean;
     function IsPageLoaded(PageIndex: Integer): Boolean;
 
+    function GetFileIdentifier(IdType: TPdfFileIdType): string;
     function GetMetaText(const TagName: string): string;
+
     class function SetPrintMode(PrintMode: TPdfPrintMode): Boolean; static;
+    class procedure SetPrintTextWithGDI(UseGdi: Boolean); static;
 
     property FileName: string read FFileName;
     property PageCount: Integer read GetPageCount;
     property Pages[Index: Integer]: TPdfPage read GetPage;
     property PageSizes[Index: Integer]: TPdfPoint read GetPageSize;
+
+    property Attachments: TPdfAttachmentList read FAttachments;
 
     property Active: Boolean read GetActive;
     property PrintScaling: Boolean read GetPrintScaling;
@@ -355,9 +448,14 @@ implementation
 
 resourcestring
   RsUnsupportedFeature = 'Function %s not supported';
-  RsArgumentsOutOfRange = 'Functions argument "%s" out of range';
+  RsArgumentsOutOfRange = 'Function argument "%s" (%d) out of range';
   RsDocumentNotActive = 'PDF document is not open';
   RsFileTooLarge = 'PDF file "%s" is too large';
+
+  RsPdfCannotDeleteAttachmnent = 'Cannot delete the PDF attachment %d';
+  RsPdfCannotAddAttachmnent = 'Cannot add the PDF attachment "%s"';
+  RsPdfCannotSetAttachmentContent = 'Cannot set the PDF attachment content';
+  RsPdfAttachmentContentNotSet = 'Content must be set before accessing string PDF attachmemt values';
 
   RsPdfErrorSuccess  = 'No error';
   RsPdfErrorUnknown  = 'Unknown error';
@@ -370,6 +468,25 @@ resourcestring
 threadvar
   ThreadPdfUnsupportedFeatureHandler: TPdfUnsupportedFeatureHandler;
   UnsupportedFeatureCurrentDocument: TPdfDocument;
+
+type
+  { We don't want to use a TBytes temporary array if we can convert directly into the destination
+    buffer. }
+  TEncodingAccess = class(TEncoding)
+  public
+    function GetMemCharCount(Bytes: PByte; ByteCount: Integer): Integer;
+    function GetMemChars(Bytes: PByte; ByteCount: Integer; Chars: PChar; CharCount: Integer): Integer;
+  end;
+
+function TEncodingAccess.GetMemCharCount(Bytes: PByte; ByteCount: Integer): Integer;
+begin
+  Result := GetCharCount(Bytes, ByteCount);
+end;
+
+function TEncodingAccess.GetMemChars(Bytes: PByte; ByteCount: Integer; Chars: PChar; CharCount: Integer): Integer;
+begin
+  Result := GetChars(Bytes, ByteCount, Chars, CharCount);
+end;
 
 function SetThreadPdfUnsupportedFeatureHandler(const Handler: TPdfUnsupportedFeatureHandler): TPdfUnsupportedFeatureHandler;
 begin
@@ -680,6 +797,11 @@ procedure FFI_SetTextFieldFocus(pThis: PFPDF_FORMFILLINFO; value: FPDF_WIDESTRIN
 begin
 end;
 
+procedure FFI_FocusChange(param: PFPDF_FORMFILLINFO; annot: FPDF_ANNOTATION; page_index: Integer); cdecl;
+begin
+end;
+
+
 
 { TPdfRect }
 
@@ -725,6 +847,7 @@ constructor TPdfDocument.Create;
 begin
   inherited Create;
   FPages := TObjectList.Create;
+  FAttachments := TPdfAttachmentList.Create(Self);
   FFileHandle := INVALID_HANDLE_VALUE;
   FFormFieldHighlightColor := $FFE4DD;
   FFormFieldHighlightAlpha := 100;
@@ -736,6 +859,7 @@ end;
 destructor TPdfDocument.Destroy;
 begin
   Close;
+  FAttachments.Free;
   FPages.Free;
   inherited Destroy;
 end;
@@ -809,7 +933,7 @@ begin
     Result := Size = 0;
 end;
 
-procedure TPdfDocument.LoadFromFile(const AFileName: string; const APassword: AnsiString; ALoadOptions: TPdfDocumentLoadOption);
+procedure TPdfDocument.LoadFromFile(const AFileName: string; const APassword: AnsiString; ALoadOption: TPdfDocumentLoadOption);
 var
   Size: Int64;
   Offset: NativeInt;
@@ -825,10 +949,18 @@ begin
   try
     if not GetFileSizeEx(FFileHandle, Size) then
       RaiseLastOSError;
-    if Size > High(Integer) then // PDFium can only handle PDFS us to 2 GB (FX_FILESIZE in core/fxcrt/fx_system.h)
+    if Size > High(Integer) then // PDFium can only handle PDFs up to 2 GB (FX_FILESIZE in core/fxcrt/fx_system.h)
+    begin
+      {$IFDEF CPUX64}
+      // FPDF_LoadCustomDocument wasn't updated to load larger files, so we fall back to MMF.
+      if ALoadOption = dloOnDemand then
+        ALoadOption := dloMMF;
+      {$ELSE}
       raise EPdfException.CreateResFmt(@RsFileTooLarge, [ExtractFileName(AFileName)]);
+      {$ENDIF CPUX64}
+    end;
 
-    case ALoadOptions of
+    case ALoadOption of
       dloMemory:
         begin
           if Size > 0 then
@@ -863,7 +995,7 @@ begin
 
       dloMMF:
         begin
-          FFileMapping := CreateFileMapping(FFileHandle, nil, PAGE_READONLY, 0, Size, nil);
+          FFileMapping := CreateFileMapping(FFileHandle, nil, PAGE_READONLY, 0, 0, nil);
           if FFileMapping = 0 then
             RaiseLastOSError;
           FBuffer := MapViewOfFile(FFileMapping, FILE_MAP_READ, 0, 0, Size);
@@ -902,7 +1034,7 @@ begin
   end;
 end;
 
-procedure TPdfDocument.LoadFromActiveBuffer(Buffer: Pointer; Size: Integer; const APassword: AnsiString);
+procedure TPdfDocument.LoadFromActiveBuffer(Buffer: Pointer; Size: NativeInt; const APassword: AnsiString);
 begin
   Close;
   InternLoadFromMem(Buffer, Size, APassword);
@@ -913,18 +1045,18 @@ begin
   LoadFromBytes(ABytes, 0, Length(ABytes), APassword);
 end;
 
-procedure TPdfDocument.LoadFromBytes(const ABytes: TBytes; AIndex, ACount: Integer;
+procedure TPdfDocument.LoadFromBytes(const ABytes: TBytes; AIndex, ACount: NativeInt;
   const APassword: AnsiString);
 var
-  Len: Integer;
+  Len: NativeInt;
 begin
   Close;
 
   Len := Length(ABytes);
   if AIndex >= Len then
-    raise EPdfArgumentOutOfRange.CreateResFmt(@RsArgumentsOutOfRange, ['Index']);
+    raise EPdfArgumentOutOfRange.CreateResFmt(@RsArgumentsOutOfRange, ['Index', AIndex]);
   if AIndex + ACount > Len then
-    raise EPdfArgumentOutOfRange.CreateResFmt(@RsArgumentsOutOfRange, ['Count']);
+    raise EPdfArgumentOutOfRange.CreateResFmt(@RsArgumentsOutOfRange, ['Count', ACount]);
 
   FBytes := ABytes; // keep alive after return
   InternLoadFromMem(@ABytes[AIndex], ACount, APassword);
@@ -989,7 +1121,7 @@ begin
   end;
 end;
 
-procedure TPdfDocument.InternLoadFromMem(Buffer: PByte; Size: Integer; const APassword: AnsiString);
+procedure TPdfDocument.InternLoadFromMem(Buffer: PByte; Size: NativeInt; const APassword: AnsiString);
 var
   OldCurDoc: TPdfDocument;
 begin
@@ -998,7 +1130,7 @@ begin
     OldCurDoc := UnsupportedFeatureCurrentDocument;
     try
       UnsupportedFeatureCurrentDocument := Self;
-      FDocument := FPDF_LoadMemDocument(Buffer, Size, PAnsiChar(Pointer(APassword)));
+      FDocument := FPDF_LoadMemDocument64(Buffer, Size, PAnsiChar(Pointer(APassword)));
     finally
       UnsupportedFeatureCurrentDocument := OldCurDoc;
     end;
@@ -1028,6 +1160,7 @@ begin
   FFormFillHandler.FormFillInfo.FFI_GetRotation := FFI_GetRotation;
   FFormFillHandler.FormFillInfo.FFI_SetCursor := FFI_SetCursor;
   FFormFillHandler.FormFillInfo.FFI_SetTextFieldFocus := FFI_SetTextFieldFocus;
+  FFormFillHandler.FormFillInfo.FFI_OnFocusChange := FFI_FocusChange;
 
   if PDF_USE_XFA then
   begin
@@ -1242,6 +1375,23 @@ begin
   Result := FPDF_CopyViewerPreferences(FDocument, Source.FDocument) <> 0;
 end;
 
+function TPdfDocument.GetFileIdentifier(IdType: TPdfFileIdType): string;
+var
+  Len: Integer;
+  A: AnsiString;
+begin
+  CheckActive;
+  Len := FPDF_GetFileIdentifier(FDocument, FPDF_FILEIDTYPE(IdType), nil, 0) div SizeOf(AnsiChar) - 1;
+  if Len > 0 then
+  begin
+    SetLength(A, Len);
+    FPDF_GetFileIdentifier(FDocument, FPDF_FILEIDTYPE(IdType), PAnsiChar(A), (Len + 1) * SizeOf(AnsiChar));
+    Result := string(A);
+  end
+  else
+    Result := '';
+end;
+
 function TPdfDocument.GetMetaText(const TagName: string): string;
 var
   Len: Integer;
@@ -1249,7 +1399,7 @@ var
 begin
   CheckActive;
   A := AnsiString(TagName);
-  Len := (FPDF_GetMetaText(FDocument, PAnsiChar(A), nil, 0) div SizeOf(WideChar)) - 1;
+  Len := FPDF_GetMetaText(FDocument, PAnsiChar(A), nil, 0) div SizeOf(WideChar) - 1;
   if Len > 0 then
   begin
     SetLength(Result, Len);
@@ -1304,6 +1454,12 @@ class function TPdfDocument.SetPrintMode(PrintMode: TPdfPrintMode): Boolean;
 begin
   InitLib;
   Result := FPDF_SetPrintMode(Ord(PrintMode)) <> 0;
+end;
+
+class procedure TPdfDocument.SetPrintTextWithGDI(UseGdi: Boolean);
+begin
+  InitLib;
+  FPDF_SetPrintTextWithGDI(Ord(UseGdi));
 end;
 
 procedure TPdfDocument.SetFormFieldHighlightAlpha(Value: Integer);
@@ -1841,6 +1997,27 @@ begin
     Result := False;
 end;
 
+function TPdfPage.FormEventMouseWheel(const Shift: TShiftState; WheelDelta: Integer; PageX, PageY: Double): Boolean;
+var
+  Pt: TFSPointF;
+  WheelX, WheelY: Integer;
+begin
+  if IsValidForm then
+  begin
+    Pt.X := PageX;
+    Pt.Y := PageY;
+    WheelX := 0;
+    WheelY := 0;
+    if ssShift in Shift then
+      WheelX := WheelDelta
+    else
+      WheelY := WheelDelta;
+    Result := FORM_OnMouseWheel(FDocument.FForm, FPage, GetMouseModifier(Shift), @Pt, WheelX, WheelY) <> 0;
+  end
+  else
+    Result := False;
+end;
+
 function TPdfPage.FormEventMouseMove(const Shift: TShiftState; PageX, PageY: Double): Boolean;
 begin
   if IsValidForm then
@@ -1905,10 +2082,101 @@ begin
     Result := False;
 end;
 
-procedure TPdfPage.FormEventKillFocus;
+function TPdfPage.FormEventKillFocus: Boolean;
 begin
   if IsValidForm then
-    FORM_ForceToKillFocus(FDocument.FForm);
+    Result := FORM_ForceToKillFocus(FDocument.FForm) <> 0
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormGetFocusedText: string;
+var
+  ByteLen: LongWord;
+begin
+  if IsValidForm then
+  begin
+    ByteLen := FORM_GetFocusedText(FDocument.FForm, FPage, nil, 0); // UTF 16 including #0 terminator in byte size
+    if ByteLen <= 2 then // WideChar(#0) => empty string
+      Result := ''
+    else
+    begin
+      SetLength(Result, ByteLen div SizeOf(WideChar) - 1);
+      FORM_GetFocusedText(FDocument.FForm, FPage, PWideChar(Result), ByteLen);
+    end;
+  end
+  else
+    Result := '';
+end;
+
+function TPdfPage.FormGetSelectedText: string;
+var
+  ByteLen: LongWord;
+begin
+  if IsValidForm then
+  begin
+    ByteLen := FORM_GetSelectedText(FDocument.FForm, FPage, nil, 0); // UTF 16 including #0 terminator in byte size
+    if ByteLen <= 2 then // WideChar(#0) => empty string
+      Result := ''
+    else
+    begin
+      SetLength(Result, ByteLen div SizeOf(WideChar) - 1);
+      FORM_GetSelectedText(FDocument.FForm, FPage, PWideChar(Result), ByteLen);
+    end;
+  end
+  else
+    Result := '';
+end;
+
+function TPdfPage.FormReplaceSelection(const ANewText: string): Boolean;
+begin
+  if IsValidForm then
+  begin
+    FORM_ReplaceSelection(FDocument.FForm, FPage, PWideChar(ANewText));
+    Result := True;
+  end
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormSelectAllText: Boolean;
+begin
+  if IsValidForm then
+    Result := FORM_SelectAllText(FDocument.FForm, FPage) <> 0
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormCanUndo: Boolean;
+begin
+  if IsValidForm then
+    Result := FORM_CanUndo(FDocument.FForm, FPage) <> 0
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormCanRedo: Boolean;
+begin
+  if IsValidForm then
+    Result := FORM_CanRedo(FDocument.FForm, FPage) <> 0
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormUndo: Boolean;
+begin
+  if IsValidForm then
+    Result := FORM_Undo(FDocument.FForm, FPage) <> 0
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormRedo: Boolean;
+begin
+  if IsValidForm then
+    Result := FORM_Redo(FDocument.FForm, FPage) <> 0
+  else
+    Result := False;
 end;
 
 function TPdfPage.HasFormFieldAtPoint(X, Y: Double): TPdfFormFieldType;
@@ -2015,6 +2283,364 @@ class function TPdfPoint.Empty: TPdfPoint;
 begin
   Result.X := 0;
   Result.Y := 0;
+end;
+
+{ TPdfAttachmentList }
+
+constructor TPdfAttachmentList.Create(ADocument: TPdfDocument);
+begin
+  inherited Create;
+  FDocument := ADocument;
+end;
+
+function TPdfAttachmentList.GetCount: Integer;
+begin
+  FDocument.CheckActive;
+  Result := FPDFDoc_GetAttachmentCount(FDocument.Handle);
+end;
+
+function TPdfAttachmentList.GetItem(Index: Integer): TPdfAttachment;
+var
+  Attachment: FPDF_ATTACHMENT;
+begin
+  FDocument.CheckActive;
+  Attachment := FPDFDoc_GetAttachment(FDocument.Handle, Index);
+  if Attachment = nil then
+    raise EPdfArgumentOutOfRange.CreateResFmt(@RsArgumentsOutOfRange, ['Index']);
+  Result.FDocument := FDocument;
+  Result.FHandle := Attachment;
+end;
+
+procedure TPdfAttachmentList.Delete(Index: Integer);
+begin
+  FDocument.CheckActive;
+  if FPDFDoc_DeleteAttachment(FDocument.Handle, Index) = 0 then
+    raise EPdfException.CreateResFmt(@RsPdfCannotDeleteAttachmnent, [Index]);
+end;
+
+function TPdfAttachmentList.Add(const Name: string): TPdfAttachment;
+begin
+  FDocument.CheckActive;
+  Result.FDocument := FDocument;
+  Result.FHandle := FPDFDoc_AddAttachment(FDocument.Handle, PWideChar(Name));
+  if Result.FHandle = nil then
+    raise EPdfException.CreateResFmt(@RsPdfCannotAddAttachmnent, [Name]);
+end;
+
+{ TPdfAttachment }
+
+function TPdfAttachment.GetName: string;
+var
+  ByteLen: LongWord;
+begin
+  CheckValid;
+  ByteLen := FPDFAttachment_GetName(Handle, nil, 0); // UTF 16 including #0 terminator in byte size
+  if ByteLen <= 2 then
+    Result := ''
+  else
+  begin
+    SetLength(Result, ByteLen div SizeOf(WideChar) - 1);
+    FPDFAttachment_GetName(FHandle, PWideChar(Result), ByteLen);
+  end;
+end;
+
+procedure TPdfAttachment.CheckValid;
+begin
+  if FDocument <> nil then
+    FDocument.CheckActive;
+end;
+
+procedure TPdfAttachment.SetContent(ABytes: PByte; Count: Integer);
+begin
+  CheckValid;
+  if FPDFAttachment_SetFile(FHandle, FDocument.Handle, ABytes, Count) = 0 then
+    raise EPdfException.CreateResFmt(@RsPdfCannotSetAttachmentContent, [Name]);
+end;
+
+procedure TPdfAttachment.SetContent(const Value: RawByteString);
+begin
+  if Value = '' then
+    SetContent(nil, 0)
+  else
+    SetContent(PByte(PAnsiChar(Value)), Length(Value) * SizeOf(AnsiChar));
+end;
+
+
+procedure TPdfAttachment.SetContent(const Value: string; Encoding: TEncoding = nil);
+begin
+  CheckValid;
+  if Value = '' then
+    SetContent(nil, 0)
+  else if (Encoding = nil) or (Encoding = TEncoding.UTF8) then
+    SetContent(UTF8Encode(Value))
+  else
+    SetContent(Encoding.GetBytes(Value));
+end;
+
+procedure TPdfAttachment.SetContent(const ABytes: TBytes; Index: NativeInt; Count: Integer);
+var
+  Len: NativeInt;
+begin
+  CheckValid;
+
+  Len := Length(ABytes);
+  if Index >= Len then
+    raise EPdfArgumentOutOfRange.CreateResFmt(@RsArgumentsOutOfRange, ['Index', Index]);
+  if Index + Count > Len then
+    raise EPdfArgumentOutOfRange.CreateResFmt(@RsArgumentsOutOfRange, ['Count', Count]);
+
+  if Count = 0 then
+    SetContent(nil, 0)
+  else
+    SetContent(@ABytes[Index], Count);
+end;
+
+procedure TPdfAttachment.SetContent(const ABytes: TBytes);
+begin
+  SetContent(ABytes, 0, Length(ABytes));
+end;
+
+procedure TPdfAttachment.LoadFromStream(Stream: TStream);
+var
+  StreamPos, StreamSize: Int64;
+  Buf: PByte;
+  Count: Integer;
+begin
+  CheckValid;
+
+  StreamPos := Stream.Position;
+  StreamSize := Stream.Size;
+  Count := StreamSize - StreamPos;
+  if Count = 0 then
+    SetContent(nil, 0)
+  else
+  begin
+    if Stream is TCustomMemoryStream then // direct access to the memory
+    begin
+      SetContent(PByte(TCustomMemoryStream(Stream).Memory) + StreamPos, Count);
+      Stream.Position := StreamSize; // simulate the ReadBuffer call
+    end
+    else
+    begin
+      if Count = 0 then
+        SetContent(nil, 0)
+      else
+      begin
+        GetMem(Buf, Count);
+        try
+          Stream.ReadBuffer(Buf^, Count);
+          SetContent(Buf, Count);
+        finally
+          FreeMem(Buf);
+        end;
+      end;
+    end;
+  end;
+end;
+
+procedure TPdfAttachment.LoadFromFile(const FileName: string);
+var
+  Stream: TFileStream;
+begin
+  CheckValid;
+
+  Stream := TFileStream.Create(FileName, fmOpenRead or fmShareDenyWrite);
+  try
+    LoadFromStream(Stream);
+  finally
+    Stream.Free;
+  end;
+end;
+
+function TPdfAttachment.HasKey(const Key: string): Boolean;
+begin
+  CheckValid;
+  Result := FPDFAttachment_HasKey(FHandle, PAnsiChar(UTF8Encode(Key))) <> 0;
+end;
+
+function TPdfAttachment.GetValueType(const Key: string): TPdfObjectType;
+begin
+  CheckValid;
+  Result := TPdfObjectType(FPDFAttachment_GetValueType(FHandle, PAnsiChar(UTF8Encode(Key))));
+end;
+
+procedure TPdfAttachment.SetKeyValue(const Key, Value: string);
+begin
+  CheckValid;
+  if FPDFAttachment_SetStringValue(FHandle, PAnsiChar(UTF8Encode(Key)), PWideChar(Value)) = 0 then
+    raise EPdfException.CreateRes(@RsPdfAttachmentContentNotSet);
+end;
+
+function TPdfAttachment.GetKeyValue(const Key: string): string;
+var
+  ByteLen: LongWord;
+  Utf8Key: UTF8String;
+begin
+  CheckValid;
+  Utf8Key := UTF8Encode(Key);
+  ByteLen := FPDFAttachment_GetStringValue(FHandle, PAnsiChar(Utf8Key), nil, 0);
+  if ByteLen = 0 then
+    raise EPdfException.CreateRes(@RsPdfAttachmentContentNotSet);
+
+  if ByteLen <= 2 then
+    Result := ''
+  else
+  begin
+    SetLength(Result, (ByteLen div SizeOf(WideChar) - 1));
+    FPDFAttachment_GetStringValue(FHandle, PAnsiChar(Utf8Key), PWideChar(Result), ByteLen);
+  end;
+end;
+
+function TPdfAttachment.GetContentSize: Integer;
+var
+  OutBufLen: LongWord;
+begin
+  CheckValid;
+  if FPDFAttachment_GetFile(FHandle, nil, 0, OutBufLen) = 0 then
+    Result := 0
+  else
+    Result := Integer(OutBufLen);
+end;
+
+function TPdfAttachment.HasContent: Boolean;
+var
+  OutBufLen: LongWord;
+begin
+  CheckValid;
+  Result := FPDFAttachment_GetFile(FHandle, nil, 0, OutBufLen) <> 0;
+end;
+
+procedure TPdfAttachment.SaveToFile(const FileName: string);
+var
+  Stream: TStream;
+begin
+  CheckValid;
+
+  Stream := TFileStream.Create(FileName, fmCreate or fmShareDenyWrite);
+  try
+    SaveToStream(Stream);
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TPdfAttachment.SaveToStream(Stream: TStream);
+var
+  Size: Integer;
+  OutBufLen: LongWord;
+  StreamPos: Int64;
+  Buf: PByte;
+begin
+  Size := ContentSize;
+
+  if Size > 0 then
+  begin
+    if Stream is TCustomMemoryStream then // direct access to the memory
+    begin
+      StreamPos := Stream.Position;
+      if StreamPos + Size > Stream.Size then
+        Stream.Size := StreamPos + Size; // allocate enough memory
+      Stream.Position := StreamPos;
+
+      FPDFAttachment_GetFile(FHandle, PByte(TCustomMemoryStream(Stream).Memory) + StreamPos, Size, OutBufLen);
+      Stream.Position := StreamPos + Size; // simulate Stream.WriteBuffer
+    end
+    else
+    begin
+      GetMem(Buf, Size);
+      try
+        FPDFAttachment_GetFile(FHandle, Buf, Size, OutBufLen);
+        Stream.WriteBuffer(Buf^, Size);
+      finally
+        FreeMem(Buf);
+      end;
+    end;
+  end;
+end;
+
+procedure TPdfAttachment.GetContent(var Value: string; Encoding: TEncoding);
+var
+  Size: Integer;
+  OutBufLen: LongWord;
+  Buf: PByte;
+begin
+  Size := ContentSize;
+  if Size <= 0 then
+    Value := ''
+  else if Encoding = TEncoding.Unicode then // no conversion needed
+  begin
+    SetLength(Value, Size div SizeOf(WideChar));
+    FPDFAttachment_GetFile(FHandle, PWideChar(Value), Size, OutBufLen);
+  end
+  else
+  begin
+    if Encoding = nil then
+      Encoding := TEncoding.UTF8;
+
+    GetMem(Buf, Size);
+    try
+      FPDFAttachment_GetFile(FHandle, Buf, Size, OutBufLen);
+      SetLength(Value, TEncodingAccess(Encoding).GetMemCharCount(Buf, Size));
+      if Value <> '' then
+        TEncodingAccess(Encoding).GetMemChars(Buf, Size, PWideChar(Value), Length(Value));
+    finally
+      FreeMem(Buf);
+    end;
+  end;
+end;
+
+procedure TPdfAttachment.GetContent(var Value: RawByteString);
+var
+  Size: Integer;
+  OutBufLen: LongWord;
+begin
+  Size := ContentSize;
+
+  if Size <= 0 then
+    Value := ''
+  else
+  begin
+    SetLength(Value, Size);
+    FPDFAttachment_GetFile(FHandle, PAnsiChar(Value), Size, OutBufLen);
+  end;
+end;
+
+procedure TPdfAttachment.GetContent(Buffer: PByte);
+var
+  OutBufLen: LongWord;
+begin
+  FPDFAttachment_GetFile(FHandle, Buffer, ContentSize, OutBufLen);
+end;
+
+procedure TPdfAttachment.GetContent(var ABytes: TBytes);
+var
+  Size: Integer;
+  OutBufLen: LongWord;
+begin
+  Size := ContentSize;
+
+  if Size <= 0 then
+    ABytes := nil
+  else
+  begin
+    SetLength(ABytes, Size);
+    FPDFAttachment_GetFile(FHandle, @ABytes[0], Size, OutBufLen);
+  end;
+end;
+
+function TPdfAttachment.GetContentAsBytes: TBytes;
+begin
+  GetContent(Result);
+end;
+
+function TPdfAttachment.GetContentAsRawByteString: RawByteString;
+begin
+  GetContent(Result);
+end;
+
+function TPdfAttachment.GetContentAsString(Encoding: TEncoding): string;
+begin
+  GetContent(Result, Encoding);
 end;
 
 initialization

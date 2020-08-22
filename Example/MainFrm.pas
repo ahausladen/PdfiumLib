@@ -5,7 +5,7 @@ interface
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, PdfiumCore, Vcl.ExtCtrls, Vcl.StdCtrls, PdfiumCtrl,
-  Vcl.Samples.Spin;
+  Vcl.Samples.Spin, Vcl.ComCtrls;
 
 type
   TfrmMain = class(TForm)
@@ -19,6 +19,8 @@ type
     btnPrint: TButton;
     PrintDialog1: TPrintDialog;
     OpenDialog1: TOpenDialog;
+    ListViewAttachments: TListView;
+    SaveDialog1: TSaveDialog;
     procedure FormCreate(Sender: TObject);
     procedure btnPrevClick(Sender: TObject);
     procedure btnNextClick(Sender: TObject);
@@ -28,10 +30,12 @@ type
     procedure chkSmoothScrollClick(Sender: TObject);
     procedure edtZoomChange(Sender: TObject);
     procedure btnPrintClick(Sender: TObject);
+    procedure ListViewAttachmentsDblClick(Sender: TObject);
   private
     { Private-Deklarationen }
     FCtrl: TPdfControl;
     procedure WebLinkClick(Sender: TObject; Url: string);
+    procedure ListAttachments;
   public
     { Public-Deklarationen }
   end;
@@ -73,6 +77,32 @@ begin
   begin
     Application.ShowMainForm := False;
     Application.Terminate;
+  end;
+
+  ListAttachments;
+end;
+
+procedure TfrmMain.ListAttachments;
+var
+  I: Integer;
+  Att: TPdfAttachment;
+  ListItem: TListItem;
+begin
+  if (FCtrl.Document <> nil) and FCtrl.Document.Active then
+  begin
+    ListViewAttachments.Visible := FCtrl.Document.Attachments.Count > 0;
+
+    ListViewAttachments.Items.BeginUpdate;
+    try
+      for I := 0 to FCtrl.Document.Attachments.Count - 1 do
+      begin
+        Att := FCtrl.Document.Attachments[I];
+        ListItem := ListViewAttachments.Items.Add;
+        ListItem.Caption := Format('%s (%d Bytes)', [Att.Name, Att.ContentSize]);
+      end;
+    finally
+      ListViewAttachments.Items.EndUpdate;
+    end;
   end;
 end;
 
@@ -129,10 +159,24 @@ begin
   begin
     Printer.BeginDoc;
     try
+      TPdfDocument.SetPrintTextWithGDI(True); // Print text as text and not as vectors (allows white on white printing)
       FCtrl.CurrentPage.Draw(Printer.Canvas.Handle, 0, 0, Printer.PageWidth, Printer.PageHeight, prNormal, [proAnnotations, proPrinting]);
     finally
       Printer.EndDoc;
     end;
+  end;
+end;
+
+procedure TfrmMain.ListViewAttachmentsDblClick(Sender: TObject);
+var
+  Att: TPdfAttachment;
+begin
+  if ListViewAttachments.Selected <> nil then
+  begin
+    Att := FCtrl.Document.Attachments[ListViewAttachments.Selected.Index];
+    SaveDialog1.FileName := Att.Name;
+    if SaveDialog1.Execute(Handle) then
+      Att.SaveToFile(SaveDialog1.FileName);
   end;
 end;
 

@@ -3,7 +3,7 @@
 
 // Use DLLs (x64, x86) from https://github.com/bblanchon/pdfium-binaries
 //
-// DLL Version: chromium/4047
+// DLL Version: chromium/4194
 
 unit PdfiumLib;
 
@@ -101,6 +101,7 @@ type
   FPDF_PATHSEGMENT       = type __PFPDF_PTRREC;
   FPDF_RECORDER          = type Pointer;  // Passed into skia.
   FPDF_SCHHANDLE         = type __PFPDF_PTRREC;
+  FPDF_SIGNATURE         = type __PFPDF_PTRREC;
   FPDF_STRUCTELEMENT     = type __PFPDF_PTRREC;
   FPDF_STRUCTTREE        = type __PFPDF_PTRREC;
   FPDF_TEXTPAGE          = type __PFPDF_PTRREC;
@@ -213,6 +214,7 @@ type
 
   // Annotation enums.
   FPDF_ANNOTATION_SUBTYPE = Integer;
+  PFPDF_ANNOTATION_SUBTYPE = ^FPDF_ANNOTATION_SUBTYPE;
   FPDF_ANNOT_APPEARANCEMODE = Integer;
 
   // Dictionary value types.
@@ -247,7 +249,7 @@ type
 
     // Version 2.
 
-    // pointer to the v8::Isolate to use, or NULL to force PDFium to create one.
+    // Pointer to the v8::Isolate to use, or NULL to force PDFium to create one.
     m_pIsolate: Pointer;
 
     // The embedder data slot to use in the v8::Isolate to store PDFium's
@@ -255,6 +257,11 @@ type
     // [0, |v8::Internals::kNumIsolateDataLots|). Note that 0 is fine for most
     // embedders.
     m_v8EmbedderSlot: Cardinal;
+
+    // Version 3 - Experimantal,
+
+    // Pointer to the V8::Platform to use.
+    m_pPlatform: Pointer;
   end;
   PFPdfLibraryConfig = ^TFPdfLibraryConfig;
   TFPdfLibraryConfig = FPDF_LIBRARY_CONFIG;
@@ -332,11 +339,18 @@ var
 //          Experimental API.
 // Parameters:
 //          mode - FPDF_PRINTMODE_EMF to output EMF (default)
-//                 FPDF_PRINTMODE_TEXTONLY to output text only (for charstream devices)
-//                 FPDF_PRINTMODE_POSTSCRIPT2 to output level 2 PostScript into EMF as a series of GDI comments.
-//                 FPDF_PRINTMODE_POSTSCRIPT3 to output level 3 PostScript into EMF as a series of GDI comments.
-//                 FPDF_PRINTMODE_POSTSCRIPT2_PASSTHROUGH to output level 2 PostScript via ExtEscape() in PASSTHROUGH mode.
-//                 FPDF_PRINTMODE_POSTSCRIPT3_PASSTHROUGH to output level 3 PostScript via ExtEscape() in PASSTHROUGH mode.
+//                 FPDF_PRINTMODE_TEXTONLY to output text only (for charstream
+//                 devices)
+//                 FPDF_PRINTMODE_POSTSCRIPT2 to output level 2 PostScript into
+//                 EMF as a series of GDI comments.
+//                 FPDF_PRINTMODE_POSTSCRIPT3 to output level 3 PostScript into
+//                 EMF as a series of GDI comments.
+//                 FPDF_PRINTMODE_POSTSCRIPT2_PASSTHROUGH to output level 2
+//                 PostScript via ExtEscape() in PASSTHROUGH mode.
+//                 FPDF_PRINTMODE_POSTSCRIPT3_PASSTHROUGH to output level 3
+//                 PostScript via ExtEscape() in PASSTHROUGH mode.
+//                 FPDF_PRINTMODE_EMF_IMAGE_MASKS to output EMF, with more
+//                 efficient processing of documents containing image masks.
 // Return value:
 //          True if successful, false if unsuccessful (typically invalid input).
 var
@@ -388,6 +402,31 @@ var
 //          fields defined in the fpdfformfill.h file.
 var
   FPDF_LoadMemDocument: function(data_buf: Pointer; size: Integer; password: FPDF_BYTESTRING): FPDF_DOCUMENT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Function: FPDF_LoadMemDocument64
+//          Open and load a PDF document from memory.
+//          Experimental API.
+// Parameters:
+//          data_buf    -   Pointer to a buffer containing the PDF document.
+//          size        -   Number of bytes in the PDF document.
+//          password    -   A string used as the password for the PDF file.
+//                          If no password is needed, empty or NULL can be used.
+// Return value:
+//          A handle to the loaded document, or NULL on failure.
+// Comments:
+//          The memory buffer must remain valid when the document is open.
+//          The loaded document can be closed by FPDF_CloseDocument.
+//          If this function fails, you can use FPDF_GetLastError() to retrieve
+//          the reason why it failed.
+//
+//          See the comments for FPDF_LoadDocument() regarding the encoding for
+//          |password|.
+// Notes:
+//          If PDFium is built with the XFA module, the application should call
+//          FPDF_LoadXFA() function after the PDF document loaded to support XFA
+//          fields defined in the fpdfformfill.h file.
+var
+  FPDF_LoadMemDocument64: function(data_buf: Pointer; size: SIZE_T; password: FPDF_BYTESTRING): FPDF_DOCUMENT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Structure for custom file access.
 type
@@ -715,7 +754,7 @@ var
 // Page rendering flags. They can be combined with bit-wise OR.
 const
   FPDF_ANNOT                    = $01;   // Set if annotations are to be rendered.
-  FPDF_LCD_TEXT                 = $02;   // Set if using text rendering optimized for LCD display.
+  FPDF_LCD_TEXT                 = $02;   // Set if using text rendering optimized for LCD display. This flag will only take effect if anti-aliasing is enabled for text.
   FPDF_NO_NATIVETEXT            = $04;   // Don't use the native text output available on some platforms
   FPDF_GRAYSCALE                = $08 deprecated; // Obsolete, has no effect, retained for compatibility.
   FPDF_DEBUG_INFO               = $80 deprecated; // Obsolete, has no effect, retained for compatibility.
@@ -723,12 +762,30 @@ const
   FPDF_RENDER_LIMITEDIMAGECACHE = $200;  // Limit image cache size.
   FPDF_RENDER_FORCEHALFTONE     = $400;  // Always use halftone for image stretching.
   FPDF_PRINTING                 = $800;  // Render for printing.
-  FPDF_RENDER_NO_SMOOTHTEXT     = $1000; // Set to disable anti-aliasing on text.
+  FPDF_RENDER_NO_SMOOTHTEXT     = $1000; // Set to disable anti-aliasing on text. This flag will also disable LCD optimization for text rendering.
   FPDF_RENDER_NO_SMOOTHIMAGE    = $2000; // Set to disable anti-aliasing on images.
   FPDF_RENDER_NO_SMOOTHPATH     = $4000; // Set to disable anti-aliasing on paths.
   // Set whether to render in a reverse Byte order, this flag is only used when
   // rendering to a bitmap.
   FPDF_REVERSE_BYTE_ORDER       = $10;
+  // Set whether fill paths need to be stroked. This flag is only used when
+  // FPDF_COLORSCHEME is passed in, since with a single fill color for paths the
+  // boundaries of adjacent fill paths are less visible.
+  FPDF_CONVERT_FILL_TO_STROKE   = $20;
+
+type
+  // Struct for color scheme.
+  // Each should be a 32-bit value specifying the color, in 8888 ARGB format.
+
+  PFPDF_COLORSCHEME = ^FPDF_COLORSCHEME;
+  FPDF_COLORSCHEME = record
+    path_fill_color: FPDF_DWORD;
+    path_stroke_color: FPDF_DWORD;
+    text_fill_color: FPDF_DWORD;
+    text_stroke_color: FPDF_DWORD;
+  end;
+  PFPdfColorScheme = ^TFPdfColorScheme;
+  TFPdfColorScheme = FPDF_COLORSCHEME;
 
 {$IFDEF MSWINDOWS}
 // Function: FPDF_RenderPage
@@ -1214,6 +1271,22 @@ var
 //          The caller must not attempt to modify or free the result.
 var
   FPDF_GetRecommendedV8Flags: function: PAnsiChar; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDF_GetArrayBufferAllocatorSharedInstance()
+//          Helper function for initializing V8 isolates that will
+//          use PDFium's internal memory management.
+// Parameters:
+//          None.
+// Return Value:
+//          Pointer to a suitable v8::ArrayBuffer::Allocator, returned
+//          as void for C compatibility.
+// Notes:
+//          Use is optional, but allows external creation of isolates
+//          matching the ones PDFium will make when none is provided
+//          via |FPDF_LIBRARY_CONFIG::m_pIsolate|.
+var
+  FPDF_GetArrayBufferAllocatorSharedInstance: function: Pointer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 {$ENDIF PDF_ENABLE_V8}
 
 {$IFDEF PDF_ENABLE_XFA}
@@ -1287,12 +1360,14 @@ const
   FPDF_LINEJOIN_ROUND = 1;
   FPDF_LINEJOIN_BEVEL = 2;
 
+  // See FPDF_SetPrintMode() for descriptions.
   FPDF_PRINTMODE_EMF = 0;
   FPDF_PRINTMODE_TEXTONLY = 1;
   FPDF_PRINTMODE_POSTSCRIPT2 = 2;
   FPDF_PRINTMODE_POSTSCRIPT3 = 3;
   FPDF_PRINTMODE_POSTSCRIPT2_PASSTHROUGH = 4;
   FPDF_PRINTMODE_POSTSCRIPT3_PASSTHROUGH = 5;
+  FPDF_PRINTMODE_EMF_IMAGE_MASKS = 6;
 
 type
   PFPDF_IMAGEOBJ_METADATA = ^FPDF_IMAGEOBJ_METADATA;
@@ -3109,6 +3184,44 @@ type
   PIFSDKPause = ^TIFSDKPause;
   TIFSDKPause = IFSDK_PAUSE;
 
+// Experimental API.
+// Function: FPDF_RenderPageBitmapWithColorScheme_Start
+//          Start to render page contents to a device independent bitmap
+//          progressively with a specified color scheme for the content.
+// Parameters:
+//          bitmap       -   Handle to the device independent bitmap (as the
+//                           output buffer). Bitmap handle can be created by
+//                           FPDFBitmap_Create function.
+//          page         -   Handle to the page as returned by FPDF_LoadPage
+//                           function.
+//          start_x      -   Left pixel position of the display area in the
+//                           bitmap coordinate.
+//          start_y      -   Top pixel position of the display area in the
+//                           bitmap coordinate.
+//          size_x       -   Horizontal size (in pixels) for displaying the
+//                           page.
+//          size_y       -   Vertical size (in pixels) for displaying the page.
+//          rotate       -   Page orientation: 0 (normal), 1 (rotated 90
+//                           degrees clockwise), 2 (rotated 180 degrees),
+//                           3 (rotated 90 degrees counter-clockwise).
+//          flags        -   0 for normal display, or combination of flags
+//                           defined in fpdfview.h. With FPDF_ANNOT flag, it
+//                           renders all annotations that does not require
+//                           user-interaction, which are all annotations except
+//                           widget and popup annotations.
+//          color_scheme -   Color scheme to be used in rendering the |page|.
+//                           If null, this function will work similar to
+//                           FPDF_RenderPageBitmap_Start().
+//          pause        -   The IFSDK_PAUSE interface. A callback mechanism
+//                           allowing the page rendering process.
+// Return value:
+//          Rendering Status. See flags for progressive process status for the
+//          details.
+var
+  FPDF_RenderPageBitmapWithColorScheme_Start: function(bitmap: FPDF_BITMAP; page: FPDF_PAGE;
+    start_x, start_y, size_x, size_y: Integer; rotate: Integer; flags: Integer;
+    const color_scheme: PFPDF_COLORSCHEME; pause: PIFSDK_PAUSE): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 // Function: FPDF_RenderPageBitmap_Start
 //          Start to render page contents to a device independent bitmap
 //          progressively.
@@ -3136,7 +3249,6 @@ type
 // Return value:
 //          Rendering Status. See flags for progressive process status for the
 //          details.
-//
 var
   FPDF_RenderPageBitmap_Start: function(bitmap: FPDF_BITMAP; page: FPDF_PAGE;
     start_x, start_y, size_x, size_y: Integer; rotate: Integer; flags: Integer;
@@ -3168,6 +3280,32 @@ var
   FPDF_RenderPage_Close: procedure(page: FPDF_PAGE); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 
+// *** _FPDF_SIGNATURE_H_ ***
+
+// Experimental API.
+// Function: FPDF_GetSignatureCount
+//          Get total number of signatures in the document.
+// Parameters:
+//          document    -   Handle to document. Returned by FPDF_LoadDocument().
+// Return value:
+//          Total number of signatures in the document on success, -1 on error.
+var
+  FPDF_GetSignatureCount: function(document: FPDF_DOCUMENT): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDF_GetSignatureObject
+//          Get the Nth signature of the document.
+// Parameters:
+//          document    -   Handle to document. Returned by FPDF_LoadDocument().
+//          index       -   Index into the array of signatures of the document.
+// Return value:
+//          Returns the handle to the signature, or NULL on failure. The caller
+//          does not take ownership of the returned FPDF_SIGNATURE. Instead, it
+//          remains valid until FPDF_CloseDocument() is called for the document.
+var
+  FPDF_GetSignatureObject: function(document: FPDF_DOCUMENT; index: Integer): FPDF_SIGNATURE; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+
 // *** _FPDF_DOC_H_ ***
 
 const
@@ -3188,6 +3326,14 @@ const
   PDFDEST_VIEW_FITB = 6;
   PDFDEST_VIEW_FITBH = 7;
   PDFDEST_VIEW_FITBV = 8;
+
+// The file identifier entry type. See section 14.4 "File Identifiers" of the
+// ISO 32000-1 standard.
+type
+  FPDF_FILEIDTYPE = (
+    FILEIDTYPE_PERMANENT = 0,
+    FILEIDTYPE_CHANGING = 1
+  );
 
 // _FS_DEF_STRUCTURE_QUADPOINTSF_
 type
@@ -3431,6 +3577,17 @@ var
 var
   FPDFLink_Enumerate: function(page: FPDF_PAGE; var start_pos: Integer; link_annot: PFPDF_LINK): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
+// Gets FPDF_ANNOTATION object for |link_annot|.
+//
+//   page       - handle to the page in which FPDF_LINK object is present.
+//   link_annot - handle to link annotation.
+//
+// Returns FPDF_ANNOTATION from the FPDF_LINK and NULL on failure,
+// if the input link annot or page is NULL.
+var
+  FPDFLink_GetAnnot: function(page: FPDF_PAGE; link_annot: FPDF_LINK): FPDF_ANNOTATION; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 // Get the rectangle for |link_annot|.
 //
 //   link_annot - handle to the link annotation.
@@ -3457,6 +3614,24 @@ var
 // Returns true on success.
 var
   FPDFLink_GetQuadPoints: function(link_annot: FPDF_LINK; quad_index: Integer; quad_points: PFS_QUADPOINTSF): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Get the file identifer defined in the trailer of |document|.
+// Experimental API. Subject to change.
+//
+//   document - handle to the document.
+//   id_type  - the file identifier type to retrieve.
+//   buffer   - a buffer for the file identifier. May be NULL.
+//   buflen   - the length of the buffer, in bytes. May be 0.
+//
+// Returns the number of bytes in the file identifier, including the NUL
+// terminator.
+//
+// The |buffer| is always a byte string. The |buffer| is followed by a NUL
+// terminator.  If |buflen| is less than the returned length, or |buffer| is
+// NULL, |buffer| will not be modified.
+var
+  FPDF_GetFileIdentifier: function(document: FPDF_DOCUMENT; id_type: FPDF_FILEIDTYPE; buffer: Pointer;
+    buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Get meta-data |tag| content from |document|.
 //
@@ -4428,8 +4603,17 @@ type
   PFPDF_FORMFILLINFO = ^FPDF_FORMFILLINFO;
   FPDF_FORMFILLINFO = record
     //*
-    //* Version number of the interface. Currently must be 1 (when PDFium is built
-    //*  without the XFA module) or must be 2 (when built with the XFA module).
+    //* Version number of the interface.
+    //* Version 1 contains stable interfaces. Version 2 has additional
+    //* experimental interfaces.
+    //* When PDFium is built without the XFA module, version can be 1 or 2.
+    //* With version 1, only stable interfaces are called. With version 2,
+    //* additional experimental interfaces are also called.
+    //* When PDFium is built with the XFA module, version must be 2.
+    //* All the XFA related interfaces are experimental. If PDFium is built with
+    //* the XFA module and version 1 then none of the XFA related interfaces
+    //* would be called. When PDFium is built with XFA module then the version
+    //* must be 2.
     //*
     version: Integer;
 
@@ -4620,19 +4804,20 @@ type
 
     //*
     //* Method: FFI_GetCurrentPage
-    //*     This method receives the handle to the current page.
+    //*       This method receives the handle to the current page.
     //* Interface Version:
-    //*     1
+    //*       1
     //* Implementation Required:
-    //*     yes
+    //*       Yes when V8 support is present, otherwise unused.
     //* Parameters:
-    //*     pThis       -   Pointer to the interface structure itself.
-    //*     document    -   Handle to document. Returned by FPDF_LoadDocument().
+    //*       pThis       -   Pointer to the interface structure itself.
+    //*       document    -   Handle to document. Returned by FPDF_LoadDocument().
     //* Return value:
-    //*     Handle to the page. Returned by FPDF_LoadPage().
+    //*       Handle to the page. Returned by FPDF_LoadPage().
     //* Comments:
-    //*       The implementation is expected to keep track of the current page,
-    //*       e.g. the current page can be the one that is most visible on screen.
+    //*       PDFium doesn't keep keep track of the "current page" (e.g. the one
+    //*       that is most visible on screen), so it must ask the embedder for
+    //*       this information.
     //*
     FFI_GetCurrentPage: function(pThis: PFPDF_FORMFILLINFO; document: FPDF_DOCUMENT): FPDF_PAGE; cdecl;
 
@@ -4712,6 +4897,10 @@ type
     //* Return value:
     //*       None.
     //* Comments:
+    //*       If the embedder is version 2 or higher and have implementation for
+    //*       FFI_DoURIActionWithKeyboardModifier, then
+    //*       FFI_DoURIActionWithKeyboardModifier takes precedence over
+    //*       FFI_DoURIAction.
     //*       See the URI actions description of <<PDF Reference, version 1.7>>
     //*       for more details.
     //*
@@ -4754,7 +4943,6 @@ type
     //*
     m_pJsPlatform: PIPDF_JSPLATFORM;
 
-  {$IFDEF PDF_ENABLE_XFA}
     //* Version 2 - Experimental.
     //*
     //* Whether the XFA module is disabled when built with the XFA module.
@@ -5064,7 +5252,52 @@ type
     //*       TRUE indicates success, otherwise FALSE.
     //*
     FFI_PutRequestURL: function(pThis: PFPDF_FORMFILLINFO; wsURL, wsData, wsEncode: FPDF_WIDESTRING): FPDF_BOOL; cdecl;
-  {$ENDIF PDF_ENABLE_XFA}
+
+    //*
+    //* Method: FFI_OnFocusChange
+    //*     Called when the focused annotation is updated.
+    //* Interface Version:
+    //*     Ignored if |version| < 2.
+    //* Implementation Required:
+    //*     No
+    //* Parameters:
+    //*     param           -   Pointer to the interface structure itself.
+    //*     annot           -   The focused annotation.
+    //*     page_index      -   Index number of the page which contains the
+    //*                         focused annotation. 0 for the first page.
+    //* Return value:
+    //*     None.
+    //* Comments:
+    //*     This callback function is useful for implementing any view based
+    //*     action such as scrolling the annotation rect into view. The
+    //*     embedder should not copy and store the annot as its scope is
+    //*     limited to this call only.
+    //*
+    FFI_OnFocusChange: procedure(param: PFPDF_FORMFILLINFO; annot: FPDF_ANNOTATION; page_index: Integer); cdecl;
+
+    //*
+    //* Method: FFI_DoURIActionWithKeyboardModifier
+    //*       Ask the implementation to navigate to a uniform resource identifier
+    //*       with the specified modifiers.
+    //* Interface Version:
+    //*       Ignored if |version| < 2.
+    //* Implementation Required:
+    //*       No
+    //* Parameters:
+    //*       param           -   Pointer to the interface structure itself.
+    //*       uri             -   A byte string which indicates the uniform
+    //*                           resource identifier, terminated by 0.
+    //*       modifiers       -   Keyboard modifier that indicates which of
+    //*                           the virtual keys are down, if any.
+    //* Return value:
+    //*       None.
+    //* Comments:
+    //*       If the embedder who is version 2 and does not implement this API,
+    //*       then a call will be redirected to FFI_DoURIAction.
+    //*       See the URI actions description of <<PDF Reference, version 1.7>>
+    //*       for more details.
+    //*
+    FFI_DoURIActionWithKeyboardModifier: procedure(param: PFPDF_FORMFILLINFO; uri: FPDF_BYTESTRING; modifiers: Integer); cdecl;
   end;
   PFPDFFormFillInfo = ^TFPDFFormFillInfo;
   TFPDFFormFillInfo = FPDF_FORMFILLINFO;
@@ -5104,7 +5337,7 @@ var
 //*       functions. Should be invoked after user successfully loaded a
 //*       PDF page, and FPDFDOC_InitFormFillEnvironment() has been invoked.
 //* Parameters:
-//*       hHandle     -   Handle to the form fill module, as eturned by
+//*       hHandle     -   Handle to the form fill module, as returned by
 //*                       FPDFDOC_InitFormFillEnvironment().
 //* Return Value:
 //*       None.
@@ -5236,6 +5469,35 @@ var
     page_x, page_y: Double): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 //*
+//* Experimental API
+//* Function: FORM_OnMouseWheel
+//*       Call this member function when the user scrolls the mouse wheel.
+//* Parameters:
+//*       hHandle     -   Handle to the form fill module, as returned by
+//*                       FPDFDOC_InitFormFillEnvironment().
+//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//*       modifier    -   Indicates whether various virtual keys are down.
+//*       page_coord  -   Specifies the coordinates of the cursor in PDF user
+//*                       space.
+//*       delta_x     -   Specifies the amount of wheel movement on the x-axis,
+//*                       in units of platform-agnostic wheel deltas. Negative
+//*                       values mean left.
+//*       delta_y     -   Specifies the amount of wheel movement on the y-axis,
+//*                       in units of platform-agnostic wheel deltas. Negative
+//*                       values mean down.
+//* Return Value:
+//*       True indicates success; otherwise false.
+//* Comments:
+//*       For |delta_x| and |delta_y|, the caller must normalize
+//*       platform-specific wheel deltas. e.g. On Windows, a delta value of 240
+//*       for a WM_MOUSEWHEEL event normalizes to 2, since Windows defines
+//*       WHEEL_DELTA as 120.
+//*
+var
+  FORM_OnMouseWheel: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; modifier: Integer;
+    const page_coord: PFS_POINTF; delta_x, delta_y: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+//*
 //* Function: FORM_OnFocus
 //*       This function focuses the form annotation at a given point. If the
 //*       annotation at the point already has focus, nothing happens. If there
@@ -5261,7 +5523,7 @@ var
 //*       Call this member function when the user presses the left
 //*       mouse button.
 //* Parameters:
-//*       hHandle     -   Handle to the form fill module. as returned by
+//*       hHandle     -   Handle to the form fill module, as returned by
 //*                       FPDFDOC_InitFormFillEnvironment().
 //*       page        -   Handle to the page, as returned by FPDF_LoadPage().
 //*       modifier    -   Indicates whether various virtual keys are down.
@@ -5294,7 +5556,7 @@ var
 //* Parameters:
 //*       hHandle     -   Handle to the form fill module, as returned by
 //*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page. as returned by FPDF_LoadPage().
+//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
 //*       modifier    -   Indicates whether various virtual keys are down.
 //*       page_x      -   Specifies the x-coordinate of the cursor in device.
 //*       page_y      -   Specifies the y-coordinate of the cursor in device.
@@ -5410,7 +5672,7 @@ var
 //*       Call this function to obtain selected text within a form text
 //*       field or form combobox text field.
 //* Parameters:
-//*       hHandle     -   Handle to the form fill module, asr eturned by
+//*       hHandle     -   Handle to the form fill module, as returned by
 //*                       FPDFDOC_InitFormFillEnvironment().
 //*       page        -   Handle to the page, as returned by FPDF_LoadPage().
 //*       buffer      -   Buffer for holding the selected text, encoded in
@@ -5444,6 +5706,21 @@ var
   FORM_ReplaceSelection: procedure(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; wsText: FPDF_WIDESTRING); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 //*
+//* Experimental API
+//* Function: FORM_SelectAllText
+//*       Call this function to select all the text within the currently focused
+//*       form text field or form combobox text field.
+//* Parameters:
+//*       hHandle     -   Handle to the form fill module, as returned by
+//*                       FPDFDOC_InitFormFillEnvironment().
+//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//* Return Value:
+//*       Whether the operation succeeded or not.
+//*
+var
+  FORM_SelectAllText: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+//*
 //* Function: FORM_CanUndo
 //*       Find out if it is possible for the current focused widget in a given
 //*       form to perform an undo operation.
@@ -5475,7 +5752,7 @@ var
 //* Function: FORM_Undo
 //*       Make the current focussed widget perform an undo operation.
 //* Parameters:
-//*       hHandle     -   Handle to the form fill module. as returned by
+//*       hHandle     -   Handle to the form fill module, as returned by
 //*                       FPDFDOC_InitFormFillEnvironment().
 //*       page        -   Handle to the page, as returned by FPDF_LoadPage().
 //* Return Value:
@@ -5485,14 +5762,14 @@ var
   FORM_Undo: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 //*
-//* Function: FORM_Undo
-//*       Make the current focussed widget perform an undo operation.
+//* Function: FORM_Redo
+//*       Make the current focussed widget perform a redo operation.
 //* Parameters:
-//*       hHandle     -   Handle to the form fill module. as returned by
+//*       hHandle     -   Handle to the form fill module, as returned by
 //*                       FPDFDOC_InitFormFillEnvironment().
 //*       page        -   Handle to the page, as returned by FPDF_LoadPage().
 //* Return Value:
-//*       True if the undo operation succeeded.
+//*       True if the redo operation succeeded.
 //*
 var
   FORM_Redo: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
@@ -5510,6 +5787,49 @@ var
 //*
 var
   FORM_ForceToKillFocus: function(hHandle: FPDF_FORMHANDLE): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+//*
+//* Experimental API.
+//* Function: FORM_GetFocusedAnnot.
+//*       Call this member function to get the currently focused annotation.
+//* Parameters:
+//*       handle      -   Handle to the form fill module, as returned by
+//*                       FPDFDOC_InitFormFillEnvironment().
+//*       page_index  -   Buffer to hold the index number of the page which
+//*                       contains the focused annotation. 0 for the first page.
+//*                       Can't be NULL.
+//*       annot       -   Buffer to hold the focused annotation. Can't be NULL.
+//* Return Value:
+//*       On success, return true and write to the out parameters. Otherwise return
+//*       false and leave the out parameters unmodified.
+//* Comments:
+//*       Not currently supported for XFA forms - will report no focused
+//*       annotation.
+//*       Must call FPDFPage_CloseAnnot() when the annotation returned in |annot|
+//*       by this function is no longer needed.
+//*       This will return true and set |page_index| to -1 and |annot| to NULL, if
+//*       there is no focused annotation.
+//*
+var
+  FORM_GetFocusedAnnot: function(handle: FPDF_FORMHANDLE; var page_index: Integer;
+    var annot: FPDF_ANNOTATION): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+//*
+//* Experimental API.
+//* Function: FORM_SetFocusedAnnot.
+//*       Call this member function to set the currently focused annotation.
+//* Parameters:
+//*       handle      -   Handle to the form fill module, as returned by
+//*                       FPDFDOC_InitFormFillEnvironment().
+//*       annot       -   Handle to an annotation.
+//* Return Value:
+//*       True indicates success; otherwise false.
+//* Comments:
+//*       |annot| can't be NULL. To kill focus, use FORM_ForceToKillFocus()
+//*       instead.
+//*
+var
+  FORM_SetFocusedAnnot: function(handle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Form Field Types
 // The names of the defines are stable, but the specific values associated with
@@ -5823,6 +6143,7 @@ const
   // interactive form choice fields.
   FPDF_FORMFLAG_CHOICE_COMBO = (1 shl 17);
   FPDF_FORMFLAG_CHOICE_EDIT = (1 shl 18);
+  FPDF_FORMFLAG_CHOICE_MULTI_SELECT = (1 shl 21);
 
 type
   FPDFANNOT_COLORTYPE = (
@@ -5937,6 +6258,33 @@ var
 // Return true if successful.
 var
   FPDFAnnot_UpdateObject: function(annot: FPDF_ANNOTATION; obj: FPDF_PAGEOBJECT): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Add a new InkStroke, represented by an array of points, to the InkList of
+// |annot|. The API creates an InkList if one doesn't already exist in |annot|.
+// This API works only for ink annotations. Please refer section 12.5.6.13 in
+// PDF 32000-1:2008 Specification.
+//
+//   annot       - handle to an annotation.
+//   points      - pointer to a FS_POINTF array representing input points.
+//   point_count - number of elements in |points| array. This should not exceed
+//                 the maximum value that can be represented by an int32_t).
+//
+// Returns the 0-based index at which the new InkStroke is added in the InkList
+// of the |annot|. Returns -1 on failure.
+var
+  FPDFAnnot_AddInkStroke: function(annot: FPDF_ANNOTATION; const points: PFS_POINTF; point_count: SIZE_T): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Removes an InkList in |annot|.
+// This API works only for ink annotations.
+//
+//   annot  - handle to an annotation.
+//
+// Return true on successful removal of /InkList entry from context of the
+// non-null ink |annot|. Returns false on failure.
+var
+  FPDFAnnot_RemoveInkList: function(annot: FPDF_ANNOTATION): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Add |obj| to |annot|. |obj| must have been created by
@@ -6344,6 +6692,20 @@ var
     buffer: PFPDF_WCHAR; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
+// Determine whether or not the option at |index| in |annot|'s "Opt" dictionary
+// is selected. Intended for use with listbox and combobox widget annotations.
+//
+//   handle  - handle to the form fill module, returned by
+//             FPDFDOC_InitFormFillEnvironment.
+//   annot   - handle to an annotation.
+//   index   - numeric index of the option in the "Opt" array.
+//
+// Returns true if the option at |index| in |annot|'s "Opt" dictionary is
+// selected, false otherwise.
+var
+  FPDFAnnot_IsOptionSelected: function(handle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION; index: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
 // Get the float value of the font size for an |annot| with variable text.
 // If 0, the font is to be auto-sized: its size is computed as a function of
 // the height of the annotation rectangle.
@@ -6370,6 +6732,104 @@ var
 var
   FPDFAnnot_IsChecked: function(hHandle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
+// Set the list of focusable annotation subtypes. Annotations of subtype
+// FPDF_ANNOT_WIDGET are by default focusable. New subtypes set using this API
+// will override the existing subtypes.
+//
+//   hHandle  - handle to the form fill module, returned by
+//              FPDFDOC_InitFormFillEnvironment.
+//   subtypes - list of annotation subtype which can be tabbed over.
+//   count    - total number of annotation subtype in list.
+// Returns true if list of annotation subtype is set successfully, false
+// otherwise.
+var
+  FPDFAnnot_SetFocusableSubtypes: function(hHandle: FPDF_FORMHANDLE; const subtypes: PFPDF_ANNOTATION_SUBTYPE;
+    count: SIZE_T): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the count of focusable annotation subtypes as set by host
+// for a |hHandle|.
+//
+//   hHandle  - handle to the form fill module, returned by
+//              FPDFDOC_InitFormFillEnvironment.
+// Returns the count of focusable annotation subtypes or -1 on error.
+// Note : Annotations of type FPDF_ANNOT_WIDGET are by default focusable.
+var
+  FPDFAnnot_GetFocusableSubtypesCount: function(hHandle: FPDF_FORMHANDLE): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the list of focusable annotation subtype as set by host.
+//
+//   hHandle  - handle to the form fill module, returned by
+//              FPDFDOC_InitFormFillEnvironment.
+//   subtypes - receives the list of annotation subtype which can be tabbed
+//              over. Caller must have allocated |subtypes| more than or
+//              equal to the count obtained from
+//              FPDFAnnot_GetFocusableSubtypesCount() API.
+//   count    - size of |subtypes|.
+// Returns true on success and set list of annotation subtype to |subtypes|,
+// false otherwise.
+// Note : Annotations of type FPDF_ANNOT_WIDGET are by default focusable.
+var
+  FPDFAnnot_GetFocusableSubtypes: function(hHandle: FPDF_FORMHANDLE; subtypes: PFPDF_ANNOTATION_SUBTYPE;
+    count: SIZE_T): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Gets FPDF_LINK object for |annot|. Intended to use for link annotations.
+//
+//   annot   - handle to an annotation.
+//
+// Returns FPDF_LINK from the FPDF_ANNOTATION and NULL on failure,
+// if the input annot is NULL or input annot's subtype is not link.
+var
+  FPDFAnnot_GetLink: function(annot: FPDF_ANNOTATION): FPDF_LINK; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Gets the count of annotations in the |annot|'s control group.
+// A group of interactive form annotations is collectively called a form
+// control group. Here, |annot|, an interactive form annotation, should be
+// either a radio button or a checkbox.
+//
+//   hHandle - handle to the form fill module, returned by
+//             FPDFDOC_InitFormFillEnvironment.
+//   annot   - handle to an annotation.
+//
+// Returns number of controls in its control group or -1 on error.
+var
+  FPDFAnnot_GetFormControlCount: function(hHandle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Gets the index of |annot| in |annot|'s control group.
+// A group of interactive form annotations is collectively called a form
+// control group. Here, |annot|, an interactive form annotation, should be
+// either a radio button or a checkbox.
+//
+//   hHandle - handle to the form fill module, returned by
+//             FPDFDOC_InitFormFillEnvironment.
+//   annot   - handle to an annotation.
+//
+// Returns index of a given |annot| in its control group or -1 on error.
+var
+  FPDFAnnot_GetFormControlIndex: function(hHandle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Gets the export value of |annot| which is an interactive form annotation.
+// Intended for use with radio button and checkbox widget annotations.
+// |buffer| is only modified if |buflen| is longer than the length of contents.
+// In case of error, nothing will be added to |buffer| and the return value
+// will be 0. Note that return value of empty string is 2 for "\0\0".
+//
+//    hHandle     -   handle to the form fill module, returned by
+//                    FPDFDOC_InitFormFillEnvironment().
+//    annot       -   handle to an interactive form annotation.
+//    buffer      -   buffer for holding the value string, encoded in UTF-16LE.
+//    buflen      -   length of the buffer in bytes.
+//
+// Returns the length of the string value in bytes.
+var
+  FPDFAnnot_GetFormFieldExportValue: function(hHandle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION;
+    buffer: PFPDF_WCHAR; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 
 // *** _FPDF_CATALOG_H_ ***
@@ -6519,19 +6979,29 @@ var
 // Returns true if successful.
 var
   FPDFAttachment_SetFile: function(attachment: FPDF_ATTACHMENT; document: FPDF_DOCUMENT;
-    contents: Pointer; const len: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+    contents: Pointer; len: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 // Experimental API.
-// Get the file data of |attachment|. |buffer| is only modified if |buflen| is
-// longer than the length of the file. On errors, |buffer| is unmodified and the
-// returned length is 0.
+// Get the file data of |attachment|.
+// When the attachment file data is readable, true is returned, and |out_buflen|
+// is updated to indicate the file data size. |buffer| is only modified if
+// |buflen| is non-null and long enough to contain the entire file data. Callers
+// must check both the return value and the input |buflen| is no less than the
+// returned |out_buflen| before using the data.
+//
+// Otherwise, when the attachment file data is unreadable or when |out_buflen|
+// is null, false is returned and |buffer| and |out_buflen| remain unmodified.
 //
 //   attachment - handle to an attachment.
 //   buffer     - buffer for holding the file data from |attachment|.
 //   buflen     - length of the buffer in bytes.
+//   out_buflen - pointer to the variable that will receive the minimum buffer
+//                size to contain the file data of |attachment|.
 //
-// Returns the length of the file.
+// Returns true on success, false otherwise.
 var
-  FPDFAttachment_GetFile: function(attachment: FPDF_ATTACHMENT; buffer: Pointer; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDFAttachment_GetFile: function(attachment: FPDF_ATTACHMENT; buffer: Pointer; buflen: LongWord;
+    var out_buflen: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 
 // *** _FPDF_FWLEVENT_H_ ***
@@ -6732,9 +7202,9 @@ var
 //   page object - Handle to a page object. Returned by e.g.
 //                 FPDFPage_GetObject().
 //
-// Caller does not take ownership of the returned FPDF_CLIPPATH. Instead, it
-// remains valid until FPDF_ClosePage() is called for the page containing
-// page_object.
+// Returns the handle to the clip path, or NULL on failure. The caller does not
+// take ownership of the returned FPDF_CLIPPATH. Instead, it remains valid until
+// FPDF_ClosePage() is called for the page containing |page_object|.
 var
   FPDFPageObj_GetClipPath: function(page_object: FPDF_PAGEOBJECT): FPDF_CLIPPATH; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -6764,9 +7234,9 @@ var
 //   path_index    - the index of a path.
 //   segment_index - the index of a segment.
 //
-// Returns the handle to the segment, or NULL on failure.  The caller does not
-// take ownership of the returned FPDF_CLIPPATH. Instead, it remains valid until
-// FPDF_ClosePage() is called for the page containing page_object.
+// Returns the handle to the segment, or NULL on failure. The caller does not
+// take ownership of the returned FPDF_PATHSEGMENT. Instead, it remains valid
+// until FPDF_ClosePage() is called for the page containing |clip_path|.
 var
   FPDFClipPath_GetPathSegment: function(clip_path: FPDF_CLIPPATH; path_index, segment_index: Integer): FPDF_PATHSEGMENT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -7116,431 +7586,456 @@ type
   TImportFuncRec = record
     P: PPointer;
     N: PAnsiChar;
-    Quirk: Boolean; // True: if the symbol can't be found, no exception is raised
+    Quirk: Boolean; // True: if the symbol can't be found, no exception is raised. If both Quirk
+                    //       and Optional are True and the symbol can't be found, it will be mapped
+                    //       to FunctionNotSupported.
                     // (used if the symbol's name has changed and both DLL versions should be supported)
     Optional: Boolean; // True: If the symbol can't be found, it is set to nil.
                        // (used for optional exported features like V8 and XFA)
   end;
 
 const
-  ImportFuncs: array[0..338
+  ImportFuncs: array[0..358
     {$IFDEF MSWINDOWS}
     + 2
       {$IFDEF PDFIUM_PRINT_TEXT_WITH_GDI} + 2 {$ENDIF}
       {$IFDEF _SKIA_SUPPORT_            } + 2 {$ENDIF}
-      {$IFDEF PDF_ENABLE_V8             } + 2 {$ENDIF}
+      {$IFDEF PDF_ENABLE_V8             } + 3 {$ENDIF}
       {$IFDEF PDF_ENABLE_XFA            } + 3 {$ENDIF}
     {$ENDIF}
     ] of TImportFuncRec = (
 
     // *** _FPDFVIEW_H_ ***
-    (P: @@FPDF_InitLibrary;                         N: 'FPDF_InitLibrary'),
-    (P: @@FPDF_InitLibraryWithConfig;               N: 'FPDF_InitLibraryWithConfig'),
-    (P: @@FPDF_DestroyLibrary;                      N: 'FPDF_DestroyLibrary'),
-    (P: @@FPDF_SetSandBoxPolicy;                    N: 'FPDF_SetSandBoxPolicy'),
+    (P: @@FPDF_InitLibrary;                           N: 'FPDF_InitLibrary'),
+    (P: @@FPDF_InitLibraryWithConfig;                 N: 'FPDF_InitLibraryWithConfig'),
+    (P: @@FPDF_DestroyLibrary;                        N: 'FPDF_DestroyLibrary'),
+    (P: @@FPDF_SetSandBoxPolicy;                      N: 'FPDF_SetSandBoxPolicy'),
     {$IFDEF MSWINDOWS}
       {$IFDEF PDFIUM_PRINT_TEXT_WITH_GDI}
-    (P: @@FPDF_SetTypefaceAccessibleFunc;           N: 'FPDF_SetTypefaceAccessibleFunc'),
-    (P: @@FPDF_SetPrintTextWithGDI;                 N: 'FPDF_SetPrintTextWithGDI'),
+    (P: @@FPDF_SetTypefaceAccessibleFunc;             N: 'FPDF_SetTypefaceAccessibleFunc'),
+    (P: @@FPDF_SetPrintTextWithGDI;                   N: 'FPDF_SetPrintTextWithGDI'),
       {$ENDIF PDFIUM_PRINT_TEXT_WITH_GDI}
-    (P: @@FPDF_SetPrintMode;                        N: 'FPDF_SetPrintMode'),
+    (P: @@FPDF_SetPrintMode;                          N: 'FPDF_SetPrintMode'),
     {$ENDIF MSWINDOWS}
-    (P: @@FPDF_LoadDocument;                        N: 'FPDF_LoadDocument'),
-    (P: @@FPDF_LoadMemDocument;                     N: 'FPDF_LoadMemDocument'),
-    (P: @@FPDF_LoadCustomDocument;                  N: 'FPDF_LoadCustomDocument'),
-    (P: @@FPDF_GetFileVersion;                      N: 'FPDF_GetFileVersion'),
-    (P: @@FPDF_GetLastError;                        N: 'FPDF_GetLastError'),
-    (P: @@FPDF_DocumentHasValidCrossReferenceTable; N: 'FPDF_DocumentHasValidCrossReferenceTable'),
-    (P: @@FPDF_GetDocPermissions;                   N: 'FPDF_GetDocPermissions'),
-    (P: @@FPDF_GetSecurityHandlerRevision;          N: 'FPDF_GetSecurityHandlerRevision'),
-    (P: @@FPDF_GetPageCount;                        N: 'FPDF_GetPageCount'),
-    (P: @@FPDF_LoadPage;                            N: 'FPDF_LoadPage'),
-    (P: @@FPDF_GetPageWidthF;                       N: 'FPDF_GetPageWidthF'),
-    (P: @@FPDF_GetPageWidth;                        N: 'FPDF_GetPageWidth'),
-    (P: @@FPDF_GetPageHeightF;                      N: 'FPDF_GetPageHeightF'),
-    (P: @@FPDF_GetPageHeight;                       N: 'FPDF_GetPageHeight'),
-    (P: @@FPDF_GetPageBoundingBox;                  N: 'FPDF_GetPageBoundingBox'),
-    (P: @@FPDF_GetPageSizeByIndexF;                 N: 'FPDF_GetPageSizeByIndexF'),
-    (P: @@FPDF_GetPageSizeByIndex;                  N: 'FPDF_GetPageSizeByIndex'),
+    (P: @@FPDF_LoadDocument;                          N: 'FPDF_LoadDocument'),
+    (P: @@FPDF_LoadMemDocument;                       N: 'FPDF_LoadMemDocument'),
+    (P: @@FPDF_LoadMemDocument64;                     N: 'FPDF_LoadMemDocument64'),
+    (P: @@FPDF_LoadCustomDocument;                    N: 'FPDF_LoadCustomDocument'),
+    (P: @@FPDF_GetFileVersion;                        N: 'FPDF_GetFileVersion'),
+    (P: @@FPDF_GetLastError;                          N: 'FPDF_GetLastError'),
+    (P: @@FPDF_DocumentHasValidCrossReferenceTable;   N: 'FPDF_DocumentHasValidCrossReferenceTable'),
+    (P: @@FPDF_GetDocPermissions;                     N: 'FPDF_GetDocPermissions'),
+    (P: @@FPDF_GetSecurityHandlerRevision;            N: 'FPDF_GetSecurityHandlerRevision'),
+    (P: @@FPDF_GetPageCount;                          N: 'FPDF_GetPageCount'),
+    (P: @@FPDF_LoadPage;                              N: 'FPDF_LoadPage'),
+    (P: @@FPDF_GetPageWidthF;                         N: 'FPDF_GetPageWidthF'),
+    (P: @@FPDF_GetPageWidth;                          N: 'FPDF_GetPageWidth'),
+    (P: @@FPDF_GetPageHeightF;                        N: 'FPDF_GetPageHeightF'),
+    (P: @@FPDF_GetPageHeight;                         N: 'FPDF_GetPageHeight'),
+    (P: @@FPDF_GetPageBoundingBox;                    N: 'FPDF_GetPageBoundingBox'),
+    (P: @@FPDF_GetPageSizeByIndexF;                   N: 'FPDF_GetPageSizeByIndexF'),
+    (P: @@FPDF_GetPageSizeByIndex;                    N: 'FPDF_GetPageSizeByIndex'),
     {$IFDEF MSWINDOWS}
-    (P: @@FPDF_RenderPage;                          N: 'FPDF_RenderPage'),
+    (P: @@FPDF_RenderPage;                            N: 'FPDF_RenderPage'),
     {$ENDIF MSWINDOWS}
-    (P: @@FPDF_RenderPageBitmap;                    N: 'FPDF_RenderPageBitmap'),
-    (P: @@FPDF_RenderPageBitmapWithMatrix;          N: 'FPDF_RenderPageBitmapWithMatrix'),
+    (P: @@FPDF_RenderPageBitmap;                      N: 'FPDF_RenderPageBitmap'),
+    (P: @@FPDF_RenderPageBitmapWithMatrix;            N: 'FPDF_RenderPageBitmapWithMatrix'),
     {$IFDEF _SKIA_SUPPORT_}
-    (P: @@FPDF_RenderPageSkp;                       N: 'FPDF_RenderPageSkp'),
+    (P: @@FPDF_RenderPageSkp;                         N: 'FPDF_RenderPageSkp'),
     {$ENDIF _SKIA_SUPPORT_}
-    (P: @@FPDF_ClosePage;                           N: 'FPDF_ClosePage'),
-    (P: @@FPDF_CloseDocument;                       N: 'FPDF_CloseDocument'),
-    (P: @@FPDF_DeviceToPage;                        N: 'FPDF_DeviceToPage'),
-    (P: @@FPDF_PageToDevice;                        N: 'FPDF_PageToDevice'),
-    (P: @@FPDFBitmap_Create;                        N: 'FPDFBitmap_Create'),
-    (P: @@FPDFBitmap_CreateEx;                      N: 'FPDFBitmap_CreateEx'),
-    (P: @@FPDFBitmap_GetFormat;                     N: 'FPDFBitmap_GetFormat'),
-    (P: @@FPDFBitmap_FillRect;                      N: 'FPDFBitmap_FillRect'),
-    (P: @@FPDFBitmap_GetBuffer;                     N: 'FPDFBitmap_GetBuffer'),
-    (P: @@FPDFBitmap_GetWidth;                      N: 'FPDFBitmap_GetWidth'),
-    (P: @@FPDFBitmap_GetHeight;                     N: 'FPDFBitmap_GetHeight'),
-    (P: @@FPDFBitmap_GetStride;                     N: 'FPDFBitmap_GetStride'),
-    (P: @@FPDFBitmap_Destroy;                       N: 'FPDFBitmap_Destroy'),
-    (P: @@FPDF_VIEWERREF_GetPrintScaling;           N: 'FPDF_VIEWERREF_GetPrintScaling'),
-    (P: @@FPDF_VIEWERREF_GetNumCopies;              N: 'FPDF_VIEWERREF_GetNumCopies'),
-    (P: @@FPDF_VIEWERREF_GetPrintPageRange;         N: 'FPDF_VIEWERREF_GetPrintPageRange'),
-    (P: @@FPDF_VIEWERREF_GetPrintPageRangeCount;    N: 'FPDF_VIEWERREF_GetPrintPageRangeCount'),
-    (P: @@FPDF_VIEWERREF_GetPrintPageRangeElement;  N: 'FPDF_VIEWERREF_GetPrintPageRangeElement'),
-    (P: @@FPDF_VIEWERREF_GetDuplex;                 N: 'FPDF_VIEWERREF_GetDuplex'),
-    (P: @@FPDF_VIEWERREF_GetName;                   N: 'FPDF_VIEWERREF_GetName'),
-    (P: @@FPDF_CountNamedDests;                     N: 'FPDF_CountNamedDests'),
-    (P: @@FPDF_GetNamedDestByName;                  N: 'FPDF_GetNamedDestByName'),
-    (P: @@FPDF_GetNamedDest;                        N: 'FPDF_GetNamedDest'),
+    (P: @@FPDF_ClosePage;                             N: 'FPDF_ClosePage'),
+    (P: @@FPDF_CloseDocument;                         N: 'FPDF_CloseDocument'),
+    (P: @@FPDF_DeviceToPage;                          N: 'FPDF_DeviceToPage'),
+    (P: @@FPDF_PageToDevice;                          N: 'FPDF_PageToDevice'),
+    (P: @@FPDFBitmap_Create;                          N: 'FPDFBitmap_Create'),
+    (P: @@FPDFBitmap_CreateEx;                        N: 'FPDFBitmap_CreateEx'),
+    (P: @@FPDFBitmap_GetFormat;                       N: 'FPDFBitmap_GetFormat'),
+    (P: @@FPDFBitmap_FillRect;                        N: 'FPDFBitmap_FillRect'),
+    (P: @@FPDFBitmap_GetBuffer;                       N: 'FPDFBitmap_GetBuffer'),
+    (P: @@FPDFBitmap_GetWidth;                        N: 'FPDFBitmap_GetWidth'),
+    (P: @@FPDFBitmap_GetHeight;                       N: 'FPDFBitmap_GetHeight'),
+    (P: @@FPDFBitmap_GetStride;                       N: 'FPDFBitmap_GetStride'),
+    (P: @@FPDFBitmap_Destroy;                         N: 'FPDFBitmap_Destroy'),
+    (P: @@FPDF_VIEWERREF_GetPrintScaling;             N: 'FPDF_VIEWERREF_GetPrintScaling'),
+    (P: @@FPDF_VIEWERREF_GetNumCopies;                N: 'FPDF_VIEWERREF_GetNumCopies'),
+    (P: @@FPDF_VIEWERREF_GetPrintPageRange;           N: 'FPDF_VIEWERREF_GetPrintPageRange'),
+    (P: @@FPDF_VIEWERREF_GetPrintPageRangeCount;      N: 'FPDF_VIEWERREF_GetPrintPageRangeCount'),
+    (P: @@FPDF_VIEWERREF_GetPrintPageRangeElement;    N: 'FPDF_VIEWERREF_GetPrintPageRangeElement'),
+    (P: @@FPDF_VIEWERREF_GetDuplex;                   N: 'FPDF_VIEWERREF_GetDuplex'),
+    (P: @@FPDF_VIEWERREF_GetName;                     N: 'FPDF_VIEWERREF_GetName'),
+    (P: @@FPDF_CountNamedDests;                       N: 'FPDF_CountNamedDests'),
+    (P: @@FPDF_GetNamedDestByName;                    N: 'FPDF_GetNamedDestByName'),
+    (P: @@FPDF_GetNamedDest;                          N: 'FPDF_GetNamedDest'),
     {$IFDEF PDF_ENABLE_V8}
-    (P: @@FPDF_GetRecommendedV8Flags;               N: 'FPDF_GetRecommendedV8Flags'; Quirk: True; Optional: True),
+    (P: @@FPDF_GetRecommendedV8Flags;                 N: 'FPDF_GetRecommendedV8Flags'; Quirk: True; Optional: True),
+    (P: @@FPDF_GetArrayBufferAllocatorSharedInstance; N: 'FPDF_GetArrayBufferAllocatorSharedInstance'; Quirk: True; Optional: True),
     {$ENDIF PDF_ENABLE_V8}
     {$IFDEF PDF_ENABLE_XFA}
-    (P: @@FPDF_BStr_Init;                           N: 'FPDF_BStr_Init'; Quirk: True; Optional: True),
-    (P: @@FPDF_BStr_Set;                            N: 'FPDF_BStr_Set'; Quirk: True; Optional: True),
-    (P: @@FPDF_BStr_Clear;                          N: 'FPDF_BStr_Clear'; Quirk: True; Optional: True),
+    (P: @@FPDF_BStr_Init;                             N: 'FPDF_BStr_Init'; Quirk: True; Optional: True),
+    (P: @@FPDF_BStr_Set;                              N: 'FPDF_BStr_Set'; Quirk: True; Optional: True),
+    (P: @@FPDF_BStr_Clear;                            N: 'FPDF_BStr_Clear'; Quirk: True; Optional: True),
     {$ENDIF PDF_ENABLE_XFA}
 
     // *** _FPDF_EDIT_H_ ***
-    (P: @@FPDF_CreateNewDocument;                   N: 'FPDF_CreateNewDocument'),
-    (P: @@FPDFPage_New;                             N: 'FPDFPage_New'),
-    (P: @@FPDFPage_Delete;                          N: 'FPDFPage_Delete'),
-    (P: @@FPDFPage_GetRotation;                     N: 'FPDFPage_GetRotation'),
-    (P: @@FPDFPage_SetRotation;                     N: 'FPDFPage_SetRotation'),
-    (P: @@FPDFPage_InsertObject;                    N: 'FPDFPage_InsertObject'),
-    (P: @@FPDFPage_RemoveObject;                    N: 'FPDFPage_RemoveObject'),
-    (P: @@FPDFPage_CountObjects;                    N: 'FPDFPage_CountObjects'),
-    (P: @@FPDFPage_GetObject;                       N: 'FPDFPage_GetObject'),
-    (P: @@FPDFPage_HasTransparency;                 N: 'FPDFPage_HasTransparency'),
-    (P: @@FPDFPage_GenerateContent;                 N: 'FPDFPage_GenerateContent'),
-    (P: @@FPDFPageObj_Destroy;                      N: 'FPDFPageObj_Destroy'),
-    (P: @@FPDFPageObj_HasTransparency;              N: 'FPDFPageObj_HasTransparency'),
-    (P: @@FPDFPageObj_GetType;                      N: 'FPDFPageObj_GetType'),
-    (P: @@FPDFPageObj_Transform;                    N: 'FPDFPageObj_Transform'),
-    (P: @@FPDFPage_TransformAnnots;                 N: 'FPDFPage_TransformAnnots'),
-    (P: @@FPDFPageObj_NewImageObj;                  N: 'FPDFPageObj_NewImageObj'),
-    (P: @@FPDFPageObj_CountMarks;                   N: 'FPDFPageObj_CountMarks'),
-    (P: @@FPDFPageObj_GetMark;                      N: 'FPDFPageObj_GetMark'),
-    (P: @@FPDFPageObj_AddMark;                      N: 'FPDFPageObj_AddMark'),
-    (P: @@FPDFPageObj_RemoveMark;                   N: 'FPDFPageObj_RemoveMark'),
-    (P: @@FPDFPageObjMark_GetName;                  N: 'FPDFPageObjMark_GetName'),
-    (P: @@FPDFPageObjMark_CountParams;              N: 'FPDFPageObjMark_CountParams'),
-    (P: @@FPDFPageObjMark_GetParamKey;              N: 'FPDFPageObjMark_GetParamKey'),
-    (P: @@FPDFPageObjMark_GetParamValueType;        N: 'FPDFPageObjMark_GetParamValueType'),
-    (P: @@FPDFPageObjMark_GetParamIntValue;         N: 'FPDFPageObjMark_GetParamIntValue'),
-    (P: @@FPDFPageObjMark_GetParamStringValue;      N: 'FPDFPageObjMark_GetParamStringValue'),
-    (P: @@FPDFPageObjMark_GetParamBlobValue;        N: 'FPDFPageObjMark_GetParamBlobValue'),
-    (P: @@FPDFPageObjMark_SetIntParam;              N: 'FPDFPageObjMark_SetIntParam'),
-    (P: @@FPDFPageObjMark_SetStringParam;           N: 'FPDFPageObjMark_SetStringParam'),
-    (P: @@FPDFPageObjMark_SetBlobParam;             N: 'FPDFPageObjMark_SetBlobParam'),
-    (P: @@FPDFPageObjMark_RemoveParam;              N: 'FPDFPageObjMark_RemoveParam'),
-    (P: @@FPDFImageObj_LoadJpegFile;                N: 'FPDFImageObj_LoadJpegFile'),
-    (P: @@FPDFImageObj_LoadJpegFileInline;          N: 'FPDFImageObj_LoadJpegFileInline'),
-    (P: @@FPDFImageObj_GetMatrix;                   N: 'FPDFImageObj_GetMatrix'),
-    (P: @@FPDFImageObj_SetMatrix;                   N: 'FPDFImageObj_SetMatrix'),
-    (P: @@FPDFImageObj_SetBitmap;                   N: 'FPDFImageObj_SetBitmap'),
-    (P: @@FPDFImageObj_GetBitmap;                   N: 'FPDFImageObj_GetBitmap'),
-    (P: @@FPDFImageObj_GetImageDataDecoded;         N: 'FPDFImageObj_GetImageDataDecoded'),
-    (P: @@FPDFImageObj_GetImageDataRaw;             N: 'FPDFImageObj_GetImageDataRaw'),
-    (P: @@FPDFImageObj_GetImageFilterCount;         N: 'FPDFImageObj_GetImageFilterCount'),
-    (P: @@FPDFImageObj_GetImageFilter;              N: 'FPDFImageObj_GetImageFilter'),
-    (P: @@FPDFImageObj_GetImageMetadata;            N: 'FPDFImageObj_GetImageMetadata'),
-    (P: @@FPDFPageObj_CreateNewPath;                N: 'FPDFPageObj_CreateNewPath'),
-    (P: @@FPDFPageObj_CreateNewRect;                N: 'FPDFPageObj_CreateNewRect'),
-    (P: @@FPDFPageObj_GetBounds;                    N: 'FPDFPageObj_GetBounds'),
-    (P: @@FPDFPageObj_SetBlendMode;                 N: 'FPDFPageObj_SetBlendMode'),
-    (P: @@FPDFPageObj_SetStrokeColor;               N: 'FPDFPageObj_SetStrokeColor'),
-    (P: @@FPDFPageObj_GetStrokeColor;               N: 'FPDFPageObj_GetStrokeColor'),
-    (P: @@FPDFPageObj_SetStrokeWidth;               N: 'FPDFPageObj_SetStrokeWidth'),
-    (P: @@FPDFPageObj_GetStrokeWidth;               N: 'FPDFPageObj_GetStrokeWidth'),
-    (P: @@FPDFPageObj_GetLineJoin;                  N: 'FPDFPageObj_GetLineJoin'),
-    (P: @@FPDFPageObj_SetLineJoin;                  N: 'FPDFPageObj_SetLineJoin'),
-    (P: @@FPDFPageObj_GetLineCap;                   N: 'FPDFPageObj_GetLineCap'),
-    (P: @@FPDFPageObj_SetLineCap;                   N: 'FPDFPageObj_SetLineCap'),
-    (P: @@FPDFPageObj_SetFillColor;                 N: 'FPDFPageObj_SetFillColor'),
-    (P: @@FPDFPageObj_GetFillColor;                 N: 'FPDFPageObj_GetFillColor'),
-    (P: @@FPDFPath_CountSegments;                   N: 'FPDFPath_CountSegments'),
-    (P: @@FPDFPath_GetPathSegment;                  N: 'FPDFPath_GetPathSegment'),
-    (P: @@FPDFPathSegment_GetPoint;                 N: 'FPDFPathSegment_GetPoint'),
-    (P: @@FPDFPathSegment_GetType;                  N: 'FPDFPathSegment_GetType'),
-    (P: @@FPDFPathSegment_GetClose;                 N: 'FPDFPathSegment_GetClose'),
-    (P: @@FPDFPath_MoveTo;                          N: 'FPDFPath_MoveTo'),
-    (P: @@FPDFPath_LineTo;                          N: 'FPDFPath_LineTo'),
-    (P: @@FPDFPath_BezierTo;                        N: 'FPDFPath_BezierTo'),
-    (P: @@FPDFPath_Close;                           N: 'FPDFPath_Close'),
-    (P: @@FPDFPath_SetDrawMode;                     N: 'FPDFPath_SetDrawMode'),
-    (P: @@FPDFPath_GetDrawMode;                     N: 'FPDFPath_GetDrawMode'),
-    (P: @@FPDFPath_GetMatrix;                       N: 'FPDFPath_GetMatrix'),
-    (P: @@FPDFPath_SetMatrix;                       N: 'FPDFPath_SetMatrix'),
-    (P: @@FPDFPageObj_NewTextObj;                   N: 'FPDFPageObj_NewTextObj'),
-    (P: @@FPDFText_SetText;                         N: 'FPDFText_SetText'),
-    (P: @@FPDFText_LoadFont;                        N: 'FPDFText_LoadFont'),
-    (P: @@FPDFText_LoadStandardFont;                N: 'FPDFText_LoadStandardFont'),
-    (P: @@FPDFTextObj_GetMatrix;                    N: 'FPDFTextObj_GetMatrix'),
-    (P: @@FPDFTextObj_GetFontSize;                  N: 'FPDFTextObj_GetFontSize'),
-    (P: @@FPDFFont_Close;                           N: 'FPDFFont_Close'),
-    (P: @@FPDFPageObj_CreateTextObj;                N: 'FPDFPageObj_CreateTextObj'),
-    (P: @@FPDFTextObj_GetTextRenderMode;            N: 'FPDFTextObj_GetTextRenderMode'),
-    (P: @@FPDFTextObj_SetTextRenderMode;            N: 'FPDFTextObj_SetTextRenderMode'),
-    (P: @@FPDFTextObj_GetFontName;                  N: 'FPDFTextObj_GetFontName'),
-    (P: @@FPDFTextObj_GetText;                      N: 'FPDFTextObj_GetText'),
-    (P: @@FPDFFormObj_CountObjects;                 N: 'FPDFFormObj_CountObjects'),
-    (P: @@FPDFFormObj_GetObject;                    N: 'FPDFFormObj_GetObject'),
-    (P: @@FPDFFormObj_GetMatrix;                    N: 'FPDFFormObj_GetMatrix'),
+    (P: @@FPDF_CreateNewDocument;                     N: 'FPDF_CreateNewDocument'),
+    (P: @@FPDFPage_New;                               N: 'FPDFPage_New'),
+    (P: @@FPDFPage_Delete;                            N: 'FPDFPage_Delete'),
+    (P: @@FPDFPage_GetRotation;                       N: 'FPDFPage_GetRotation'),
+    (P: @@FPDFPage_SetRotation;                       N: 'FPDFPage_SetRotation'),
+    (P: @@FPDFPage_InsertObject;                      N: 'FPDFPage_InsertObject'),
+    (P: @@FPDFPage_RemoveObject;                      N: 'FPDFPage_RemoveObject'),
+    (P: @@FPDFPage_CountObjects;                      N: 'FPDFPage_CountObjects'),
+    (P: @@FPDFPage_GetObject;                         N: 'FPDFPage_GetObject'),
+    (P: @@FPDFPage_HasTransparency;                   N: 'FPDFPage_HasTransparency'),
+    (P: @@FPDFPage_GenerateContent;                   N: 'FPDFPage_GenerateContent'),
+    (P: @@FPDFPageObj_Destroy;                        N: 'FPDFPageObj_Destroy'),
+    (P: @@FPDFPageObj_HasTransparency;                N: 'FPDFPageObj_HasTransparency'),
+    (P: @@FPDFPageObj_GetType;                        N: 'FPDFPageObj_GetType'),
+    (P: @@FPDFPageObj_Transform;                      N: 'FPDFPageObj_Transform'),
+    (P: @@FPDFPage_TransformAnnots;                   N: 'FPDFPage_TransformAnnots'),
+    (P: @@FPDFPageObj_NewImageObj;                    N: 'FPDFPageObj_NewImageObj'),
+    (P: @@FPDFPageObj_CountMarks;                     N: 'FPDFPageObj_CountMarks'),
+    (P: @@FPDFPageObj_GetMark;                        N: 'FPDFPageObj_GetMark'),
+    (P: @@FPDFPageObj_AddMark;                        N: 'FPDFPageObj_AddMark'),
+    (P: @@FPDFPageObj_RemoveMark;                     N: 'FPDFPageObj_RemoveMark'),
+    (P: @@FPDFPageObjMark_GetName;                    N: 'FPDFPageObjMark_GetName'),
+    (P: @@FPDFPageObjMark_CountParams;                N: 'FPDFPageObjMark_CountParams'),
+    (P: @@FPDFPageObjMark_GetParamKey;                N: 'FPDFPageObjMark_GetParamKey'),
+    (P: @@FPDFPageObjMark_GetParamValueType;          N: 'FPDFPageObjMark_GetParamValueType'),
+    (P: @@FPDFPageObjMark_GetParamIntValue;           N: 'FPDFPageObjMark_GetParamIntValue'),
+    (P: @@FPDFPageObjMark_GetParamStringValue;        N: 'FPDFPageObjMark_GetParamStringValue'),
+    (P: @@FPDFPageObjMark_GetParamBlobValue;          N: 'FPDFPageObjMark_GetParamBlobValue'),
+    (P: @@FPDFPageObjMark_SetIntParam;                N: 'FPDFPageObjMark_SetIntParam'),
+    (P: @@FPDFPageObjMark_SetStringParam;             N: 'FPDFPageObjMark_SetStringParam'),
+    (P: @@FPDFPageObjMark_SetBlobParam;               N: 'FPDFPageObjMark_SetBlobParam'),
+    (P: @@FPDFPageObjMark_RemoveParam;                N: 'FPDFPageObjMark_RemoveParam'),
+    (P: @@FPDFImageObj_LoadJpegFile;                  N: 'FPDFImageObj_LoadJpegFile'),
+    (P: @@FPDFImageObj_LoadJpegFileInline;            N: 'FPDFImageObj_LoadJpegFileInline'),
+    (P: @@FPDFImageObj_GetMatrix;                     N: 'FPDFImageObj_GetMatrix'),
+    (P: @@FPDFImageObj_SetMatrix;                     N: 'FPDFImageObj_SetMatrix'),
+    (P: @@FPDFImageObj_SetBitmap;                     N: 'FPDFImageObj_SetBitmap'),
+    (P: @@FPDFImageObj_GetBitmap;                     N: 'FPDFImageObj_GetBitmap'),
+    (P: @@FPDFImageObj_GetImageDataDecoded;           N: 'FPDFImageObj_GetImageDataDecoded'),
+    (P: @@FPDFImageObj_GetImageDataRaw;               N: 'FPDFImageObj_GetImageDataRaw'),
+    (P: @@FPDFImageObj_GetImageFilterCount;           N: 'FPDFImageObj_GetImageFilterCount'),
+    (P: @@FPDFImageObj_GetImageFilter;                N: 'FPDFImageObj_GetImageFilter'),
+    (P: @@FPDFImageObj_GetImageMetadata;              N: 'FPDFImageObj_GetImageMetadata'),
+    (P: @@FPDFPageObj_CreateNewPath;                  N: 'FPDFPageObj_CreateNewPath'),
+    (P: @@FPDFPageObj_CreateNewRect;                  N: 'FPDFPageObj_CreateNewRect'),
+    (P: @@FPDFPageObj_GetBounds;                      N: 'FPDFPageObj_GetBounds'),
+    (P: @@FPDFPageObj_SetBlendMode;                   N: 'FPDFPageObj_SetBlendMode'),
+    (P: @@FPDFPageObj_SetStrokeColor;                 N: 'FPDFPageObj_SetStrokeColor'),
+    (P: @@FPDFPageObj_GetStrokeColor;                 N: 'FPDFPageObj_GetStrokeColor'),
+    (P: @@FPDFPageObj_SetStrokeWidth;                 N: 'FPDFPageObj_SetStrokeWidth'),
+    (P: @@FPDFPageObj_GetStrokeWidth;                 N: 'FPDFPageObj_GetStrokeWidth'),
+    (P: @@FPDFPageObj_GetLineJoin;                    N: 'FPDFPageObj_GetLineJoin'),
+    (P: @@FPDFPageObj_SetLineJoin;                    N: 'FPDFPageObj_SetLineJoin'),
+    (P: @@FPDFPageObj_GetLineCap;                     N: 'FPDFPageObj_GetLineCap'),
+    (P: @@FPDFPageObj_SetLineCap;                     N: 'FPDFPageObj_SetLineCap'),
+    (P: @@FPDFPageObj_SetFillColor;                   N: 'FPDFPageObj_SetFillColor'),
+    (P: @@FPDFPageObj_GetFillColor;                   N: 'FPDFPageObj_GetFillColor'),
+    (P: @@FPDFPath_CountSegments;                     N: 'FPDFPath_CountSegments'),
+    (P: @@FPDFPath_GetPathSegment;                    N: 'FPDFPath_GetPathSegment'),
+    (P: @@FPDFPathSegment_GetPoint;                   N: 'FPDFPathSegment_GetPoint'),
+    (P: @@FPDFPathSegment_GetType;                    N: 'FPDFPathSegment_GetType'),
+    (P: @@FPDFPathSegment_GetClose;                   N: 'FPDFPathSegment_GetClose'),
+    (P: @@FPDFPath_MoveTo;                            N: 'FPDFPath_MoveTo'),
+    (P: @@FPDFPath_LineTo;                            N: 'FPDFPath_LineTo'),
+    (P: @@FPDFPath_BezierTo;                          N: 'FPDFPath_BezierTo'),
+    (P: @@FPDFPath_Close;                             N: 'FPDFPath_Close'),
+    (P: @@FPDFPath_SetDrawMode;                       N: 'FPDFPath_SetDrawMode'),
+    (P: @@FPDFPath_GetDrawMode;                       N: 'FPDFPath_GetDrawMode'),
+    (P: @@FPDFPath_GetMatrix;                         N: 'FPDFPath_GetMatrix'),
+    (P: @@FPDFPath_SetMatrix;                         N: 'FPDFPath_SetMatrix'),
+    (P: @@FPDFPageObj_NewTextObj;                     N: 'FPDFPageObj_NewTextObj'),
+    (P: @@FPDFText_SetText;                           N: 'FPDFText_SetText'),
+    (P: @@FPDFText_LoadFont;                          N: 'FPDFText_LoadFont'),
+    (P: @@FPDFText_LoadStandardFont;                  N: 'FPDFText_LoadStandardFont'),
+    (P: @@FPDFTextObj_GetMatrix;                      N: 'FPDFTextObj_GetMatrix'),
+    (P: @@FPDFTextObj_GetFontSize;                    N: 'FPDFTextObj_GetFontSize'),
+    (P: @@FPDFFont_Close;                             N: 'FPDFFont_Close'),
+    (P: @@FPDFPageObj_CreateTextObj;                  N: 'FPDFPageObj_CreateTextObj'),
+    (P: @@FPDFTextObj_GetTextRenderMode;              N: 'FPDFTextObj_GetTextRenderMode'),
+    (P: @@FPDFTextObj_SetTextRenderMode;              N: 'FPDFTextObj_SetTextRenderMode'),
+    (P: @@FPDFTextObj_GetFontName;                    N: 'FPDFTextObj_GetFontName'),
+    (P: @@FPDFTextObj_GetText;                        N: 'FPDFTextObj_GetText'),
+    (P: @@FPDFFormObj_CountObjects;                   N: 'FPDFFormObj_CountObjects'),
+    (P: @@FPDFFormObj_GetObject;                      N: 'FPDFFormObj_GetObject'),
+    (P: @@FPDFFormObj_GetMatrix;                      N: 'FPDFFormObj_GetMatrix'),
 
     // *** _FPDF_PPO_H_ ***
-    (P: @@FPDF_ImportPages;                         N: 'FPDF_ImportPages'),
-    (P: @@FPDF_ImportNPagesToOne;                   N: 'FPDF_ImportNPagesToOne'),
-    (P: @@FPDF_CopyViewerPreferences;               N: 'FPDF_CopyViewerPreferences'),
+    (P: @@FPDF_ImportPages;                           N: 'FPDF_ImportPages'),
+    (P: @@FPDF_ImportNPagesToOne;                     N: 'FPDF_ImportNPagesToOne'),
+    (P: @@FPDF_CopyViewerPreferences;                 N: 'FPDF_CopyViewerPreferences'),
 
     // *** _FPDF_SAVE_H_ ***
-    (P: @@FPDF_SaveAsCopy;                          N: 'FPDF_SaveAsCopy'),
-    (P: @@FPDF_SaveWithVersion;                     N: 'FPDF_SaveWithVersion'),
+    (P: @@FPDF_SaveAsCopy;                            N: 'FPDF_SaveAsCopy'),
+    (P: @@FPDF_SaveWithVersion;                       N: 'FPDF_SaveWithVersion'),
 
     // *** _FPDFTEXT_H_ ***
-    (P: @@FPDFText_LoadPage;                        N: 'FPDFText_LoadPage'),
-    (P: @@FPDFText_ClosePage;                       N: 'FPDFText_ClosePage'),
-    (P: @@FPDFText_CountChars;                      N: 'FPDFText_CountChars'),
-    (P: @@FPDFText_GetUnicode;                      N: 'FPDFText_GetUnicode'),
-    (P: @@FPDFText_GetFontSize;                     N: 'FPDFText_GetFontSize'),
-    (P: @@FPDFText_GetFontInfo;                     N: 'FPDFText_GetFontInfo'),
-    (P: @@FPDFText_GetFontWeight;                   N: 'FPDFText_GetFontWeight'),
-    (P: @@FPDFText_GetTextRenderMode;               N: 'FPDFText_GetTextRenderMode'),
-    (P: @@FPDFText_GetFillColor;                    N: 'FPDFText_GetFillColor'),
-    (P: @@FPDFText_GetStrokeColor;                  N: 'FPDFText_GetStrokeColor'),
-    (P: @@FPDFText_GetCharAngle;                    N: 'FPDFText_GetCharAngle'),
-    (P: @@FPDFText_GetCharBox;                      N: 'FPDFText_GetCharBox'),
-    (P: @@FPDFText_GetLooseCharBox;                 N: 'FPDFText_GetLooseCharBox'),
-    (P: @@FPDFText_GetMatrix;                       N: 'FPDFText_GetMatrix'),
-    (P: @@FPDFText_GetCharOrigin;                   N: 'FPDFText_GetCharOrigin'),
-    (P: @@FPDFText_GetCharIndexAtPos;               N: 'FPDFText_GetCharIndexAtPos'),
-    (P: @@FPDFText_GetText;                         N: 'FPDFText_GetText'),
-    (P: @@FPDFText_CountRects;                      N: 'FPDFText_CountRects'),
-    (P: @@FPDFText_GetRect;                         N: 'FPDFText_GetRect'),
-    (P: @@FPDFText_GetBoundedText;                  N: 'FPDFText_GetBoundedText'),
-    (P: @@FPDFText_FindStart;                       N: 'FPDFText_FindStart'),
-    (P: @@FPDFText_FindNext;                        N: 'FPDFText_FindNext'),
-    (P: @@FPDFText_FindPrev;                        N: 'FPDFText_FindPrev'),
-    (P: @@FPDFText_GetSchResultIndex;               N: 'FPDFText_GetSchResultIndex'),
-    (P: @@FPDFText_GetSchCount;                     N: 'FPDFText_GetSchCount'),
-    (P: @@FPDFText_FindClose;                       N: 'FPDFText_FindClose'),
-    (P: @@FPDFLink_LoadWebLinks;                    N: 'FPDFLink_LoadWebLinks'),
-    (P: @@FPDFLink_CountWebLinks;                   N: 'FPDFLink_CountWebLinks'),
-    (P: @@FPDFLink_GetURL;                          N: 'FPDFLink_GetURL'),
-    (P: @@FPDFLink_CountRects;                      N: 'FPDFLink_CountRects'),
-    (P: @@FPDFLink_GetRect;                         N: 'FPDFLink_GetRect'),
-    (P: @@FPDFLink_GetTextRange;                    N: 'FPDFLink_GetTextRange'),
-    (P: @@FPDFLink_CloseWebLinks;                   N: 'FPDFLink_CloseWebLinks'),
+    (P: @@FPDFText_LoadPage;                          N: 'FPDFText_LoadPage'),
+    (P: @@FPDFText_ClosePage;                         N: 'FPDFText_ClosePage'),
+    (P: @@FPDFText_CountChars;                        N: 'FPDFText_CountChars'),
+    (P: @@FPDFText_GetUnicode;                        N: 'FPDFText_GetUnicode'),
+    (P: @@FPDFText_GetFontSize;                       N: 'FPDFText_GetFontSize'),
+    (P: @@FPDFText_GetFontInfo;                       N: 'FPDFText_GetFontInfo'),
+    (P: @@FPDFText_GetFontWeight;                     N: 'FPDFText_GetFontWeight'),
+    (P: @@FPDFText_GetTextRenderMode;                 N: 'FPDFText_GetTextRenderMode'),
+    (P: @@FPDFText_GetFillColor;                      N: 'FPDFText_GetFillColor'),
+    (P: @@FPDFText_GetStrokeColor;                    N: 'FPDFText_GetStrokeColor'),
+    (P: @@FPDFText_GetCharAngle;                      N: 'FPDFText_GetCharAngle'),
+    (P: @@FPDFText_GetCharBox;                        N: 'FPDFText_GetCharBox'),
+    (P: @@FPDFText_GetLooseCharBox;                   N: 'FPDFText_GetLooseCharBox'),
+    (P: @@FPDFText_GetMatrix;                         N: 'FPDFText_GetMatrix'),
+    (P: @@FPDFText_GetCharOrigin;                     N: 'FPDFText_GetCharOrigin'),
+    (P: @@FPDFText_GetCharIndexAtPos;                 N: 'FPDFText_GetCharIndexAtPos'),
+    (P: @@FPDFText_GetText;                           N: 'FPDFText_GetText'),
+    (P: @@FPDFText_CountRects;                        N: 'FPDFText_CountRects'),
+    (P: @@FPDFText_GetRect;                           N: 'FPDFText_GetRect'),
+    (P: @@FPDFText_GetBoundedText;                    N: 'FPDFText_GetBoundedText'),
+    (P: @@FPDFText_FindStart;                         N: 'FPDFText_FindStart'),
+    (P: @@FPDFText_FindNext;                          N: 'FPDFText_FindNext'),
+    (P: @@FPDFText_FindPrev;                          N: 'FPDFText_FindPrev'),
+    (P: @@FPDFText_GetSchResultIndex;                 N: 'FPDFText_GetSchResultIndex'),
+    (P: @@FPDFText_GetSchCount;                       N: 'FPDFText_GetSchCount'),
+    (P: @@FPDFText_FindClose;                         N: 'FPDFText_FindClose'),
+    (P: @@FPDFLink_LoadWebLinks;                      N: 'FPDFLink_LoadWebLinks'),
+    (P: @@FPDFLink_CountWebLinks;                     N: 'FPDFLink_CountWebLinks'),
+    (P: @@FPDFLink_GetURL;                            N: 'FPDFLink_GetURL'),
+    (P: @@FPDFLink_CountRects;                        N: 'FPDFLink_CountRects'),
+    (P: @@FPDFLink_GetRect;                           N: 'FPDFLink_GetRect'),
+    (P: @@FPDFLink_GetTextRange;                      N: 'FPDFLink_GetTextRange'),
+    (P: @@FPDFLink_CloseWebLinks;                     N: 'FPDFLink_CloseWebLinks'),
 
     // *** _FPDF_SEARCHEX_H_ ***
-    (P: @@FPDFText_GetCharIndexFromTextIndex;       N: 'FPDFText_GetCharIndexFromTextIndex'),
-    (P: @@FPDFText_GetTextIndexFromCharIndex;       N: 'FPDFText_GetTextIndexFromCharIndex'),
+    (P: @@FPDFText_GetCharIndexFromTextIndex;         N: 'FPDFText_GetCharIndexFromTextIndex'),
+    (P: @@FPDFText_GetTextIndexFromCharIndex;         N: 'FPDFText_GetTextIndexFromCharIndex'),
 
     // *** _FPDF_PROGRESSIVE_H_ ***
-    (P: @@FPDF_RenderPageBitmap_Start;              N: 'FPDF_RenderPageBitmap_Start'),
-    (P: @@FPDF_RenderPage_Continue;                 N: 'FPDF_RenderPage_Continue'),
-    (P: @@FPDF_RenderPage_Close;                    N: 'FPDF_RenderPage_Close'),
+    (P: @@FPDF_RenderPageBitmapWithColorScheme_Start; N: 'FPDF_RenderPageBitmapWithColorScheme_Start'),
+    (P: @@FPDF_RenderPageBitmap_Start;                N: 'FPDF_RenderPageBitmap_Start'),
+    (P: @@FPDF_RenderPage_Continue;                   N: 'FPDF_RenderPage_Continue'),
+    (P: @@FPDF_RenderPage_Close;                      N: 'FPDF_RenderPage_Close'),
+
+    // *** _FPDF_SIGNATURE_H_ ***
+    (P: @@FPDF_GetSignatureCount;                     N: 'FPDF_GetSignatureCount'),
+    (P: @@FPDF_GetSignatureObject;                    N: 'FPDF_GetSignatureObject'),
 
     // *** _FPDF_FLATTEN_H_ ***
-    (P: @@FPDFPage_Flatten;                         N: 'FPDFPage_Flatten'),
+    (P: @@FPDFPage_Flatten;                           N: 'FPDFPage_Flatten'),
 
     // *** _FPDF_DOC_H_ ***
-    (P: @@FPDFBookmark_GetFirstChild;               N: 'FPDFBookmark_GetFirstChild'),
-    (P: @@FPDFBookmark_GetNextSibling;              N: 'FPDFBookmark_GetNextSibling'),
-    (P: @@FPDFBookmark_GetTitle;                    N: 'FPDFBookmark_GetTitle'),
-    (P: @@FPDFBookmark_Find;                        N: 'FPDFBookmark_Find'),
-    (P: @@FPDFBookmark_GetDest;                     N: 'FPDFBookmark_GetDest'),
-    (P: @@FPDFBookmark_GetAction;                   N: 'FPDFBookmark_GetAction'),
-    (P: @@FPDFAction_GetDest;                       N: 'FPDFAction_GetDest'),
-    (P: @@FPDFAction_GetFilePath;                   N: 'FPDFAction_GetFilePath'),
-    (P: @@FPDFAction_GetURIPath;                    N: 'FPDFAction_GetURIPath'),
-    (P: @@FPDFDest_GetDestPageIndex;                N: 'FPDFDest_GetDestPageIndex'),
-    (P: @@FPDFDest_GetView;                         N: 'FPDFDest_GetView'),
-    (P: @@FPDFDest_GetLocationInPage;               N: 'FPDFDest_GetLocationInPage'),
-    (P: @@FPDFLink_GetLinkAtPoint;                  N: 'FPDFLink_GetLinkAtPoint'),
-    (P: @@FPDFLink_GetLinkZOrderAtPoint;            N: 'FPDFLink_GetLinkZOrderAtPoint'),
-    (P: @@FPDFLink_GetDest;                         N: 'FPDFLink_GetDest'),
-    (P: @@FPDFLink_GetAction;                       N: 'FPDFLink_GetAction'),
-    (P: @@FPDFLink_Enumerate;                       N: 'FPDFLink_Enumerate'),
-    (P: @@FPDFLink_GetAnnotRect;                    N: 'FPDFLink_GetAnnotRect'),
-    (P: @@FPDFLink_CountQuadPoints;                 N: 'FPDFLink_CountQuadPoints'),
-    (P: @@FPDFLink_GetQuadPoints;                   N: 'FPDFLink_GetQuadPoints'),
-    (P: @@FPDF_GetMetaText;                         N: 'FPDF_GetMetaText'),
-    (P: @@FPDF_GetPageLabel;                        N: 'FPDF_GetPageLabel'),
+    (P: @@FPDFBookmark_GetFirstChild;                 N: 'FPDFBookmark_GetFirstChild'),
+    (P: @@FPDFBookmark_GetNextSibling;                N: 'FPDFBookmark_GetNextSibling'),
+    (P: @@FPDFBookmark_GetTitle;                      N: 'FPDFBookmark_GetTitle'),
+    (P: @@FPDFBookmark_Find;                          N: 'FPDFBookmark_Find'),
+    (P: @@FPDFBookmark_GetDest;                       N: 'FPDFBookmark_GetDest'),
+    (P: @@FPDFBookmark_GetAction;                     N: 'FPDFBookmark_GetAction'),
+    (P: @@FPDFAction_GetDest;                         N: 'FPDFAction_GetDest'),
+    (P: @@FPDFAction_GetFilePath;                     N: 'FPDFAction_GetFilePath'),
+    (P: @@FPDFAction_GetURIPath;                      N: 'FPDFAction_GetURIPath'),
+    (P: @@FPDFDest_GetDestPageIndex;                  N: 'FPDFDest_GetDestPageIndex'),
+    (P: @@FPDFDest_GetView;                           N: 'FPDFDest_GetView'),
+    (P: @@FPDFDest_GetLocationInPage;                 N: 'FPDFDest_GetLocationInPage'),
+    (P: @@FPDFLink_GetLinkAtPoint;                    N: 'FPDFLink_GetLinkAtPoint'),
+    (P: @@FPDFLink_GetLinkZOrderAtPoint;              N: 'FPDFLink_GetLinkZOrderAtPoint'),
+    (P: @@FPDFLink_GetDest;                           N: 'FPDFLink_GetDest'),
+    (P: @@FPDFLink_GetAction;                         N: 'FPDFLink_GetAction'),
+    (P: @@FPDFLink_Enumerate;                         N: 'FPDFLink_Enumerate'),
+    (P: @@FPDFLink_GetAnnot;                          N: 'FPDFLink_GetAnnot'),
+    (P: @@FPDFLink_GetAnnotRect;                      N: 'FPDFLink_GetAnnotRect'),
+    (P: @@FPDFLink_CountQuadPoints;                   N: 'FPDFLink_CountQuadPoints'),
+    (P: @@FPDFLink_GetQuadPoints;                     N: 'FPDFLink_GetQuadPoints'),
+    (P: @@FPDF_GetFileIdentifier;                     N: 'FPDF_GetFileIdentifier'),
+    (P: @@FPDF_GetMetaText;                           N: 'FPDF_GetMetaText'),
+    (P: @@FPDF_GetPageLabel;                          N: 'FPDF_GetPageLabel'),
 
     // *** _FPDF_SYSFONTINFO_H_ ***
-    (P: @@FPDF_GetDefaultTTFMap;                    N: 'FPDF_GetDefaultTTFMap'),
-    (P: @@FPDF_AddInstalledFont;                    N: 'FPDF_AddInstalledFont'),
-    (P: @@FPDF_SetSystemFontInfo;                   N: 'FPDF_SetSystemFontInfo'),
-    (P: @@FPDF_GetDefaultSystemFontInfo;            N: 'FPDF_GetDefaultSystemFontInfo'),
-    (P: @@FPDFDoc_GetPageMode;                      N: 'FPDFDoc_GetPageMode'),
+    (P: @@FPDF_GetDefaultTTFMap;                      N: 'FPDF_GetDefaultTTFMap'),
+    (P: @@FPDF_AddInstalledFont;                      N: 'FPDF_AddInstalledFont'),
+    (P: @@FPDF_SetSystemFontInfo;                     N: 'FPDF_SetSystemFontInfo'),
+    (P: @@FPDF_GetDefaultSystemFontInfo;              N: 'FPDF_GetDefaultSystemFontInfo'),
+    (P: @@FPDFDoc_GetPageMode;                        N: 'FPDFDoc_GetPageMode'),
 
     // *** _FPDF_EXT_H_ ***
-    (P: @@FSDK_SetUnSpObjProcessHandler;            N: 'FSDK_SetUnSpObjProcessHandler'),
-    (P: @@FSDK_SetTimeFunction;                     N: 'FSDK_SetTimeFunction'),
-    (P: @@FSDK_SetLocaltimeFunction;                N: 'FSDK_SetLocaltimeFunction'),
+    (P: @@FSDK_SetUnSpObjProcessHandler;              N: 'FSDK_SetUnSpObjProcessHandler'),
+    (P: @@FSDK_SetTimeFunction;                       N: 'FSDK_SetTimeFunction'),
+    (P: @@FSDK_SetLocaltimeFunction;                  N: 'FSDK_SetLocaltimeFunction'),
 
     // *** _FPDF_DATAAVAIL_H_ ***
-    (P: @@FPDFAvail_Create;                         N: 'FPDFAvail_Create'),
-    (P: @@FPDFAvail_Destroy;                        N: 'FPDFAvail_Destroy'),
-    (P: @@FPDFAvail_IsDocAvail;                     N: 'FPDFAvail_IsDocAvail'),
-    (P: @@FPDFAvail_GetDocument;                    N: 'FPDFAvail_GetDocument'),
-    (P: @@FPDFAvail_GetFirstPageNum;                N: 'FPDFAvail_GetFirstPageNum'),
-    (P: @@FPDFAvail_IsPageAvail;                    N: 'FPDFAvail_IsPageAvail'),
-    (P: @@FPDFAvail_IsFormAvail;                    N: 'FPDFAvail_IsFormAvail'),
-    (P: @@FPDFAvail_IsLinearized;                   N: 'FPDFAvail_IsLinearized'),
+    (P: @@FPDFAvail_Create;                           N: 'FPDFAvail_Create'),
+    (P: @@FPDFAvail_Destroy;                          N: 'FPDFAvail_Destroy'),
+    (P: @@FPDFAvail_IsDocAvail;                       N: 'FPDFAvail_IsDocAvail'),
+    (P: @@FPDFAvail_GetDocument;                      N: 'FPDFAvail_GetDocument'),
+    (P: @@FPDFAvail_GetFirstPageNum;                  N: 'FPDFAvail_GetFirstPageNum'),
+    (P: @@FPDFAvail_IsPageAvail;                      N: 'FPDFAvail_IsPageAvail'),
+    (P: @@FPDFAvail_IsFormAvail;                      N: 'FPDFAvail_IsFormAvail'),
+    (P: @@FPDFAvail_IsLinearized;                     N: 'FPDFAvail_IsLinearized'),
 
     // *** _FPD_FORMFILL_H ***
-    (P: @@FPDFDOC_InitFormFillEnvironment;          N: 'FPDFDOC_InitFormFillEnvironment'),
-    (P: @@FPDFDOC_ExitFormFillEnvironment;          N: 'FPDFDOC_ExitFormFillEnvironment'),
-    (P: @@FORM_OnAfterLoadPage;                     N: 'FORM_OnAfterLoadPage'),
-    (P: @@FORM_OnBeforeClosePage;                   N: 'FORM_OnBeforeClosePage'),
-    (P: @@FORM_DoDocumentJSAction;                  N: 'FORM_DoDocumentJSAction'),
-    (P: @@FORM_DoDocumentOpenAction;                N: 'FORM_DoDocumentOpenAction'),
-    (P: @@FORM_DoDocumentAAction;                   N: 'FORM_DoDocumentAAction'),
-    (P: @@FORM_DoPageAAction;                       N: 'FORM_DoPageAAction'),
-    (P: @@FORM_OnMouseMove;                         N: 'FORM_OnMouseMove'),
-    (P: @@FORM_OnFocus;                             N: 'FORM_OnFocus'),
-    (P: @@FORM_OnLButtonDown;                       N: 'FORM_OnLButtonDown'),
-    (P: @@FORM_OnRButtonDown;                       N: 'FORM_OnRButtonDown'),
-    (P: @@FORM_OnLButtonUp;                         N: 'FORM_OnLButtonUp'),
-    (P: @@FORM_OnRButtonUp;                         N: 'FORM_OnRButtonUp'),
-    (P: @@FORM_OnLButtonDoubleClick;                N: 'FORM_OnLButtonDoubleClick'),
-    (P: @@FORM_OnKeyDown;                           N: 'FORM_OnKeyDown'),
-    (P: @@FORM_OnKeyUp;                             N: 'FORM_OnKeyUp'),
-    (P: @@FORM_OnChar;                              N: 'FORM_OnChar'),
-    (P: @@FORM_GetFocusedText;                      N: 'FORM_GetFocusedText'),
-    (P: @@FORM_GetSelectedText;                     N: 'FORM_GetSelectedText'),
-    (P: @@FORM_ReplaceSelection;                    N: 'FORM_ReplaceSelection'),
-    (P: @@FORM_CanUndo;                             N: 'FORM_CanUndo'),
-    (P: @@FORM_CanRedo;                             N: 'FORM_CanRedo'),
-    (P: @@FORM_Undo;                                N: 'FORM_Undo'),
-    (P: @@FORM_Redo;                                N: 'FORM_Redo'),
-    (P: @@FORM_ForceToKillFocus;                    N: 'FORM_ForceToKillFocus'),
-    (P: @@FPDFPage_HasFormFieldAtPoint;             N: 'FPDFPage_HasFormFieldAtPoint'),
-    (P: @@FPDFPage_FormFieldZOrderAtPoint;          N: 'FPDFPage_FormFieldZOrderAtPoint'),
-    (P: @@FPDF_SetFormFieldHighlightColor;          N: 'FPDF_SetFormFieldHighlightColor'),
-    (P: @@FPDF_SetFormFieldHighlightAlpha;          N: 'FPDF_SetFormFieldHighlightAlpha'),
-    (P: @@FPDF_RemoveFormFieldHighlight;            N: 'FPDF_RemoveFormFieldHighlight'),
-    (P: @@FPDF_FFLDraw;                             N: 'FPDF_FFLDraw'),
+    (P: @@FPDFDOC_InitFormFillEnvironment;            N: 'FPDFDOC_InitFormFillEnvironment'),
+    (P: @@FPDFDOC_ExitFormFillEnvironment;            N: 'FPDFDOC_ExitFormFillEnvironment'),
+    (P: @@FORM_OnAfterLoadPage;                       N: 'FORM_OnAfterLoadPage'),
+    (P: @@FORM_OnBeforeClosePage;                     N: 'FORM_OnBeforeClosePage'),
+    (P: @@FORM_DoDocumentJSAction;                    N: 'FORM_DoDocumentJSAction'),
+    (P: @@FORM_DoDocumentOpenAction;                  N: 'FORM_DoDocumentOpenAction'),
+    (P: @@FORM_DoDocumentAAction;                     N: 'FORM_DoDocumentAAction'),
+    (P: @@FORM_DoPageAAction;                         N: 'FORM_DoPageAAction'),
+    (P: @@FORM_OnMouseMove;                           N: 'FORM_OnMouseMove'),
+    (P: @@FORM_OnMouseWheel;                          N: 'FORM_OnMouseWheel'),
+    (P: @@FORM_OnFocus;                               N: 'FORM_OnFocus'),
+    (P: @@FORM_OnLButtonDown;                         N: 'FORM_OnLButtonDown'),
+    (P: @@FORM_OnRButtonDown;                         N: 'FORM_OnRButtonDown'),
+    (P: @@FORM_OnLButtonUp;                           N: 'FORM_OnLButtonUp'),
+    (P: @@FORM_OnRButtonUp;                           N: 'FORM_OnRButtonUp'),
+    (P: @@FORM_OnLButtonDoubleClick;                  N: 'FORM_OnLButtonDoubleClick'),
+    (P: @@FORM_OnKeyDown;                             N: 'FORM_OnKeyDown'),
+    (P: @@FORM_OnKeyUp;                               N: 'FORM_OnKeyUp'),
+    (P: @@FORM_OnChar;                                N: 'FORM_OnChar'),
+    (P: @@FORM_GetFocusedText;                        N: 'FORM_GetFocusedText'),
+    (P: @@FORM_GetSelectedText;                       N: 'FORM_GetSelectedText'),
+    (P: @@FORM_ReplaceSelection;                      N: 'FORM_ReplaceSelection'),
+    (P: @@FORM_SelectAllText;                         N: 'FORM_SelectAllText'),
+    (P: @@FORM_CanUndo;                               N: 'FORM_CanUndo'),
+    (P: @@FORM_CanRedo;                               N: 'FORM_CanRedo'),
+    (P: @@FORM_Undo;                                  N: 'FORM_Undo'),
+    (P: @@FORM_Redo;                                  N: 'FORM_Redo'),
+    (P: @@FORM_ForceToKillFocus;                      N: 'FORM_ForceToKillFocus'),
+    (P: @@FORM_GetFocusedAnnot;                       N: 'FORM_GetFocusedAnnot'),
+    (P: @@FORM_SetFocusedAnnot;                       N: 'FORM_SetFocusedAnnot'),
+    (P: @@FPDFPage_HasFormFieldAtPoint;               N: 'FPDFPage_HasFormFieldAtPoint'),
+    (P: @@FPDFPage_FormFieldZOrderAtPoint;            N: 'FPDFPage_FormFieldZOrderAtPoint'),
+    (P: @@FPDF_SetFormFieldHighlightColor;            N: 'FPDF_SetFormFieldHighlightColor'),
+    (P: @@FPDF_SetFormFieldHighlightAlpha;            N: 'FPDF_SetFormFieldHighlightAlpha'),
+    (P: @@FPDF_RemoveFormFieldHighlight;              N: 'FPDF_RemoveFormFieldHighlight'),
+    (P: @@FPDF_FFLDraw;                               N: 'FPDF_FFLDraw'),
     {$IFDEF _SKIA_SUPPORT_}
-    (P: @@FPDF_FFLRecord;                           N: 'FPDF_FFLRecord'),
+    (P: @@FPDF_FFLRecord;                             N: 'FPDF_FFLRecord'),
     {$ENDIF _SKIA_SUPPORT_}
 
-    (P: @@FPDF_GetFormType;                         N: 'FPDF_GetFormType'),
-    (P: @@FORM_SetIndexSelected;                    N: 'FORM_SetIndexSelected'),
-    (P: @@FORM_IsIndexSelected;                     N: 'FORM_IsIndexSelected'),
-    (P: @@FPDF_LoadXFA;                             N: 'FPDF_LoadXFA'),
+    (P: @@FPDF_GetFormType;                           N: 'FPDF_GetFormType'),
+    (P: @@FORM_SetIndexSelected;                      N: 'FORM_SetIndexSelected'),
+    (P: @@FORM_IsIndexSelected;                       N: 'FORM_IsIndexSelected'),
+    (P: @@FPDF_LoadXFA;                               N: 'FPDF_LoadXFA'),
 
     // *** _FPDF_CATALOG_H_ ***
-    (P: @@FPDFCatalog_IsTagged;                     N: 'FPDFCatalog_IsTagged'),
+    (P: @@FPDFCatalog_IsTagged;                       N: 'FPDFCatalog_IsTagged'),
 
     // *** _FPDF_ATTACHMENT_H_ ***
-    (P: @@FPDFDoc_GetAttachmentCount;               N: 'FPDFDoc_GetAttachmentCount'),
-    (P: @@FPDFDoc_AddAttachment;                    N: 'FPDFDoc_AddAttachment'),
-    (P: @@FPDFDoc_GetAttachment;                    N: 'FPDFDoc_GetAttachment'),
-    (P: @@FPDFDoc_DeleteAttachment;                 N: 'FPDFDoc_DeleteAttachment'),
-    (P: @@FPDFAttachment_GetName;                   N: 'FPDFAttachment_GetName'),
-    (P: @@FPDFAttachment_HasKey;                    N: 'FPDFAttachment_HasKey'),
-    (P: @@FPDFAttachment_GetValueType;              N: 'FPDFAttachment_GetValueType'),
-    (P: @@FPDFAttachment_SetStringValue;            N: 'FPDFAttachment_SetStringValue'),
-    (P: @@FPDFAttachment_GetStringValue;            N: 'FPDFAttachment_GetStringValue'),
-    (P: @@FPDFAttachment_SetFile;                   N: 'FPDFAttachment_SetFile'),
-    (P: @@FPDFAttachment_GetFile;                   N: 'FPDFAttachment_GetFile'),
+    (P: @@FPDFDoc_GetAttachmentCount;                 N: 'FPDFDoc_GetAttachmentCount'),
+    (P: @@FPDFDoc_AddAttachment;                      N: 'FPDFDoc_AddAttachment'),
+    (P: @@FPDFDoc_GetAttachment;                      N: 'FPDFDoc_GetAttachment'),
+    (P: @@FPDFDoc_DeleteAttachment;                   N: 'FPDFDoc_DeleteAttachment'),
+    (P: @@FPDFAttachment_GetName;                     N: 'FPDFAttachment_GetName'),
+    (P: @@FPDFAttachment_HasKey;                      N: 'FPDFAttachment_HasKey'),
+    (P: @@FPDFAttachment_GetValueType;                N: 'FPDFAttachment_GetValueType'),
+    (P: @@FPDFAttachment_SetStringValue;              N: 'FPDFAttachment_SetStringValue'),
+    (P: @@FPDFAttachment_GetStringValue;              N: 'FPDFAttachment_GetStringValue'),
+    (P: @@FPDFAttachment_SetFile;                     N: 'FPDFAttachment_SetFile'),
+    (P: @@FPDFAttachment_GetFile;                     N: 'FPDFAttachment_GetFile'),
 
     // *** _FPDF_TRANSFORMPAGE_H_ ***
-    (P: @@FPDFPage_SetMediaBox;                     N: 'FPDFPage_SetMediaBox'),
-    (P: @@FPDFPage_SetCropBox;                      N: 'FPDFPage_SetCropBox'),
-    (P: @@FPDFPage_SetBleedBox;                     N: 'FPDFPage_SetBleedBox'),
-    (P: @@FPDFPage_SetTrimBox;                      N: 'FPDFPage_SetTrimBox'),
-    (P: @@FPDFPage_SetArtBox;                       N: 'FPDFPage_SetArtBox'),
-    (P: @@FPDFPage_GetMediaBox;                     N: 'FPDFPage_GetMediaBox'),
-    (P: @@FPDFPage_GetCropBox;                      N: 'FPDFPage_GetCropBox'),
-    (P: @@FPDFPage_GetBleedBox;                     N: 'FPDFPage_GetBleedBox'),
-    (P: @@FPDFPage_GetTrimBox;                      N: 'FPDFPage_GetTrimBox'),
-    (P: @@FPDFPage_GetArtBox;                       N: 'FPDFPage_GetArtBox'),
-    (P: @@FPDFPage_TransFormWithClip;               N: 'FPDFPage_TransFormWithClip'),
-    (P: @@FPDFPageObj_TransformClipPath;            N: 'FPDFPageObj_TransformClipPath'),
-    (P: @@FPDFPageObj_GetClipPath;                  N: 'FPDFPageObj_GetClipPath'),
-    (P: @@FPDFClipPath_CountPaths;                  N: 'FPDFClipPath_CountPaths'),
-    (P: @@FPDFClipPath_CountPathSegments;           N: 'FPDFClipPath_CountPathSegments'),
-    (P: @@FPDFClipPath_GetPathSegment;              N: 'FPDFClipPath_GetPathSegment'),
-    (P: @@FPDF_CreateClipPath;                      N: 'FPDF_CreateClipPath'),
-    (P: @@FPDF_DestroyClipPath;                     N: 'FPDF_DestroyClipPath'),
-    (P: @@FPDFPage_InsertClipPath;                  N: 'FPDFPage_InsertClipPath'),
+    (P: @@FPDFPage_SetMediaBox;                       N: 'FPDFPage_SetMediaBox'),
+    (P: @@FPDFPage_SetCropBox;                        N: 'FPDFPage_SetCropBox'),
+    (P: @@FPDFPage_SetBleedBox;                       N: 'FPDFPage_SetBleedBox'),
+    (P: @@FPDFPage_SetTrimBox;                        N: 'FPDFPage_SetTrimBox'),
+    (P: @@FPDFPage_SetArtBox;                         N: 'FPDFPage_SetArtBox'),
+    (P: @@FPDFPage_GetMediaBox;                       N: 'FPDFPage_GetMediaBox'),
+    (P: @@FPDFPage_GetCropBox;                        N: 'FPDFPage_GetCropBox'),
+    (P: @@FPDFPage_GetBleedBox;                       N: 'FPDFPage_GetBleedBox'),
+    (P: @@FPDFPage_GetTrimBox;                        N: 'FPDFPage_GetTrimBox'),
+    (P: @@FPDFPage_GetArtBox;                         N: 'FPDFPage_GetArtBox'),
+    (P: @@FPDFPage_TransFormWithClip;                 N: 'FPDFPage_TransFormWithClip'),
+    (P: @@FPDFPageObj_TransformClipPath;              N: 'FPDFPageObj_TransformClipPath'),
+    (P: @@FPDFPageObj_GetClipPath;                    N: 'FPDFPageObj_GetClipPath'),
+    (P: @@FPDFClipPath_CountPaths;                    N: 'FPDFClipPath_CountPaths'),
+    (P: @@FPDFClipPath_CountPathSegments;             N: 'FPDFClipPath_CountPathSegments'),
+    (P: @@FPDFClipPath_GetPathSegment;                N: 'FPDFClipPath_GetPathSegment'),
+    (P: @@FPDF_CreateClipPath;                        N: 'FPDF_CreateClipPath'),
+    (P: @@FPDF_DestroyClipPath;                       N: 'FPDF_DestroyClipPath'),
+    (P: @@FPDFPage_InsertClipPath;                    N: 'FPDFPage_InsertClipPath'),
 
     // *** _FPDF_STRUCTTREE_H_ ***
-    (P: @@FPDF_StructTree_GetForPage;               N: 'FPDF_StructTree_GetForPage'),
-    (P: @@FPDF_StructTree_Close;                    N: 'FPDF_StructTree_Close'),
-    (P: @@FPDF_StructTree_CountChildren;            N: 'FPDF_StructTree_CountChildren'),
-    (P: @@FPDF_StructTree_GetChildAtIndex;          N: 'FPDF_StructTree_GetChildAtIndex'),
-    (P: @@FPDF_StructElement_GetAltText;            N: 'FPDF_StructElement_GetAltText'),
-    (P: @@FPDF_StructElement_GetMarkedContentID;    N: 'FPDF_StructElement_GetMarkedContentID'),
-    (P: @@FPDF_StructElement_GetType;               N: 'FPDF_StructElement_GetType'),
-    (P: @@FPDF_StructElement_GetTitle;              N: 'FPDF_StructElement_GetTitle'),
-    (P: @@FPDF_StructElement_CountChildren;         N: 'FPDF_StructElement_CountChildren'),
-    (P: @@FPDF_StructElement_GetChildAtIndex;       N: 'FPDF_StructElement_GetChildAtIndex'),
+    (P: @@FPDF_StructTree_GetForPage;                 N: 'FPDF_StructTree_GetForPage'),
+    (P: @@FPDF_StructTree_Close;                      N: 'FPDF_StructTree_Close'),
+    (P: @@FPDF_StructTree_CountChildren;              N: 'FPDF_StructTree_CountChildren'),
+    (P: @@FPDF_StructTree_GetChildAtIndex;            N: 'FPDF_StructTree_GetChildAtIndex'),
+    (P: @@FPDF_StructElement_GetAltText;              N: 'FPDF_StructElement_GetAltText'),
+    (P: @@FPDF_StructElement_GetMarkedContentID;      N: 'FPDF_StructElement_GetMarkedContentID'),
+    (P: @@FPDF_StructElement_GetType;                 N: 'FPDF_StructElement_GetType'),
+    (P: @@FPDF_StructElement_GetTitle;                N: 'FPDF_StructElement_GetTitle'),
+    (P: @@FPDF_StructElement_CountChildren;           N: 'FPDF_StructElement_CountChildren'),
+    (P: @@FPDF_StructElement_GetChildAtIndex;         N: 'FPDF_StructElement_GetChildAtIndex'),
 
-    (P: @@FPDFAnnot_IsSupportedSubtype;             N: 'FPDFAnnot_IsSupportedSubtype'),
-    (P: @@FPDFPage_CreateAnnot;                     N: 'FPDFPage_CreateAnnot'),
-    (P: @@FPDFPage_GetAnnotCount;                   N: 'FPDFPage_GetAnnotCount'),
-    (P: @@FPDFPage_GetAnnot;                        N: 'FPDFPage_GetAnnot'),
-    (P: @@FPDFPage_GetAnnotIndex;                   N: 'FPDFPage_GetAnnotIndex'),
-    (P: @@FPDFPage_CloseAnnot;                      N: 'FPDFPage_CloseAnnot'),
-    (P: @@FPDFPage_RemoveAnnot;                     N: 'FPDFPage_RemoveAnnot'),
-    (P: @@FPDFAnnot_GetSubtype;                     N: 'FPDFAnnot_GetSubtype'),
-    (P: @@FPDFAnnot_IsObjectSupportedSubtype;       N: 'FPDFAnnot_IsObjectSupportedSubtype'),
-    (P: @@FPDFAnnot_UpdateObject;                   N: 'FPDFAnnot_UpdateObject'),
-    (P: @@FPDFAnnot_AppendObject;                   N: 'FPDFAnnot_AppendObject'),
-    (P: @@FPDFAnnot_GetObjectCount;                 N: 'FPDFAnnot_GetObjectCount'),
-    (P: @@FPDFAnnot_GetObject;                      N: 'FPDFAnnot_GetObject'),
-    (P: @@FPDFAnnot_RemoveObject;                   N: 'FPDFAnnot_RemoveObject'),
-    (P: @@FPDFAnnot_SetColor;                       N: 'FPDFAnnot_SetColor'),
-    (P: @@FPDFAnnot_GetColor;                       N: 'FPDFAnnot_GetColor'),
-    (P: @@FPDFAnnot_HasAttachmentPoints;            N: 'FPDFAnnot_HasAttachmentPoints'),
-    (P: @@FPDFAnnot_SetAttachmentPoints;            N: 'FPDFAnnot_SetAttachmentPoints'),
-    (P: @@FPDFAnnot_AppendAttachmentPoints;         N: 'FPDFAnnot_AppendAttachmentPoints'),
-    (P: @@FPDFAnnot_CountAttachmentPoints;          N: 'FPDFAnnot_CountAttachmentPoints'),
-    (P: @@FPDFAnnot_GetAttachmentPoints;            N: 'FPDFAnnot_GetAttachmentPoints'),
-    (P: @@FPDFAnnot_SetRect;                        N: 'FPDFAnnot_SetRect'),
-    (P: @@FPDFAnnot_GetRect;                        N: 'FPDFAnnot_GetRect'),
-    (P: @@FPDFAnnot_HasKey;                         N: 'FPDFAnnot_HasKey'),
-    (P: @@FPDFAnnot_GetValueType;                   N: 'FPDFAnnot_GetValueType'),
-    (P: @@FPDFAnnot_SetStringValue;                 N: 'FPDFAnnot_SetStringValue'),
-    (P: @@FPDFAnnot_GetStringValue;                 N: 'FPDFAnnot_GetStringValue'),
-    (P: @@FPDFAnnot_GetNumberValue;                 N: 'FPDFAnnot_GetNumberValue'),
-    (P: @@FPDFAnnot_SetAP;                          N: 'FPDFAnnot_SetAP'),
-    (P: @@FPDFAnnot_GetAP;                          N: 'FPDFAnnot_GetAP'),
-    (P: @@FPDFAnnot_GetLinkedAnnot;                 N: 'FPDFAnnot_GetLinkedAnnot'),
-    (P: @@FPDFAnnot_GetFlags;                       N: 'FPDFAnnot_GetFlags'),
-    (P: @@FPDFAnnot_SetFlags;                       N: 'FPDFAnnot_SetFlags'),
-    (P: @@FPDFAnnot_GetFormFieldFlags;              N: 'FPDFAnnot_GetFormFieldFlags'),
-    (P: @@FPDFAnnot_GetFormFieldAtPoint;            N: 'FPDFAnnot_GetFormFieldAtPoint'),
-    (P: @@FPDFAnnot_GetFormFieldName;               N: 'FPDFAnnot_GetFormFieldName'),
-    (P: @@FPDFAnnot_GetFormFieldType;               N: 'FPDFAnnot_GetFormFieldType'),
-    (P: @@FPDFAnnot_GetOptionCount;                 N: 'FPDFAnnot_GetOptionCount'),
-    (P: @@FPDFAnnot_GetOptionLabel;                 N: 'FPDFAnnot_GetOptionLabel'),
-    (P: @@FPDFAnnot_GetFontSize;                    N: 'FPDFAnnot_GetFontSize'),
-    (P: @@FPDFAnnot_IsChecked;                      N: 'FPDFAnnot_IsChecked'),
+    (P: @@FPDFAnnot_IsSupportedSubtype;               N: 'FPDFAnnot_IsSupportedSubtype'),
+    (P: @@FPDFPage_CreateAnnot;                       N: 'FPDFPage_CreateAnnot'),
+    (P: @@FPDFPage_GetAnnotCount;                     N: 'FPDFPage_GetAnnotCount'),
+    (P: @@FPDFPage_GetAnnot;                          N: 'FPDFPage_GetAnnot'),
+    (P: @@FPDFPage_GetAnnotIndex;                     N: 'FPDFPage_GetAnnotIndex'),
+    (P: @@FPDFPage_CloseAnnot;                        N: 'FPDFPage_CloseAnnot'),
+    (P: @@FPDFPage_RemoveAnnot;                       N: 'FPDFPage_RemoveAnnot'),
+    (P: @@FPDFAnnot_GetSubtype;                       N: 'FPDFAnnot_GetSubtype'),
+    (P: @@FPDFAnnot_IsObjectSupportedSubtype;         N: 'FPDFAnnot_IsObjectSupportedSubtype'),
+    (P: @@FPDFAnnot_UpdateObject;                     N: 'FPDFAnnot_UpdateObject'),
+    (P: @@FPDFAnnot_AddInkStroke;                     N: 'FPDFAnnot_AddInkStroke'),
+    (P: @@FPDFAnnot_RemoveInkList;                    N: 'FPDFAnnot_RemoveInkList'),
+    (P: @@FPDFAnnot_AppendObject;                     N: 'FPDFAnnot_AppendObject'),
+    (P: @@FPDFAnnot_GetObjectCount;                   N: 'FPDFAnnot_GetObjectCount'),
+    (P: @@FPDFAnnot_GetObject;                        N: 'FPDFAnnot_GetObject'),
+    (P: @@FPDFAnnot_RemoveObject;                     N: 'FPDFAnnot_RemoveObject'),
+    (P: @@FPDFAnnot_SetColor;                         N: 'FPDFAnnot_SetColor'),
+    (P: @@FPDFAnnot_GetColor;                         N: 'FPDFAnnot_GetColor'),
+    (P: @@FPDFAnnot_HasAttachmentPoints;              N: 'FPDFAnnot_HasAttachmentPoints'),
+    (P: @@FPDFAnnot_SetAttachmentPoints;              N: 'FPDFAnnot_SetAttachmentPoints'),
+    (P: @@FPDFAnnot_AppendAttachmentPoints;           N: 'FPDFAnnot_AppendAttachmentPoints'),
+    (P: @@FPDFAnnot_CountAttachmentPoints;            N: 'FPDFAnnot_CountAttachmentPoints'),
+    (P: @@FPDFAnnot_GetAttachmentPoints;              N: 'FPDFAnnot_GetAttachmentPoints'),
+    (P: @@FPDFAnnot_SetRect;                          N: 'FPDFAnnot_SetRect'),
+    (P: @@FPDFAnnot_GetRect;                          N: 'FPDFAnnot_GetRect'),
+    (P: @@FPDFAnnot_HasKey;                           N: 'FPDFAnnot_HasKey'),
+    (P: @@FPDFAnnot_GetValueType;                     N: 'FPDFAnnot_GetValueType'),
+    (P: @@FPDFAnnot_SetStringValue;                   N: 'FPDFAnnot_SetStringValue'),
+    (P: @@FPDFAnnot_GetStringValue;                   N: 'FPDFAnnot_GetStringValue'),
+    (P: @@FPDFAnnot_GetNumberValue;                   N: 'FPDFAnnot_GetNumberValue'),
+    (P: @@FPDFAnnot_SetAP;                            N: 'FPDFAnnot_SetAP'),
+    (P: @@FPDFAnnot_GetAP;                            N: 'FPDFAnnot_GetAP'),
+    (P: @@FPDFAnnot_GetLinkedAnnot;                   N: 'FPDFAnnot_GetLinkedAnnot'),
+    (P: @@FPDFAnnot_GetFlags;                         N: 'FPDFAnnot_GetFlags'),
+    (P: @@FPDFAnnot_SetFlags;                         N: 'FPDFAnnot_SetFlags'),
+    (P: @@FPDFAnnot_GetFormFieldFlags;                N: 'FPDFAnnot_GetFormFieldFlags'),
+    (P: @@FPDFAnnot_GetFormFieldAtPoint;              N: 'FPDFAnnot_GetFormFieldAtPoint'),
+    (P: @@FPDFAnnot_GetFormFieldName;                 N: 'FPDFAnnot_GetFormFieldName'),
+    (P: @@FPDFAnnot_GetFormFieldType;                 N: 'FPDFAnnot_GetFormFieldType'),
+    (P: @@FPDFAnnot_GetOptionCount;                   N: 'FPDFAnnot_GetOptionCount'),
+    (P: @@FPDFAnnot_GetOptionLabel;                   N: 'FPDFAnnot_GetOptionLabel'),
+    (P: @@FPDFAnnot_IsOptionSelected;                 N: 'FPDFAnnot_IsOptionSelected'),
+    (P: @@FPDFAnnot_GetFontSize;                      N: 'FPDFAnnot_GetFontSize'),
+    (P: @@FPDFAnnot_IsChecked;                        N: 'FPDFAnnot_IsChecked'),
+
+    (P: @@FPDFAnnot_SetFocusableSubtypes;             N: 'FPDFAnnot_SetFocusableSubtypes'),
+    (P: @@FPDFAnnot_GetFocusableSubtypesCount;        N: 'FPDFAnnot_GetFocusableSubtypesCount'),
+    (P: @@FPDFAnnot_GetFocusableSubtypes;             N: 'FPDFAnnot_GetFocusableSubtypes'),
+    (P: @@FPDFAnnot_GetLink;                          N: 'FPDFAnnot_GetLink'),
+    (P: @@FPDFAnnot_GetFormControlCount;              N: 'FPDFAnnot_GetFormControlCount'),
+    (P: @@FPDFAnnot_GetFormControlIndex;              N: 'FPDFAnnot_GetFormControlIndex'),
+    (P: @@FPDFAnnot_GetFormFieldExportValue;          N: 'FPDFAnnot_GetFormFieldExportValue'),
 
     {$IFDEF PDF_ENABLE_V8}
     // *** _FPDF_LIBS_H_ ***
-    (P: @@FPDF_InitEmbeddedLibraries;               N: 'FPDF_InitEmbeddedLibraries'; Optional: True),
+    (P: @@FPDF_InitEmbeddedLibraries;                 N: 'FPDF_InitEmbeddedLibraries'; Optional: True),
     {$ENDIF PDF_ENABLE_V8}
 
     // *** _FPDF_JAVASCRIPT_H_ ***
-
-    (P: @@FPDFDoc_GetJavaScriptActionCount;         N: 'FPDFDoc_GetJavaScriptActionCount'),
-    (P: @@FPDFDoc_GetJavaScriptAction;              N: 'FPDFDoc_GetJavaScriptAction'),
-    (P: @@FPDFDoc_CloseJavaScriptAction;            N: 'FPDFDoc_CloseJavaScriptAction'),
-    (P: @@FPDFJavaScriptAction_GetName;             N: 'FPDFJavaScriptAction_GetName'),
-    (P: @@FPDFJavaScriptAction_GetScript;           N: 'FPDFJavaScriptAction_GetScript'),
+    (P: @@FPDFDoc_GetJavaScriptActionCount;           N: 'FPDFDoc_GetJavaScriptActionCount'),
+    (P: @@FPDFDoc_GetJavaScriptAction;                N: 'FPDFDoc_GetJavaScriptAction'),
+    (P: @@FPDFDoc_CloseJavaScriptAction;              N: 'FPDFDoc_CloseJavaScriptAction'),
+    (P: @@FPDFJavaScriptAction_GetName;               N: 'FPDFJavaScriptAction_GetName'),
+    (P: @@FPDFJavaScriptAction_GetScript;             N: 'FPDFJavaScriptAction_GetScript'),
 
     // *** _FPDF_THUMBNAIL_H_ ***
-    (P: @@FPDFPage_GetDecodedThumbnailData;         N: 'FPDFPage_GetDecodedThumbnailData'),
-    (P: @@FPDFPage_GetRawThumbnailData;             N: 'FPDFPage_GetRawThumbnailData'),
-    (P: @@FPDFPage_GetThumbnailAsBitmap;            N: 'FPDFPage_GetThumbnailAsBitmap')
+    (P: @@FPDFPage_GetDecodedThumbnailData;           N: 'FPDFPage_GetDecodedThumbnailData'),
+    (P: @@FPDFPage_GetRawThumbnailData;               N: 'FPDFPage_GetRawThumbnailData'),
+    (P: @@FPDFPage_GetThumbnailAsBitmap;              N: 'FPDFPage_GetThumbnailAsBitmap')
   );
 
 const
