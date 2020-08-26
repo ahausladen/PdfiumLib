@@ -3,7 +3,7 @@
 
 // Use DLLs (x64, x86) from https://github.com/bblanchon/pdfium-binaries
 //
-// DLL Version: chromium/4194
+// DLL Version: chromium/4243
 
 unit PdfiumLib;
 
@@ -313,9 +313,10 @@ var
 type
   TPDFiumEnsureTypefaceCharactersAccessible = procedure(font: PLogFont; text: PWideChar; text_length: SIZE_T); cdecl;
 
+// Experimental API.
 // Function: FPDF_SetTypefaceAccessibleFunc
 //          Set the function pointer that makes GDI fonts available in sandboxed
-//          environments. Experimental API.
+//          environments.
 // Parameters:
 //          func -   A function pointer. See description above.
 // Return value:
@@ -323,9 +324,9 @@ type
 var
   FPDF_SetTypefaceAccessibleFunc: procedure(func: TPDFiumEnsureTypefaceCharactersAccessible); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
 // Function: FPDF_SetPrintTextWithGDI
 //          Set whether to use GDI to draw fonts when printing on Windows.
-//          Experimental API.
 // Parameters:
 //          use_gdi -   Set to true to enable printing text with GDI.
 // Return value:
@@ -334,9 +335,9 @@ var
   FPDF_SetPrintTextWithGDI: procedure(use_gdi: FPDF_BOOL); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
   {$ENDIF PDFIUM_PRINT_TEXT_WITH_GDI}
 
+// Experimental API.
 // Function: FPDF_SetPrintMode
 //          Set printing mode when printing on Windows.
-//          Experimental API.
 // Parameters:
 //          mode - FPDF_PRINTMODE_EMF to output EMF (default)
 //                 FPDF_PRINTMODE_TEXTONLY to output text only (for charstream
@@ -403,9 +404,9 @@ var
 var
   FPDF_LoadMemDocument: function(data_buf: Pointer; size: Integer; password: FPDF_BYTESTRING): FPDF_DOCUMENT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
 // Function: FPDF_LoadMemDocument64
 //          Open and load a PDF document from memory.
-//          Experimental API.
 // Parameters:
 //          data_buf    -   Pointer to a buffer containing the PDF document.
 //          size        -   Number of bytes in the PDF document.
@@ -599,9 +600,9 @@ const
 var
   FPDF_GetLastError: function(): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
 // Function: FPDF_DocumentHasValidCrossReferenceTable
 //          Whether the document's cross reference table is valid or not.
-//          Experimental API.
 // Parameters:
 //          document    -   Handle to a document. Returned by FPDF_LoadDocument.
 // Return value:
@@ -1165,9 +1166,9 @@ var
 var
   FPDF_VIEWERREF_GetPrintPageRange: function(document: FPDF_DOCUMENT): FPDF_PAGERANGE; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
 // Function: FPDF_VIEWERREF_GetPrintPageRangeCount
 //          Returns the number of elements in a FPDF_PAGERANGE.
-//          Experimental API.
 // Parameters:
 //          pagerange   -   Handle to the page range.
 // Return value:
@@ -1175,9 +1176,9 @@ var
 var
   FPDF_VIEWERREF_GetPrintPageRangeCount: function(pagerange: FPDF_PAGERANGE): SIZE_T; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
 // Function: FPDF_VIEWERREF_GetPrintPageRangeElement
 //          Returns an element from a FPDF_PAGERANGE.
-//          Experimental API.
 // Parameters:
 //          pagerange   -   Handle to the page range.
 //          index       -   Index of the element.
@@ -1258,6 +1259,60 @@ var
 //         return.
 var
   FPDF_GetNamedDest: function(document: FPDF_DOCUMENT; index: Integer; buffer: Pointer; var buflen: LongWord): FPDF_DEST; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDF_GetXFAPacketCount
+//          Get the number of valid packets in the XFA entry.
+// Parameters:
+//          document - Handle to the document.
+// Return value:
+//          The number of valid packets, or -1 on error.
+var
+  FPDF_GetXFAPacketCount: function(document: FPDF_DOCUMENT): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDF_GetXFAPacketName
+//          Get the name of a packet in the XFA array.
+// Parameters:
+//          document - Handle to the document.
+//          index    - Index number of the packet. 0 for the first packet.
+//          buffer   - Buffer for holding the name of the XFA packet.
+//          buflen   - Length of |buffer| in bytes.
+// Return value:
+//          The length of the packet name in bytes, or 0 on error.
+//
+// |document| must be valid and |index| must be in the range [0, N), where N is
+// the value returned by FPDF_GetXFAPacketCount().
+// |buffer| is only modified if it is non-NULL and |buflen| is greater than or
+// equal to the length of the packet name. The packet name includes a
+// terminating NUL character. |buffer| is unmodified on error.
+var
+  FPDF_GetXFAPacketName: function(document: FPDF_DOCUMENT; index: Integer; buffer: Pointer; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDF_GetXFAPacketContent
+//          Get the content of a packet in the XFA array.
+// Parameters:
+//          document   - Handle to the document.
+//          index      - Index number of the packet. 0 for the first packet.
+//          buffer     - Buffer for holding the content of the XFA packet.
+//          buflen     - Length of |buffer| in bytes.
+//          out_buflen - Pointer to the variable that will receive the minimum
+//                       buffer size needed to contain the content of the XFA
+//                       packet.
+// Return value:
+//          Whether the operation succeeded or not.
+//
+// |document| must be valid and |index| must be in the range [0, N), where N is
+// the value returned by FPDF_GetXFAPacketCount(). |out_buflen| must not be
+// NULL. When the aforementioned arguments are valid, the operation succeeds,
+// and |out_buflen| receives the content size. |buffer| is only modified if
+// |buffer| is non-null and long enough to contain the content. Callers must
+// check both the return value and the input |buflen| is no less than the
+// returned |out_buflen| before using the data in |buffer|.
+var
+  FPDF_GetXFAPacketContent: function(document: FPDF_DOCUMENT; index: Integer; buffer: Pointer;
+    buflen: LongWord; var out_buflen: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 {$IFDEF PDF_ENABLE_V8}
 // Function: FPDF_GetRecommendedV8Flags
@@ -1874,15 +1929,34 @@ var
   FPDFImageObj_SetBitmap: function(pages: PFPDF_PAGE; nCount: Integer; image_object: FPDF_PAGEOBJECT;
     bitmap: FPDF_BITMAP): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Get a bitmap rasterisation of |image_object|. The returned bitmap will be
-// owned by the caller, and FPDFBitmap_Destroy() must be called on the returned
-// bitmap when it is no longer needed.
+// Get a bitmap rasterization of |image_object|. FPDFImageObj_GetBitmap() only
+// operates on |image_object| and does not take the associated image mask into
+// account. It also ignores the matrix for |image_object|.
+// The returned bitmap will be owned by the caller, and FPDFBitmap_Destroy()
+// must be called on the returned bitmap when it is no longer needed.
 //
 //   image_object - handle to an image object.
 //
 // Returns the bitmap.
 var
   FPDFImageObj_GetBitmap: function(image_object: FPDF_PAGEOBJECT): FPDF_BITMAP; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get a bitmap rasterization of |image_object| that takes the image mask and
+// image matrix into account. To render correctly, the caller must provide the
+// |document| associated with |image_object|. If there is a |page| associated
+// with |image_object| the caller should provide that as well.
+// The returned bitmap will be owned by the caller, and FPDFBitmap_Destroy()
+// must be called on the returned bitmap when it is no longer needed.
+//
+//   document     - handle to a document associated with |image_object|.
+//   page         - handle to an optional page associated with |image_object|.
+//   image_object - handle to an image object.
+//
+// Returns the bitmap.
+var
+  FPDFImageObj_GetRenderedBitmap: function(document: FPDF_DOCUMENT; page: FPDF_PAGE;
+    image_object: FPDF_PAGEOBJECT): FPDF_BITMAP; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Get the decoded image data of |image_object|. The decoded data is the
 // uncompressed image data, i.e. the raw image data after having all filters
@@ -3305,16 +3379,110 @@ var
 var
   FPDF_GetSignatureObject: function(document: FPDF_DOCUMENT; index: Integer): FPDF_SIGNATURE; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
+// Function: FPDFSignatureObj_GetContents
+//          Get the contents of a signature object.
+// Parameters:
+//          signature   -   Handle to the signature object. Returned by
+//                          FPDF_GetSignatureObject().
+//          buffer      -   The address of a buffer that receives the contents.
+//          length      -   The size, in bytes, of |buffer|.
+// Return value:
+//          Returns the number of bytes in the contents on success, 0 on error.
+//
+// For public-key signatures, |buffer| is either a DER-encoded PKCS#1 binary or
+// a DER-encoded PKCS#7 binary. If |length| is less than the returned length, or
+// |buffer| is NULL, |buffer| will not be modified.
+var
+  FPDFSignatureObj_GetContents: function(signature: FPDF_SIGNATURE; buffer: Pointer; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDFSignatureObj_GetByteRange
+//          Get the byte range of a signature object.
+// Parameters:
+//          signature   -   Handle to the signature object. Returned by
+//                          FPDF_GetSignatureObject().
+//          buffer      -   The address of a buffer that receives the
+//                          byte range.
+//          length      -   The size, in ints, of |buffer|.
+// Return value:
+//          Returns the number of ints in the byte range on
+//          success, 0 on error.
+//
+// |buffer| is an array of pairs of integers (starting byte offset,
+// length in bytes) that describes the exact byte range for the digest
+// calculation. If |length| is less than the returned length, or
+// |buffer| is NULL, |buffer| will not be modified.
+var
+  FPDFSignatureObj_GetByteRange: function(signature: FPDF_SIGNATURE; buffer: PInteger; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDFSignatureObj_GetSubFilter
+//          Get the encoding of the value of a signature object.
+// Parameters:
+//          signature   -   Handle to the signature object. Returned by
+//                          FPDF_GetSignatureObject().
+//          buffer      -   The address of a buffer that receives the encoding.
+//          length      -   The size, in bytes, of |buffer|.
+// Return value:
+//          Returns the number of bytes in the encoding name (including the
+//          trailing NUL character) on success, 0 on error.
+//
+// The |buffer| is always encoded in 7-bit ASCII. If |length| is less than the
+// returned length, or |buffer| is NULL, |buffer| will not be modified.
+var
+  FPDFSignatureObj_GetSubFilter: function(signature: FPDF_SIGNATURE; buffer: PAnsiChar; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDFSignatureObj_GetReason
+//          Get the reason (comment) of the signature object.
+// Parameters:
+//          signature   -   Handle to the signature object. Returned by
+//                          FPDF_GetSignatureObject().
+//          buffer      -   The address of a buffer that receives the reason.
+//          length      -   The size, in bytes, of |buffer|.
+// Return value:
+//          Returns the number of bytes in the reason on success, 0 on error.
+//
+// Regardless of the platform, the |buffer| is always in UTF-16LE encoding. The
+// string is terminated by a UTF16 NUL character. If |length| is less than the
+// returned length, or |buffer| is NULL, |buffer| will not be modified.
+var
+  FPDFSignatureObj_GetReason: function(signature: FPDF_SIGNATURE; buffer: Pointer; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDFSignatureObj_GetTime
+//          Get the time of signing of a signature object.
+// Parameters:
+//          signature   -   Handle to the signature object. Returned by
+//                          FPDF_GetSignatureObject().
+//          buffer      -   The address of a buffer that receives the time.
+//          length      -   The size, in bytes, of |buffer|.
+// Return value:
+//          Returns the number of bytes in the encoding name (including the
+//          trailing NUL character) on success, 0 on error.
+//
+// The |buffer| is always encoded in 7-bit ASCII. If |length| is less than the
+// returned length, or |buffer| is NULL, |buffer| will not be modified.
+//
+// The format of time is expected to be D:YYYYMMDDHHMMSS+XX'YY', i.e. it's
+// percision is seconds, with timezone information. This value should be used
+// only when the time of signing is not available in the (PKCS#7 binary)
+// signature.
+var
+  FPDFSignatureObj_GetTime: function(signature: FPDF_SIGNATURE; buffer: PAnsiChar; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 
 // *** _FPDF_DOC_H_ ***
 
 const
-  PDFACTION_UNSUPPORTED = 0;    // Unsupported action type.
-  PDFACTION_GOTO        = 1;    // Go to a destination within current document.
-  PDFACTION_REMOTEGOTO  = 2;    // Go to a destination within another document.
-  PDFACTION_URI         = 3;    // Universal Resource Identifier, including web pages and
-                                // other Internet based resources.
-  PDFACTION_LAUNCH      = 4;    // Launch an application or open a file.
+  PDFACTION_UNSUPPORTED  = 0;    // Unsupported action type.
+  PDFACTION_GOTO         = 1;    // Go to a destination within current document.
+  PDFACTION_REMOTEGOTO   = 2;    // Go to a destination within another document.
+  PDFACTION_URI          = 3;    // Universal Resource Identifier, including web pages and
+                                 // other Internet based resources.
+  PDFACTION_LAUNCH       = 4;    // Launch an application or open a file.
+  PDFACTION_EMBEDDEDGOTO = 5;    // Go to a destination in an embedded file.
 
 // View destination fit types. See pdfmark reference v9, page 48.
   PDFDEST_VIEW_UNKNOWN_MODE = 0;
@@ -3490,8 +3658,8 @@ var
 var
   FPDFDest_GetDestPageIndex: function(document: FPDF_DOCUMENT; dest: FPDF_DEST): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
 // Get the view (fit type) specified by |dest|.
-// Experimental API. Subject to change.
 //
 //   dest         - handle to the destination.
 //   pNumParams   - receives the number of view parameters, which is at most 4.
@@ -3615,8 +3783,20 @@ var
 var
   FPDFLink_GetQuadPoints: function(link_annot: FPDF_LINK; quad_index: Integer; quad_points: PFS_QUADPOINTSF): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
+// Gets an additional-action from |page|.
+//
+//   page      - handle to the page, as returned by FPDF_LoadPage().
+//   aa_type   - the type of the page object's addtional-action, defined
+//               in public/fpdf_formfill.h
+//
+//   Returns the handle to the action data, or NULL if there is no
+//   additional-action of type |aa_type|.
+var
+  FPDF_GetPageAAction: function(page: FPDF_PAGE; aa_type: Integer): FPDF_ACTION; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
 // Get the file identifer defined in the trailer of |document|.
-// Experimental API. Subject to change.
 //
 //   document - handle to the document.
 //   id_type  - the file identifier type to retrieve.
@@ -7336,6 +7516,65 @@ var
 var
   FPDF_StructElement_GetAltText: function(struct_element: FPDF_STRUCTELEMENT; buffer: Pointer; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
+// Function: FPDF_StructElement_GetID
+//          Get the ID for a given element.
+// Parameters:
+//          struct_element -   Handle to the struct element.
+//          buffer         -   A buffer for output the ID string. May be NULL.
+//          buflen         -   The length of the buffer, in bytes. May be 0.
+// Return value:
+//          The number of bytes in the ID string, including the terminating NUL
+//          character. The number of bytes is returned regardless of the
+//          |buffer| and |buflen| parameters.
+// Comments:
+//          Regardless of the platform, the |buffer| is always in UTF-16LE
+//          encoding. The string is terminated by a UTF16 NUL character. If
+//          |buflen| is less than the required length, or |buffer| is NULL,
+//          |buffer| will not be modified.
+var
+  FPDF_StructElement_GetID: function(struct_element: FPDF_STRUCTELEMENT; buffer: Pointer; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDF_StructElement_GetLang
+//          Get the case-insensitive IETF BCP 47 language code for an element.
+// Parameters:
+//          struct_element -   Handle to the struct element.
+//          buffer         -   A buffer for output the lang string. May be NULL.
+//          buflen         -   The length of the buffer, in bytes. May be 0.
+// Return value:
+//          The number of bytes in the ID string, including the terminating NUL
+//          character. The number of bytes is returned regardless of the
+//          |buffer| and |buflen| parameters.
+// Comments:
+//          Regardless of the platform, the |buffer| is always in UTF-16LE
+//          encoding. The string is terminated by a UTF16 NUL character. If
+//          |buflen| is less than the required length, or |buffer| is NULL,
+//          |buffer| will not be modified.
+var
+  FPDF_StructElement_GetLang: function(struct_element: FPDF_STRUCTELEMENT; buffer: Pointer; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDF_StructElement_GetStringAttribute
+//          Get a struct element attribute of type "name" or "string".
+// Parameters:
+//          struct_element -   Handle to the struct element.
+//          attr_name      -   The name of the attribute to retrieve.
+//          buffer         -   A buffer for output. May be NULL.
+//          buflen         -   The length of the buffer, in bytes. May be 0.
+// Return value:
+//          The number of bytes in the attribute value, including the
+//          terminating NUL character. The number of bytes is returned
+//          regardless of the |buffer| and |buflen| parameters.
+// Comments:
+//          Regardless of the platform, the |buffer| is always in UTF-16LE
+//          encoding. The string is terminated by a UTF16 NUL character. If
+//          |buflen| is less than the required length, or |buffer| is NULL,
+//          |buffer| will not be modified.
+var
+  FPDF_StructElement_GetStringAttribute: function(struct_element: FPDF_STRUCTELEMENT;
+    attr_name: FPDF_BYTESTRING; buffer: Pointer; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 // Function: FPDF_StructElement_GetMarkedContentID
 //          Get the marked content ID for a given element.
 // Parameters:
@@ -7595,7 +7834,7 @@ type
   end;
 
 const
-  ImportFuncs: array[0..358
+  ImportFuncs: array[0..371
     {$IFDEF MSWINDOWS}
     + 2
       {$IFDEF PDFIUM_PRINT_TEXT_WITH_GDI} + 2 {$ENDIF}
@@ -7666,6 +7905,9 @@ const
     (P: @@FPDF_CountNamedDests;                       N: 'FPDF_CountNamedDests'),
     (P: @@FPDF_GetNamedDestByName;                    N: 'FPDF_GetNamedDestByName'),
     (P: @@FPDF_GetNamedDest;                          N: 'FPDF_GetNamedDest'),
+    (P: @@FPDF_GetXFAPacketCount;                     N: 'FPDF_GetXFAPacketCount'),
+    (P: @@FPDF_GetXFAPacketName;                      N: 'FPDF_GetXFAPacketName'),
+    (P: @@FPDF_GetXFAPacketContent;                   N: 'FPDF_GetXFAPacketContent'),
     {$IFDEF PDF_ENABLE_V8}
     (P: @@FPDF_GetRecommendedV8Flags;                 N: 'FPDF_GetRecommendedV8Flags'; Quirk: True; Optional: True),
     (P: @@FPDF_GetArrayBufferAllocatorSharedInstance; N: 'FPDF_GetArrayBufferAllocatorSharedInstance'; Quirk: True; Optional: True),
@@ -7715,6 +7957,7 @@ const
     (P: @@FPDFImageObj_SetMatrix;                     N: 'FPDFImageObj_SetMatrix'),
     (P: @@FPDFImageObj_SetBitmap;                     N: 'FPDFImageObj_SetBitmap'),
     (P: @@FPDFImageObj_GetBitmap;                     N: 'FPDFImageObj_GetBitmap'),
+    (P: @@FPDFImageObj_GetRenderedBitmap;             N: 'FPDFImageObj_GetRenderedBitmap'),
     (P: @@FPDFImageObj_GetImageDataDecoded;           N: 'FPDFImageObj_GetImageDataDecoded'),
     (P: @@FPDFImageObj_GetImageDataRaw;               N: 'FPDFImageObj_GetImageDataRaw'),
     (P: @@FPDFImageObj_GetImageFilterCount;           N: 'FPDFImageObj_GetImageFilterCount'),
@@ -7820,6 +8063,11 @@ const
     // *** _FPDF_SIGNATURE_H_ ***
     (P: @@FPDF_GetSignatureCount;                     N: 'FPDF_GetSignatureCount'),
     (P: @@FPDF_GetSignatureObject;                    N: 'FPDF_GetSignatureObject'),
+    (P: @@FPDFSignatureObj_GetContents;               N: 'FPDFSignatureObj_GetContents'),
+    (P: @@FPDFSignatureObj_GetByteRange;              N: 'FPDFSignatureObj_GetByteRange'),
+    (P: @@FPDFSignatureObj_GetSubFilter;              N: 'FPDFSignatureObj_GetSubFilter'),
+    (P: @@FPDFSignatureObj_GetReason;                 N: 'FPDFSignatureObj_GetReason'),
+    (P: @@FPDFSignatureObj_GetTime;                   N: 'FPDFSignatureObj_GetTime'),
 
     // *** _FPDF_FLATTEN_H_ ***
     (P: @@FPDFPage_Flatten;                           N: 'FPDFPage_Flatten'),
@@ -7846,6 +8094,7 @@ const
     (P: @@FPDFLink_GetAnnotRect;                      N: 'FPDFLink_GetAnnotRect'),
     (P: @@FPDFLink_CountQuadPoints;                   N: 'FPDFLink_CountQuadPoints'),
     (P: @@FPDFLink_GetQuadPoints;                     N: 'FPDFLink_GetQuadPoints'),
+    (P: @@FPDF_GetPageAAction;                        N: 'FPDF_GetPageAAction'),
     (P: @@FPDF_GetFileIdentifier;                     N: 'FPDF_GetFileIdentifier'),
     (P: @@FPDF_GetMetaText;                           N: 'FPDF_GetMetaText'),
     (P: @@FPDF_GetPageLabel;                          N: 'FPDF_GetPageLabel'),
@@ -7961,6 +8210,9 @@ const
     (P: @@FPDF_StructTree_CountChildren;              N: 'FPDF_StructTree_CountChildren'),
     (P: @@FPDF_StructTree_GetChildAtIndex;            N: 'FPDF_StructTree_GetChildAtIndex'),
     (P: @@FPDF_StructElement_GetAltText;              N: 'FPDF_StructElement_GetAltText'),
+    (P: @@FPDF_StructElement_GetID;                   N: 'FPDF_StructElement_GetID'),
+    (P: @@FPDF_StructElement_GetLang;                 N: 'FPDF_StructElement_GetLang'),
+    (P: @@FPDF_StructElement_GetStringAttribute;      N: 'FPDF_StructElement_GetStringAttribute'),
     (P: @@FPDF_StructElement_GetMarkedContentID;      N: 'FPDF_StructElement_GetMarkedContentID'),
     (P: @@FPDF_StructElement_GetType;                 N: 'FPDF_StructElement_GetType'),
     (P: @@FPDF_StructElement_GetTitle;                N: 'FPDF_StructElement_GetTitle'),
