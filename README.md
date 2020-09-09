@@ -5,7 +5,7 @@ Example of a PDF VCL Control using PDFium
 pdfium.dll (x86/x64) from the [pdfium-binaries](https://github.com/bblanchon/pdfium-binaries)
 
 ## Required pdfium.dll version
-chromium/4194
+chromium/4243
 
 ## Features
 - Multiple PDF load functions:
@@ -17,7 +17,7 @@ chromium/4194
   - Callback
 - File Attachments
 - Forms
-- PDF rotation (normal, 90° counter clockwise, 180°, 90° clockwise)
+- PDF rotation (normal, 90Â° counter clockwise, 180Â°, 90Â° clockwise)
 - Highlighted text (e.g. for search results)
 - WebLink click support
 - Flicker-free and optimized painting (only changed parts are painted)
