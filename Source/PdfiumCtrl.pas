@@ -244,10 +244,22 @@ type
     {$IFEND}
   end;
 
+  TPdfDocumentVclPrinter = class(TPdfDocumentPrinter)
+  private
+    FBeginDocCalled: Boolean;
+    FPagePrinted: Boolean;
+  protected
+    procedure BeginDoc; override;
+    procedure EndDoc; override;
+    procedure StartPage; override;
+    procedure EndPage; override;
+    function GetPrinterDC: HDC; override;
+  end;
+
 implementation
 
 uses
-  Math, Clipbrd, Character;
+  Math, Clipbrd, Character, Printers;
 
 const
   cScrollTimerId = 1;
@@ -262,6 +274,64 @@ begin
   {$ELSE}
   Result := TCharacter.IsWhiteSpace(Ch);
   {$IFEND}
+end;
+
+function VclAbortProc(Prn: HDC; Error: Integer): Bool; stdcall;
+begin
+  Application.ProcessMessages;
+  Result := not Printer.Aborted;
+end;
+
+function FastVclAbortProc(Prn: HDC; Error: Integer): Bool; stdcall;
+begin
+  Result := not Printer.Aborted;
+end;
+
+{ TPdfDocumentVclPrinter }
+
+procedure TPdfDocumentVclPrinter.BeginDoc;
+begin
+  FPagePrinted := False;
+  if not Printer.Printing then
+  begin
+    Printer.BeginDoc;
+    FBeginDocCalled := Printer.Printing;
+  end;
+  if Printer.Printing then
+  begin
+    // The Printers.AbortProc function calls ProcessMessages. That not only slows down the performance
+    // but it also allows the user to do things in the UI.
+    SetAbortProc(GetPrinterDC, @FastVclAbortProc);
+  end;
+end;
+
+procedure TPdfDocumentVclPrinter.EndDoc;
+begin
+  if Printer.Printing then
+  begin
+    if FBeginDocCalled then
+      Printer.EndDoc;
+  end;
+  SetAbortProc(GetPrinterDC, @VclAbortProc); // restore (dangerous) default behavior
+end;
+
+procedure TPdfDocumentVclPrinter.StartPage;
+begin
+  // Printer has only "NewPage" and the very first page doesn't need a NewPage call because
+  // Printer.BeginDoc already called Windows.StartPage.
+  if (Printer.PageNumber > 1) or FPagePrinted then
+    Printer.NewPage;
+end;
+
+procedure TPdfDocumentVclPrinter.EndPage;
+begin
+  FPagePrinted := True;
+  // The VCL uses "NewPage". For the very last page Printer.EndDoc calls Windows.EndPage.
+end;
+
+function TPdfDocumentVclPrinter.GetPrinterDC: HDC;
+begin
+  Result := Printer.Handle;
 end;
 
 { TPdfControl }

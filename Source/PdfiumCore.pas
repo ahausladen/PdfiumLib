@@ -6,7 +6,7 @@ unit PdfiumCore;
 interface
 
 uses
-  Windows, Types, SysUtils, Classes, Contnrs, PdfiumLib, Graphics;
+  Windows, WinSpool, Types, SysUtils, Classes, Contnrs, PdfiumLib, Graphics;
 
 type
   EPdfException = class(Exception);
@@ -435,6 +435,57 @@ type
     property OnFormGetCurrentPage: TPdfFormGetCurrentPage read FOnFormGetCurrentPage write FOnFormGetCurrentPage;
   end;
 
+  TPdfDocumentPrinterStatusEvent = procedure(Sender: TObject; CurrentPageNum, PageCount: Integer) of object;
+
+  TPdfDocumentPrinter = class(TObject)
+  private
+    FBeginPrintCounter: Integer;
+
+    FPrinterDC: HDC;
+    FPrintPortraitOrientation: Boolean;
+    FPaperSize: TSize;
+    FPrintArea: TSize;
+    FMargins: TPoint;
+
+    FPrintTextWithGDI: Boolean;
+    FFitPageToPrintArea: Boolean;
+    FOnPrintStatus: TPdfDocumentPrinterStatusEvent;
+
+    function IsPortraitOrientation(AWidth, AHeight: Integer): Boolean;
+    procedure GetPrinterBounds(var  APaperSize, APrintArea: TSize; AMargins: TPoint);
+  protected
+    procedure BeginDoc; virtual; abstract;
+    procedure EndDoc; virtual; abstract;
+    procedure StartPage; virtual; abstract;
+    procedure EndPage; virtual; abstract;
+    function GetPrinterDC: HDC; virtual; abstract;
+
+    procedure InternPrintPage(APage: TPdfPage; X, Y, Width, Height: Double);
+  public
+    constructor Create;
+
+    { BeginPrint must be called before printing multiple documents. }
+    procedure BeginPrint;
+    { EndPrint must be called after printing multiple documents were printed. }
+    procedure EndPrint;
+
+    { Prints a range of PDF document pages (0..PageCount-1) }
+    procedure Print(ADocument: TPdfDocument; AFromPageIndex, AToPageIndex: Integer); overload;
+    { Prints all pages of the PDF document. }
+    procedure Print(ADocument: TPdfDocument); overload;
+
+
+    { If PrintTextWithGDI is true the text on PDF pages are printed with GDI if the font is
+      installed on the system. Otherwise the text is converted to vectors. }
+    property PrintTextWithGDI: Boolean read FPrintTextWithGDI write FPrintTextWithGDI default False;
+
+    { If FitPageToPrintArea is true the page fill be scaled to fit into the printable area. }
+    property FitPageToPrintArea: Boolean read FFitPageToPrintArea write FFitPageToPrintArea default True;
+
+    { OnPrintStatus is triggered after every printed page }
+    property OnPrintStatus: TPdfDocumentPrinterStatusEvent read FOnPrintStatus write FOnPrintStatus;
+  end;
+
 function SetThreadPdfUnsupportedFeatureHandler(const Handler: TPdfUnsupportedFeatureHandler): TPdfUnsupportedFeatureHandler;
 
 var
@@ -498,6 +549,15 @@ end;
 function GetFileSizeEx(hFile: THandle; var lpFileSize: Int64): Boolean; stdcall;
   external kernel32 name 'GetFileSizeEx';
 {$IFEND}
+
+procedure SwapInts(var X, Y: Integer);
+var
+  Tmp: Integer;
+begin
+  Tmp := X;
+  X := Y;
+  Y := Tmp;
+end;
 
 function GetUnsupportedFeatureName(nType: Integer): string;
 begin
@@ -577,9 +637,9 @@ begin
       if Initialized = 0 then
       begin
         if PDFiumDllFileName <> '' then
-          InitPDFiumEx(PDFiumDllFileName {$IF declared(FPDF_InitEmbeddedLibraries)}, PDFiumResDir{$ENDIF})
+          InitPDFiumEx(PDFiumDllFileName {$IF declared(FPDF_InitEmbeddedLibraries)}, PDFiumResDir{$IFEND})
         else
-          InitPDFium(PDFiumDllDir {$IF declared(FPDF_InitEmbeddedLibraries)}, PDFiumResDir{$ENDIF});
+          InitPDFium(PDFiumDllDir {$IF declared(FPDF_InitEmbeddedLibraries)}, PDFiumResDir{$IFEND});
         FSDK_SetUnSpObjProcessHandler(@UnsupportInfo);
         Initialized := 1;
       end;
@@ -2641,6 +2701,187 @@ end;
 function TPdfAttachment.GetContentAsString(Encoding: TEncoding): string;
 begin
   GetContent(Result, Encoding);
+end;
+
+{ TPdfDocumentPrinter }
+
+constructor TPdfDocumentPrinter.Create;
+begin
+  inherited Create;
+  FPrintTextWithGDI := False;
+  FFitPageToPrintArea := True;
+end;
+
+function TPdfDocumentPrinter.IsPortraitOrientation(AWidth, AHeight: Integer): Boolean;
+begin
+  Result := AHeight > AWidth;
+end;
+
+procedure TPdfDocumentPrinter.GetPrinterBounds(var APaperSize, APrintArea: TSize; AMargins: TPoint);
+var
+  DC: HDC;
+begin
+  DC := GetPrinterDC;
+
+  APaperSize.cx := GetDeviceCaps(DC, PHYSICALWIDTH);
+  APaperSize.cy := GetDeviceCaps(DC, PHYSICALHEIGHT);
+
+  APrintArea.cx := GetDeviceCaps(DC, HORZRES);
+  APrintArea.cy := GetDeviceCaps(DC, VERTRES);
+
+  AMargins.X := GetDeviceCaps(DC, PHYSICALOFFSETX);
+  AMargins.Y := GetDeviceCaps(DC, PHYSICALOFFSETY);
+end;
+
+procedure TPdfDocumentPrinter.BeginPrint;
+begin
+  Inc(FBeginPrintCounter);
+  if FBeginPrintCounter = 1 then
+  begin
+    GetPrinterBounds(FPaperSize, FPrintArea, FMargins);
+    FPrintPortraitOrientation := IsPortraitOrientation(FPaperSize.cx, FPaperSize.cy);
+
+    BeginDoc;
+    FPrinterDC := GetPrinterDC;
+
+    TPdfDocument.SetPrintTextWithGDI(FPrintTextWithGDI);
+  end;
+end;
+
+procedure TPdfDocumentPrinter.EndPrint;
+begin
+  Dec(FBeginPrintCounter);
+  if FBeginPrintCounter = 0 then
+  begin
+    if FPrinterDC <> 0 then
+    begin
+      EndDoc;
+      FPrinterDC := 0;
+    end;
+  end;
+end;
+
+procedure TPdfDocumentPrinter.Print(ADocument: TPdfDocument);
+begin
+  if ADocument <> nil then
+    Print(ADocument, 0, ADocument.PageCount - 1);
+end;
+
+procedure TPdfDocumentPrinter.Print(ADocument: TPdfDocument; AFromPageIndex, AToPageIndex: Integer);
+var
+  PageIndex: Integer;
+  WasPageLoaded: Boolean;
+  PdfPage: TPdfPage;
+  PagePortraitOrientation: Boolean;
+  X, Y, W, H: Integer;
+  PrintedPageNum, PrintPageCount: Integer;
+begin
+  if ADocument = nil then
+    Exit;
+
+  if AFromPageIndex < 0 then
+    raise EPdfArgumentOutOfRange.CreateResFmt(@RsArgumentsOutOfRange, ['FromPage', AFromPageIndex]);
+  if (AToPageIndex < AFromPageIndex) or (AToPageIndex >= ADocument.PageCount) then
+    raise EPdfArgumentOutOfRange.CreateResFmt(@RsArgumentsOutOfRange, ['ToPage', AToPageIndex]);
+
+  PrintedPageNum := 0;
+  PrintPageCount := AToPageIndex - AFromPageIndex + 1;
+
+  BeginPrint;
+  try
+    for PageIndex := AFromPageIndex to AToPageIndex do
+    begin
+      PdfPage := nil;
+      WasPageLoaded := ADocument.IsPageLoaded(PageIndex);
+      try
+        PdfPage := ADocument.Pages[PageIndex];
+        PagePortraitOrientation := IsPortraitOrientation(Trunc(PdfPage.Width), Trunc(PdfPage.Height));
+
+        if FitPageToPrintArea then
+        begin
+          X := 0;
+          Y := 0;
+          W := FPrintArea.cx;
+          H := FPrintArea.cy;
+        end
+        else
+        begin
+          X := -FMargins.X;
+          Y := -FMargins.Y;
+          W := FPaperSize.cx;
+          H := FPaperSize.cy;
+        end;
+
+        if PagePortraitOrientation <> FPrintPortraitOrientation then
+        begin
+          SwapInts(X, Y);
+          SwapInts(W, H);
+        end;
+
+        // Print page
+        StartPage;
+        try
+          if (W > 0) and (H > 0) then
+            InternPrintPage(PdfPage, X, Y, W, H);
+        finally
+          EndPage;
+        end;
+        Inc(PrintedPageNum);
+        if Assigned(OnPrintStatus) then
+          OnPrintStatus(Self, PrintedPageNum, PrintPageCount);
+      finally
+        if not WasPageLoaded and (PdfPage <> nil) then
+          PdfPage.Close; // release memory
+      end;
+    end;
+  finally
+    EndPrint;
+  end;
+end;
+
+procedure TPdfDocumentPrinter.InternPrintPage(APage: TPdfPage; X, Y, Width, Height: Double);
+
+  function RoundToInt(Value: Double): Integer;
+  var
+    F: Double;
+  begin
+    Result := Trunc(Value);
+    F := Frac(Value);
+    if F < 0 then
+    begin
+      if F <= -0.5 then
+        Result := Result - 1;
+    end
+    else if F >= 0.5 then
+      Result := Result + 1;
+  end;
+
+var
+  PageWidth, PageHeight: Double;
+  PageScale, PrintScale: Double;
+  ScaledWidth, ScaledHeight: Double;
+begin
+  PageWidth := APage.Width;
+  PageHeight := APage.Height;
+
+  PageScale := PageHeight / PageWidth;
+  PrintScale := Height / Width;
+
+  ScaledWidth := Width;
+  ScaledHeight := Height;
+  if PageScale > PrintScale then
+    ScaledWidth := Width * (PrintScale / PageScale)
+  else
+    ScaledHeight := Height * (PageScale / PrintScale);
+
+  X := X + (Width - ScaledWidth) / 2;
+  Y := Y + (Height - ScaledHeight) / 2;
+
+  APage.Draw(
+    FPrinterDC,
+    RoundToInt(X), RoundToInt(Y), RoundToInt(ScaledWidth), RoundToInt(ScaledHeight),
+    prNormal, [proPrinting, proAnnotations]
+  );
 end;
 
 initialization

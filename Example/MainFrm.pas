@@ -154,15 +154,25 @@ begin
 end;
 
 procedure TfrmMain.btnPrintClick(Sender: TObject);
+var
+  PdfPrinter: TPdfDocumentPrinter;
 begin
+  PrintDialog1.MinPage := 1;
+  PrintDialog1.MaxPage := FCtrl.Document.PageCount;
+
   if PrintDialog1.Execute(Handle) then
   begin
-    Printer.BeginDoc;
+    PdfPrinter := TPdfDocumentVclPrinter.Create;
     try
-      TPdfDocument.SetPrintTextWithGDI(True); // Print text as text and not as vectors (allows white on white printing)
-      FCtrl.CurrentPage.Draw(Printer.Canvas.Handle, 0, 0, Printer.PageWidth, Printer.PageHeight, prNormal, [proAnnotations, proPrinting]);
+      //PdfPrinter.PrintTextWithGDI := True;
+      //PdfPrinter.FitPageToPrintArea := False;
+
+      if PrintDialog1.PrintRange = prAllPages then
+        PdfPrinter.Print(FCtrl.Document)
+      else
+        PdfPrinter.Print(FCtrl.Document, PrintDialog1.FromPage - 1, PrintDialog1.ToPage - 1); // zero-based PageIndex
     finally
-      Printer.EndDoc;
+      PdfPrinter.Free;
     end;
   end;
 end;

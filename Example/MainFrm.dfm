@@ -101,6 +101,9 @@ object frmMain: TfrmMain
     OnDblClick = ListViewAttachmentsDblClick
   end
   object PrintDialog1: TPrintDialog
+    MinPage = 1
+    MaxPage = 10
+    Options = [poPageNums]
     Left = 96
     Top = 32
   end
