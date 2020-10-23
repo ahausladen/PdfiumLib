@@ -402,7 +402,8 @@ type
     function GetMetaText(const TagName: string): string;
 
     class function SetPrintMode(PrintMode: TPdfPrintMode): Boolean; static;
-    class procedure SetPrintTextWithGDI(UseGdi: Boolean); static;
+    class function SetPrintTextWithGDI(UseGdi: Boolean): Boolean; static;
+    class function GetPrintTextWithGDI: Boolean; static;
 
     property FileName: string read FFileName;
     property PageCount: Integer read GetPageCount;
@@ -452,27 +453,28 @@ type
     FOnPrintStatus: TPdfDocumentPrinterStatusEvent;
 
     function IsPortraitOrientation(AWidth, AHeight: Integer): Boolean;
-    procedure GetPrinterBounds(var  APaperSize, APrintArea: TSize; AMargins: TPoint);
+    procedure GetPrinterBounds;
   protected
-    procedure BeginDoc; virtual; abstract;
-    procedure EndDoc; virtual; abstract;
-    procedure StartPage; virtual; abstract;
-    procedure EndPage; virtual; abstract;
+    function PrinterStartDoc: Boolean; virtual; abstract;
+    procedure PrinterEndDoc; virtual; abstract;
+    procedure PrinterStartPage; virtual; abstract;
+    procedure PrinterEndPage; virtual; abstract;
     function GetPrinterDC: HDC; virtual; abstract;
 
     procedure InternPrintPage(APage: TPdfPage; X, Y, Width, Height: Double);
   public
     constructor Create;
 
-    { BeginPrint must be called before printing multiple documents. }
-    procedure BeginPrint;
+    { BeginPrint must be called before printing multiple documents.
+      Returns false if the printer can't print. (e.g. The user aborted the PDF Printer's FileDialog) }
+    function BeginPrint: Boolean;
     { EndPrint must be called after printing multiple documents were printed. }
     procedure EndPrint;
 
     { Prints a range of PDF document pages (0..PageCount-1) }
-    procedure Print(ADocument: TPdfDocument; AFromPageIndex, AToPageIndex: Integer); overload;
+    function Print(ADocument: TPdfDocument; AFromPageIndex, AToPageIndex: Integer): Boolean; overload;
     { Prints all pages of the PDF document. }
-    procedure Print(ADocument: TPdfDocument); overload;
+    function Print(ADocument: TPdfDocument): Boolean; overload;
 
 
     { If PrintTextWithGDI is true the text on PDF pages are printed with GDI if the font is
@@ -519,6 +521,9 @@ resourcestring
 threadvar
   ThreadPdfUnsupportedFeatureHandler: TPdfUnsupportedFeatureHandler;
   UnsupportedFeatureCurrentDocument: TPdfDocument;
+
+var
+  GPrintTextWithGDI: Boolean = False;
 
 type
   { We don't want to use a TBytes temporary array if we can convert directly into the destination
@@ -1516,10 +1521,17 @@ begin
   Result := FPDF_SetPrintMode(Ord(PrintMode)) <> 0;
 end;
 
-class procedure TPdfDocument.SetPrintTextWithGDI(UseGdi: Boolean);
+class function TPdfDocument.SetPrintTextWithGDI(UseGdi: Boolean): Boolean;
 begin
   InitLib;
   FPDF_SetPrintTextWithGDI(Ord(UseGdi));
+  Result := GPrintTextWithGDI;
+  GPrintTextWithGDI := UseGdi;
+end;
+
+class function TPdfDocument.GetPrintTextWithGDI: Boolean;
+begin
+  Result := GPrintTextWithGDI;
 end;
 
 procedure TPdfDocument.SetFormFieldHighlightAlpha(Value: Integer);
@@ -2717,35 +2729,37 @@ begin
   Result := AHeight > AWidth;
 end;
 
-procedure TPdfDocumentPrinter.GetPrinterBounds(var APaperSize, APrintArea: TSize; AMargins: TPoint);
-var
-  DC: HDC;
+procedure TPdfDocumentPrinter.GetPrinterBounds;
 begin
-  DC := GetPrinterDC;
+  FPaperSize.cx := GetDeviceCaps(FPrinterDC, PHYSICALWIDTH);
+  FPaperSize.cy := GetDeviceCaps(FPrinterDC, PHYSICALHEIGHT);
 
-  APaperSize.cx := GetDeviceCaps(DC, PHYSICALWIDTH);
-  APaperSize.cy := GetDeviceCaps(DC, PHYSICALHEIGHT);
+  FPrintArea.cx := GetDeviceCaps(FPrinterDC, HORZRES);
+  FPrintArea.cy := GetDeviceCaps(FPrinterDC, VERTRES);
 
-  APrintArea.cx := GetDeviceCaps(DC, HORZRES);
-  APrintArea.cy := GetDeviceCaps(DC, VERTRES);
-
-  AMargins.X := GetDeviceCaps(DC, PHYSICALOFFSETX);
-  AMargins.Y := GetDeviceCaps(DC, PHYSICALOFFSETY);
+  FMargins.X := GetDeviceCaps(FPrinterDC, PHYSICALOFFSETX);
+  FMargins.Y := GetDeviceCaps(FPrinterDC, PHYSICALOFFSETY);
 end;
 
-procedure TPdfDocumentPrinter.BeginPrint;
+function TPdfDocumentPrinter.BeginPrint: Boolean;
 begin
   Inc(FBeginPrintCounter);
   if FBeginPrintCounter = 1 then
   begin
-    GetPrinterBounds(FPaperSize, FPrintArea, FMargins);
-    FPrintPortraitOrientation := IsPortraitOrientation(FPaperSize.cx, FPaperSize.cy);
-
-    BeginDoc;
     FPrinterDC := GetPrinterDC;
 
-    TPdfDocument.SetPrintTextWithGDI(FPrintTextWithGDI);
-  end;
+    GetPrinterBounds;
+    FPrintPortraitOrientation := IsPortraitOrientation(FPaperSize.cx, FPaperSize.cy);
+
+    Result := PrinterStartDoc;
+    if not Result then
+    begin
+      FPrinterDC := 0;
+      Dec(FBeginPrintCounter);
+    end;
+  end
+  else
+    Result := True;
 end;
 
 procedure TPdfDocumentPrinter.EndPrint;
@@ -2755,19 +2769,21 @@ begin
   begin
     if FPrinterDC <> 0 then
     begin
-      EndDoc;
       FPrinterDC := 0;
+      PrinterEndDoc;
     end;
   end;
 end;
 
-procedure TPdfDocumentPrinter.Print(ADocument: TPdfDocument);
+function TPdfDocumentPrinter.Print(ADocument: TPdfDocument): Boolean;
 begin
   if ADocument <> nil then
-    Print(ADocument, 0, ADocument.PageCount - 1);
+    Result := Print(ADocument, 0, ADocument.PageCount - 1)
+  else
+    Result := False;
 end;
 
-procedure TPdfDocumentPrinter.Print(ADocument: TPdfDocument; AFromPageIndex, AToPageIndex: Integer);
+function TPdfDocumentPrinter.Print(ADocument: TPdfDocument; AFromPageIndex, AToPageIndex: Integer): Boolean;
 var
   PageIndex: Integer;
   WasPageLoaded: Boolean;
@@ -2776,6 +2792,7 @@ var
   X, Y, W, H: Integer;
   PrintedPageNum, PrintPageCount: Integer;
 begin
+  Result := False;
   if ADocument = nil then
     Exit;
 
@@ -2787,55 +2804,58 @@ begin
   PrintedPageNum := 0;
   PrintPageCount := AToPageIndex - AFromPageIndex + 1;
 
-  BeginPrint;
-  try
-    for PageIndex := AFromPageIndex to AToPageIndex do
-    begin
-      PdfPage := nil;
-      WasPageLoaded := ADocument.IsPageLoaded(PageIndex);
-      try
-        PdfPage := ADocument.Pages[PageIndex];
-        PagePortraitOrientation := IsPortraitOrientation(Trunc(PdfPage.Width), Trunc(PdfPage.Height));
-
-        if FitPageToPrintArea then
-        begin
-          X := 0;
-          Y := 0;
-          W := FPrintArea.cx;
-          H := FPrintArea.cy;
-        end
-        else
-        begin
-          X := -FMargins.X;
-          Y := -FMargins.Y;
-          W := FPaperSize.cx;
-          H := FPaperSize.cy;
-        end;
-
-        if PagePortraitOrientation <> FPrintPortraitOrientation then
-        begin
-          SwapInts(X, Y);
-          SwapInts(W, H);
-        end;
-
-        // Print page
-        StartPage;
+  if BeginPrint then
+  begin
+    try
+      for PageIndex := AFromPageIndex to AToPageIndex do
+      begin
+        PdfPage := nil;
+        WasPageLoaded := ADocument.IsPageLoaded(PageIndex);
         try
-          if (W > 0) and (H > 0) then
-            InternPrintPage(PdfPage, X, Y, W, H);
+          PdfPage := ADocument.Pages[PageIndex];
+          PagePortraitOrientation := IsPortraitOrientation(Trunc(PdfPage.Width), Trunc(PdfPage.Height));
+
+          if FitPageToPrintArea then
+          begin
+            X := 0;
+            Y := 0;
+            W := FPrintArea.cx;
+            H := FPrintArea.cy;
+          end
+          else
+          begin
+            X := -FMargins.X;
+            Y := -FMargins.Y;
+            W := FPaperSize.cx;
+            H := FPaperSize.cy;
+          end;
+
+          if PagePortraitOrientation <> FPrintPortraitOrientation then
+          begin
+            SwapInts(X, Y);
+            SwapInts(W, H);
+          end;
+
+          // Print page
+          PrinterStartPage;
+          try
+            if (W > 0) and (H > 0) then
+              InternPrintPage(PdfPage, X, Y, W, H);
+          finally
+            PrinterEndPage;
+          end;
+          Inc(PrintedPageNum);
+          if Assigned(OnPrintStatus) then
+            OnPrintStatus(Self, PrintedPageNum, PrintPageCount);
         finally
-          EndPage;
+          if not WasPageLoaded and (PdfPage <> nil) then
+            PdfPage.Close; // release memory
         end;
-        Inc(PrintedPageNum);
-        if Assigned(OnPrintStatus) then
-          OnPrintStatus(Self, PrintedPageNum, PrintPageCount);
-      finally
-        if not WasPageLoaded and (PdfPage <> nil) then
-          PdfPage.Close; // release memory
       end;
+    finally
+      EndPrint;
     end;
-  finally
-    EndPrint;
+    Result := True;
   end;
 end;
 
@@ -2860,6 +2880,7 @@ var
   PageWidth, PageHeight: Double;
   PageScale, PrintScale: Double;
   ScaledWidth, ScaledHeight: Double;
+  OldPrintTextWithGDI: Boolean;
 begin
   PageWidth := APage.Width;
   PageHeight := APage.Height;
@@ -2877,11 +2898,19 @@ begin
   X := X + (Width - ScaledWidth) / 2;
   Y := Y + (Height - ScaledHeight) / 2;
 
-  APage.Draw(
-    FPrinterDC,
-    RoundToInt(X), RoundToInt(Y), RoundToInt(ScaledWidth), RoundToInt(ScaledHeight),
-    prNormal, [proPrinting, proAnnotations]
-  );
+  // PrintTextWithGDI is a global setting in PDFium so we set it only temporary and restore it after
+  // printing the page.
+  OldPrintTextWithGDI := TPdfDocument.SetPrintTextWithGDI(FPrintTextWithGDI);
+  try
+    APage.Draw(
+      FPrinterDC,
+      RoundToInt(X), RoundToInt(Y), RoundToInt(ScaledWidth), RoundToInt(ScaledHeight),
+      prNormal, [proPrinting, proAnnotations]
+    );
+  finally
+    if OldPrintTextWithGDI <> FPrintTextWithGDI then
+      TPdfDocument.SetPrintTextWithGDI(OldPrintTextWithGDI);
+  end;
 end;
 
 initialization

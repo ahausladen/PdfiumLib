@@ -249,10 +249,10 @@ type
     FBeginDocCalled: Boolean;
     FPagePrinted: Boolean;
   protected
-    procedure BeginDoc; override;
-    procedure EndDoc; override;
-    procedure StartPage; override;
-    procedure EndPage; override;
+    function PrinterStartDoc: Boolean; override;
+    procedure PrinterEndDoc; override;
+    procedure PrinterStartPage; override;
+    procedure PrinterEndPage; override;
     function GetPrinterDC: HDC; override;
   end;
 
@@ -289,15 +289,17 @@ end;
 
 { TPdfDocumentVclPrinter }
 
-procedure TPdfDocumentVclPrinter.BeginDoc;
+function TPdfDocumentVclPrinter.PrinterStartDoc: Boolean;
 begin
+  Result := False;
   FPagePrinted := False;
   if not Printer.Printing then
   begin
     Printer.BeginDoc;
     FBeginDocCalled := Printer.Printing;
+    Result := FBeginDocCalled;
   end;
-  if Printer.Printing then
+  if Result then
   begin
     // The Printers.AbortProc function calls ProcessMessages. That not only slows down the performance
     // but it also allows the user to do things in the UI.
@@ -305,17 +307,17 @@ begin
   end;
 end;
 
-procedure TPdfDocumentVclPrinter.EndDoc;
+procedure TPdfDocumentVclPrinter.PrinterEndDoc;
 begin
   if Printer.Printing then
   begin
     if FBeginDocCalled then
       Printer.EndDoc;
   end;
-  SetAbortProc(GetPrinterDC, @VclAbortProc); // restore (dangerous) default behavior
+  SetAbortProc(GetPrinterDC, @VclAbortProc); // restore default behavior
 end;
 
-procedure TPdfDocumentVclPrinter.StartPage;
+procedure TPdfDocumentVclPrinter.PrinterStartPage;
 begin
   // Printer has only "NewPage" and the very first page doesn't need a NewPage call because
   // Printer.BeginDoc already called Windows.StartPage.
@@ -323,7 +325,7 @@ begin
     Printer.NewPage;
 end;
 
-procedure TPdfDocumentVclPrinter.EndPage;
+procedure TPdfDocumentVclPrinter.PrinterEndPage;
 begin
   FPagePrinted := True;
   // The VCL uses "NewPage". For the very last page Printer.EndDoc calls Windows.EndPage.
