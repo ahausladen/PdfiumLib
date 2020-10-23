@@ -83,7 +83,7 @@ type
     function GetCurrentPage: TPdfPage;
     function GetPageCount: Integer;
     procedure SetPageIndex(Value: Integer);
-    function InternSetPageIndex(Value: Integer; ScrollTransition, InversScrollTransition: Boolean): Boolean;
+    function InternSetPageIndex(Value: Integer; ScrollTransition, InverseScrollTransition: Boolean): Boolean;
     procedure SetRotation(const Value: TPdfPageRotation);
     function SetSelStopCharIndex(X, Y: Integer): Boolean;
     function GetSelText: string;
@@ -746,13 +746,13 @@ begin
   InternSetPageIndex(Value, False, False);
 end;
 
-function TPdfControl.InternSetPageIndex(Value: Integer; ScrollTransition, InversScrollTransition: Boolean): Boolean;
+function TPdfControl.InternSetPageIndex(Value: Integer; ScrollTransition, InverseScrollTransition: Boolean): Boolean;
 var
   ScrollInfo: TScrollInfo;
   ScrollY: Integer;
   OldPageIndex: Integer;
 begin
-  if Value > PageCount then
+  if Value >= PageCount then
     Value := PageCount - 1;
   if Value < 0 then
     Value := 0;
@@ -774,7 +774,7 @@ begin
       ScrollInfo.fMask := SIF_RANGE or SIF_PAGE or SIF_POS;
       if GetScrollInfo(Handle, SB_VERT, ScrollInfo) then
       begin
-        if InversScrollTransition then
+        if InverseScrollTransition then
         begin
           if FPageIndex < OldPageIndex then
             ScrollY := 0
