@@ -2746,13 +2746,15 @@ begin
   Inc(FBeginPrintCounter);
   if FBeginPrintCounter = 1 then
   begin
-    FPrinterDC := GetPrinterDC;
-
-    GetPrinterBounds;
-    FPrintPortraitOrientation := IsPortraitOrientation(FPaperSize.cx, FPaperSize.cy);
-
     Result := PrinterStartDoc;
-    if not Result then
+    if Result then
+    begin
+      FPrinterDC := GetPrinterDC;
+
+      GetPrinterBounds;
+      FPrintPortraitOrientation := IsPortraitOrientation(FPaperSize.cx, FPaperSize.cy);
+    end
+    else
     begin
       FPrinterDC := 0;
       Dec(FBeginPrintCounter);
