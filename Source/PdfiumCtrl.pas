@@ -1243,6 +1243,7 @@ begin
         case CurrentPage.HasFormFieldAtPoint(PagePt.X, PagePt.Y) of
           fftTextField:
             NewCursor := crIBeam;
+          fftComboBox,
           fftSignature:
             NewCursor := crHandPoint;
         else
