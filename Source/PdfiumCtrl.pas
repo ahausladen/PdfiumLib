@@ -530,7 +530,6 @@ end;
 procedure TPdfControl.DrawFormOutputSelectedRects(DC: HDC; Page: TPdfPage);
 begin
   DrawAlphaSelection(DC, Page, FFormOutputSelectedRects);
-  FFormOutputSelectedRects := nil;
 end;
 
 procedure TPdfControl.DrawHighlightText(DC: HDC; Page: TPdfPage);
@@ -2198,6 +2197,7 @@ var
   R: TRect;
 begin
   FRenderedPageIndex := -1; // content has changed => render into the background bitmap
+  FFormOutputSelectedRects := nil;
   if HandleAllocated then
   begin
     R := InternPageToDevice(Page, PageRect);
