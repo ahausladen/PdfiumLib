@@ -159,6 +159,11 @@ type
     function PageToDevice(PageRect: TPdfRect): TRect; overload;
     function GetPageRect: TRect;
 
+    procedure CopyFormTextToClipboard;
+    procedure CutFormTextToClipboard;
+    procedure PasteFormTextFromClipboard;
+    procedure SelectAllFormText;
+
     procedure CopyToClipboard;
     procedure ClearSelection;
     procedure SelectAll;
@@ -1329,6 +1334,47 @@ begin
   Clipboard.AsText := GetSelText;
 end;
 
+procedure TPdfControl.CopyFormTextToClipboard;
+var
+  S: string;
+begin
+  if FFormFieldFocused and IsPageValid then
+  begin
+    S := CurrentPage.FormGetSelectedText;
+    if S <> '' then
+      Clipboard.AsText := S;
+  end;
+end;
+
+procedure TPdfControl.CutFormTextToClipboard;
+begin
+  if FFormFieldFocused and IsPageValid then
+  begin
+    CopyFormTextToClipboard;
+    CurrentPage.FormReplaceSelection('');
+  end;
+end;
+
+procedure TPdfControl.PasteFormTextFromClipboard;
+begin
+  if FFormFieldFocused and IsPageValid then
+  begin
+    Clipboard.Open;
+    try
+      if Clipboard.HasFormat(CF_UNICODETEXT) or Clipboard.HasFormat(CF_TEXT) then
+        CurrentPage.FormReplaceSelection(Clipboard.AsText);
+    finally
+      Clipboard.Close;
+    end;
+  end;
+end;
+
+procedure TPdfControl.SelectAllFormText;
+begin
+  if FFormFieldFocused and IsPageValid then
+    CurrentPage.FormSelectAllText;
+end;
+
 function TPdfControl.GetSelText: string;
 begin
   if FSelectionActive and IsPageValid then
@@ -1568,7 +1614,7 @@ begin
   XOffset := 0;
   YOffset := 0;
   case Key of
-    VK_INSERT, Ord('C'):
+    Ord('C'), VK_INSERT:
       if AllowUserTextSelection then
       begin
         if Shift = [ssCtrl] then
@@ -1685,9 +1731,40 @@ begin
 end;
 
 procedure TPdfControl.WMKeyDown(var Message: TWMKeyDown);
+var
+  ShiftState: TShiftState;
 begin
   if AllowFormEvents and IsPageValid and CurrentPage.FormEventKeyDown(Message.CharCode, Message.KeyData) then
+  begin
+    // PDFium doesn't handle Copy&Paste&Cut keyboard shortcuts in form fields
+    case Message.CharCode of
+      Ord('C'), Ord('X'), Ord('V'), VK_INSERT, VK_DELETE:
+        begin
+          ShiftState := KeyDataToShiftState(Message.KeyData);
+          if ShiftState = [ssCtrl] then
+          begin
+            case Message.CharCode of
+              Ord('C'), VK_INSERT:
+                CopyFormTextToClipboard;
+              Ord('X'):
+                CutFormTextToClipboard;
+              Ord('V'):
+                PasteFormTextFromClipboard;
+            end;
+          end
+          else if ShiftState = [ssShift] then
+          begin
+            case Message.CharCode of
+              VK_INSERT:
+                PasteFormTextFromClipboard;
+              VK_DELETE:
+                CutFormTextToClipboard;
+            end;
+          end;
+        end;
+    end;
     Exit;
+  end;
   inherited;
 end;
 
