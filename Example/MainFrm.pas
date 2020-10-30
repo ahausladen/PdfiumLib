@@ -154,10 +154,12 @@ begin
 end;
 
 procedure TfrmMain.btnPrintClick(Sender: TObject);
-var
-  PdfPrinter: TPdfDocumentPrinter;
+{var
+  PdfPrinter: TPdfDocumentPrinter;}
 begin
-  PrintDialog1.MinPage := 1;
+  TPdfDocumentVclPrinter.PrintDocument(FCtrl.Document, 'PDF Example Print Job');
+
+{  PrintDialog1.MinPage := 1;
   PrintDialog1.MaxPage := FCtrl.Document.PageCount;
 
   if PrintDialog1.Execute(Handle) then
@@ -174,7 +176,7 @@ begin
     finally
       PdfPrinter.Free;
     end;
-  end;
+  end;}
 end;
 
 procedure TfrmMain.ListViewAttachmentsDblClick(Sender: TObject);

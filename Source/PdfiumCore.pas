@@ -455,7 +455,7 @@ type
     function IsPortraitOrientation(AWidth, AHeight: Integer): Boolean;
     procedure GetPrinterBounds;
   protected
-    function PrinterStartDoc: Boolean; virtual; abstract;
+    function PrinterStartDoc(const AJobTitle: string): Boolean; virtual; abstract;
     procedure PrinterEndDoc; virtual; abstract;
     procedure PrinterStartPage; virtual; abstract;
     procedure PrinterEndPage; virtual; abstract;
@@ -467,7 +467,7 @@ type
 
     { BeginPrint must be called before printing multiple documents.
       Returns false if the printer can't print. (e.g. The user aborted the PDF Printer's FileDialog) }
-    function BeginPrint: Boolean;
+    function BeginPrint(const AJobTitle: string = ''): Boolean;
     { EndPrint must be called after printing multiple documents were printed. }
     procedure EndPrint;
 
@@ -2741,12 +2741,12 @@ begin
   FMargins.Y := GetDeviceCaps(FPrinterDC, PHYSICALOFFSETY);
 end;
 
-function TPdfDocumentPrinter.BeginPrint: Boolean;
+function TPdfDocumentPrinter.BeginPrint(const AJobTitle: string): Boolean;
 begin
   Inc(FBeginPrintCounter);
   if FBeginPrintCounter = 1 then
   begin
-    Result := PrinterStartDoc;
+    Result := PrinterStartDoc(AJobTitle);
     if Result then
     begin
       FPrinterDC := GetPrinterDC;

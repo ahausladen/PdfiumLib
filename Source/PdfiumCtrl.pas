@@ -9,7 +9,7 @@ unit PdfiumCtrl;
 interface
 
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, PdfiumCore;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, Dialogs, PdfiumCore;
 
 const
   cPdfControlDefaultDrawOptions = [];
@@ -249,11 +249,19 @@ type
     FBeginDocCalled: Boolean;
     FPagePrinted: Boolean;
   protected
-    function PrinterStartDoc: Boolean; override;
+    function PrinterStartDoc(const AJobTitle: string): Boolean; override;
     procedure PrinterEndDoc; override;
     procedure PrinterStartPage; override;
     procedure PrinterEndPage; override;
     function GetPrinterDC: HDC; override;
+  public
+    { If AShowPrintDialog is false PrintDocument prints the document to the default printer.
+      If AShowPrintDialog is true the print dialog is shown and the user can select the
+      printer, page range and number of copies (if supported by the printer driver).
+      Returns true if the page was send to the printer driver. }
+    class function PrintDocument(ADocument: TPdfDocument; const AJobTitle: string; 
+      AShowPrintDialog: Boolean = True; AllowPageRange: Boolean = True; 
+      AParentWnd: HWND = 0): Boolean; static;
   end;
 
 implementation
@@ -289,12 +297,14 @@ end;
 
 { TPdfDocumentVclPrinter }
 
-function TPdfDocumentVclPrinter.PrinterStartDoc: Boolean;
+function TPdfDocumentVclPrinter.PrinterStartDoc(const AJobTitle: string): Boolean;
 begin
   Result := False;
   FPagePrinted := False;
   if not Printer.Printing then
   begin
+    if AJobTitle <> '' then
+      Printer.Title := AJobTitle;
     Printer.BeginDoc;
     FBeginDocCalled := Printer.Printing;
     Result := FBeginDocCalled;
@@ -334,6 +344,67 @@ end;
 function TPdfDocumentVclPrinter.GetPrinterDC: HDC;
 begin
   Result := Printer.Handle;
+end;
+
+class function TPdfDocumentVclPrinter.PrintDocument(ADocument: TPdfDocument;
+  const AJobTitle: string; AShowPrintDialog, AllowPageRange: Boolean; AParentWnd: HWND): Boolean;
+var
+  PdfPrinter: TPdfDocumentVclPrinter;
+  Dlg: TPrintDialog;
+  FromPage, ToPage: Integer;
+begin
+  Result := False;
+  if ADocument = nil then
+    Exit;
+
+  FromPage := 1;
+  ToPage := ADocument.PageCount;
+    
+  if AShowPrintDialog then
+  begin
+    Dlg := TPrintDialog.Create(nil);
+    try
+      // Set the PrintDialog options
+      if AllowPageRange then
+      begin
+        Dlg.MinPage := 1;
+        Dlg.MaxPage := ADocument.PageCount;
+        Dlg.Options := Dlg.Options + [poPageNums];
+      end;
+
+      // Show the PrintDialog
+      if (AParentWnd = 0) or not IsWindow(AParentWnd) then
+        Result := Dlg.Execute
+      else
+        Result := Dlg.Execute(AParentWnd);
+
+      if not Result then
+        Exit;
+
+      // Adjust print options
+      if AllowPageRange and (Dlg.PrintRange = prPageNums) then
+      begin
+        FromPage := Dlg.FromPage;
+        ToPage := Dlg.ToPage;
+      end;      
+    finally
+      Dlg.Free;
+    end;
+  end;
+
+  PdfPrinter := TPdfDocumentVclPrinter.Create;
+  try
+    if PdfPrinter.BeginPrint(AJobTitle) then
+    begin
+      try
+        Result := PdfPrinter.Print(ADocument, FromPage - 1, ToPage - 1);
+      finally
+        PdfPrinter.EndPrint;
+      end;
+    end;
+  finally
+    PdfPrinter.Free;
+  end;
 end;
 
 { TPdfControl }
@@ -386,7 +457,7 @@ end;
 
 {$IF CompilerVersion <= 20.0} // 2009
 procedure TPdfControl.WMPrintClient(var Message: TWMPrintClient);
-// emulate Delphi 2010' TControlState.csPrintClient
+// Emulate Delphi 2010's TControlState.csPrintClient
 var
   LastPrintClient: Boolean;
 begin
