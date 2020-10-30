@@ -263,7 +263,8 @@ type
 
   TPdfFormInvalidateEvent = procedure(Document: TPdfDocument; Page: TPdfPage; const PageRect: TPdfRect) of object;
   TPdfFormOutputSelectedRectEvent = procedure(Document: TPdfDocument; Page: TPdfPage; const PageRect: TPdfRect) of object;
-  TPdfFormGetCurrentPage = procedure(Document: TPdfDocument; var CurrentPage: TPdfPage) of object;
+  TPdfFormGetCurrentPageEvent = procedure(Document: TPdfDocument; var CurrentPage: TPdfPage) of object;
+  TPdfFormFieldFocusEvent = procedure(Document: TPdfDocument; Value: PWideChar; ValueLen: Integer; FieldFocused: Boolean) of object;
 
   TPdfAttachment = record
   private
@@ -352,7 +353,8 @@ type
     FFormModified: Boolean;
     FOnFormInvalidate: TPdfFormInvalidateEvent;
     FOnFormOutputSelectedRect: TPdfFormOutputSelectedRectEvent;
-    FOnFormGetCurrentPage: TPdfFormGetCurrentPage;
+    FOnFormGetCurrentPage: TPdfFormGetCurrentPageEvent;
+    FOnFormFieldFocus: TPdfFormFieldFocusEvent;
 
     procedure InternLoadFromMem(Buffer: PByte; Size: NativeInt; const APassword: AnsiString);
     procedure InternLoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord; AParam: Pointer; const APassword: AnsiString);
@@ -433,7 +435,8 @@ type
     property FormModified: Boolean read FFormModified write FFormModified;
     property OnFormInvalidate: TPdfFormInvalidateEvent read FOnFormInvalidate write FOnFormInvalidate;
     property OnFormOutputSelectedRect: TPdfFormOutputSelectedRectEvent read FOnFormOutputSelectedRect write FOnFormOutputSelectedRect;
-    property OnFormGetCurrentPage: TPdfFormGetCurrentPage read FOnFormGetCurrentPage write FOnFormGetCurrentPage;
+    property OnFormGetCurrentPage: TPdfFormGetCurrentPageEvent read FOnFormGetCurrentPage write FOnFormGetCurrentPage;
+    property OnFormFieldFocus: TPdfFormFieldFocusEvent read FOnFormFieldFocus write FOnFormFieldFocus;
   end;
 
   TPdfDocumentPrinterStatusEvent = procedure(Sender: TObject; CurrentPageNum, PageCount: Integer) of object;
@@ -856,10 +859,17 @@ end;
 
 procedure FFI_SetCursor(pThis: PFPDF_FORMFILLINFO; nCursorType: Integer); cdecl;
 begin
+  // A better solution is to use check what form field type is under the mouse cursor in the
+  // MoveMove event. Chrome/Edge don't rely on SetCursor either.
 end;
 
 procedure FFI_SetTextFieldFocus(pThis: PFPDF_FORMFILLINFO; value: FPDF_WIDESTRING; valueLen: FPDF_DWORD; is_focus: FPDF_BOOL); cdecl;
+var
+  Handler: PPdfFormFillHandler;
 begin
+  Handler := PPdfFormFillHandler(pThis);
+  if (Handler.Document <> nil) and Assigned(Handler.Document.OnFormFieldFocus) then
+    Handler.Document.OnFormFieldFocus(Handler.Document, value, valueLen, is_focus <> 0);
 end;
 
 procedure FFI_FocusChange(param: PFPDF_FORMFILLINFO; annot: FPDF_ANNOTATION; page_index: Integer); cdecl;

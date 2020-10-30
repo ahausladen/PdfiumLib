@@ -67,6 +67,7 @@ type
     FOnPageChange: TNotifyEvent;
     FOnPaint: TNotifyEvent;
     FFormOutputSelectedRects: TPdfRectArray;
+    FFormFieldFocused: Boolean;
 
     procedure WMTimer(var Message: TWMTimer); message WM_TIMER;
     procedure WMVScroll(var Message: TWMVScroll); message WM_VSCROLL;
@@ -109,6 +110,7 @@ type
     procedure FormInvalidate(Document: TPdfDocument; Page: TPdfPage; const PageRect: TPdfRect);
     procedure FormOutputSelectedRect(Document: TPdfDocument; Page: TPdfPage; const PageRect: TPdfRect);
     procedure FormGetCurrentPage(Document: TPdfDocument; var Page: TPdfPage);
+    procedure FormFieldFocus(Document: TPdfDocument; Value: PWideChar; ValueLen: Integer; FieldFocused: Boolean);
     procedure DrawAlphaSelection(DC: HDC; Page: TPdfPage; const ARects: TPdfRectArray);
     procedure DrawFormOutputSelectedRects(DC: HDC; Page: TPdfPage);
   protected
@@ -429,6 +431,7 @@ begin
   FDocument.OnFormInvalidate := FormInvalidate;
   FDocument.OnFormOutputSelectedRect := FormOutputSelectedRect;
   FDocument.OnFormGetCurrentPage := FormGetCurrentPage;
+  FDocument.OnFormFieldFocus := FormFieldFocus;
 
   ParentDoubleBuffered := False;
   ParentBackground := False;
@@ -981,6 +984,7 @@ procedure TPdfControl.Close;
 begin
   FDocument.Close;
   FPageIndex := 0;
+  FFormFieldFocused := False;
   PageContentChanged(True);
 end;
 
@@ -1159,7 +1163,7 @@ begin
       end;
     end;
 
-    if AllowUserTextSelection then
+    if AllowUserTextSelection and not FFormFieldFocused then
     begin
       if Button = mbLeft then
       begin
@@ -1218,7 +1222,7 @@ begin
     begin
       FMousePressed := False;
       StopScrollTimer;
-      if AllowUserTextSelection then
+      if AllowUserTextSelection and not FFormFieldFocused then
         SetSelStopCharIndex(X, Y);
       if not FSelectionActive and IsWebLinkAt(X, Y, Url) then
         WebLinkClick(Url);
@@ -1253,7 +1257,7 @@ begin
       end;
     end;
 
-    if AllowUserTextSelection then
+    if AllowUserTextSelection and not FFormFieldFocused then
     begin
       if FMousePressed then
       begin
@@ -2219,6 +2223,13 @@ end;
 procedure TPdfControl.FormGetCurrentPage(Document: TPdfDocument; var Page: TPdfPage);
 begin
   Page := CurrentPage;
+end;
+
+procedure TPdfControl.FormFieldFocus(Document: TPdfDocument; Value: PWideChar;
+  ValueLen: Integer; FieldFocused: Boolean);
+begin
+  ClearSelection;
+  FFormFieldFocused := FieldFocused;
 end;
 
 end.
