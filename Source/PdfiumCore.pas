@@ -1504,12 +1504,14 @@ begin
 end;
 
 function TPdfDocument.GetPageSize(Index: Integer): TPdfPoint;
+var
+  SizeF: TFSSizeF;
 begin
   CheckActive;
-  if FPDF_GetPageSizeByIndex(FDocument, Index, Result.X, Result.Y) = 0 then
+  if FPDF_GetPageSizeByIndexF(FDocument, Index, @SizeF) = 0 then
   begin
-    Result.X := 0;
-    Result.Y := 0;
+    Result.X := SizeF.width;
+    Result.Y := SizeF.height;
   end;
 end;
 
