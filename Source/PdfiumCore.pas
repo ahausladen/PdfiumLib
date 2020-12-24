@@ -1383,12 +1383,18 @@ begin
   FileWriteInfo.Stream := Stream;
 
   if FForm <> nil then
+  begin
     FORM_ForceToKillFocus(FForm); // also save the form field data that is currently focused
+    FORM_DoDocumentAAction(FForm, FPDFDOC_AACTION_WS); // BeforeSave
+  end;
 
   if FileVersion <> -1 then
     FPDF_SaveWithVersion(FDocument, @FileWriteInfo, Ord(Option), FileVersion)
   else
     FPDF_SaveAsCopy(FDocument, @FileWriteInfo, Ord(Option));
+
+  if FForm <> nil then
+    FORM_DoDocumentAAction(FForm, FPDFDOC_AACTION_DS); // AfterSave
 end;
 
 procedure TPdfDocument.SaveToBytes(var Bytes: TBytes; Option: TPdfDocumentSaveOption; FileVersion: Integer);
@@ -2821,6 +2827,9 @@ begin
   if BeginPrint then
   begin
     try
+      if ADocument.FForm <> nil then
+        FORM_DoDocumentAAction(ADocument.FForm, FPDFDOC_AACTION_WP); // BeforePrint
+
       for PageIndex := AFromPageIndex to AToPageIndex do
       begin
         PdfPage := nil;
@@ -2865,6 +2874,8 @@ begin
           if not WasPageLoaded and (PdfPage <> nil) then
             PdfPage.Close; // release memory
         end;
+        if ADocument.FForm <> nil then
+          FORM_DoDocumentAAction(ADocument.FForm, FPDFDOC_AACTION_DP); // AfterPrint
       end;
     finally
       EndPrint;
