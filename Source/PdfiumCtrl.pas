@@ -738,6 +738,20 @@ begin
       // Draw the highlighted text overlay
       DrawHighlightText(DrawDC, Page);
 
+      // draw page borders
+      Brush.Color := clBlack;
+      FillRect(DrawDC, Rect(FDrawX, FDrawY, FDrawX+FDrawWidth, FDrawY+1), Brush.Handle);                              // top border
+      FillRect(DrawDC, Rect(FDrawX, FDrawY, FDrawX+1, FDrawY + FDrawHeight), Brush.Handle);                           // left border
+      FillRect(DrawDC, Rect(FDrawX + FDrawWidth-1, FDrawY, FDrawX+FDrawWidth, FDrawY + FDrawHeight), Brush.Handle);   // right border
+      FillRect(DrawDC, Rect(FDrawX, FDrawY + FDrawHeight-1, FDrawX+FDrawWidth, FDrawY+FDrawHeight), Brush.Handle);    // bottom bar
+
+      // draw page shadow
+      Brush.Color := clDkGray;
+      FillRect(DrawDC, Rect(FDrawX + FDrawWidth, FDrawY+4, FDrawX + FDrawWidth+4, FDrawY + FDrawHeight+4), Brush.Handle); // right border
+      FillRect(DrawDC, Rect(FDrawX+4, FDrawY + FDrawHeight, FDrawX+FDrawWidth+4, FDrawY+FDrawHeight+4), Brush.Handle);        // bottom bar
+      Brush.Color := Color;
+
+
       // User painting
       if Assigned(FOnPaint) then
       begin
@@ -1887,6 +1901,8 @@ procedure TPdfControl.UpdatePageDrawInfo;
           H := Round(PageHeight / 72 * DpiY * (ZoomPercentage / 100));
         end;
     end;
+    w := w - 48;
+    h := h - 48;
   end;
 
 var
