@@ -68,6 +68,10 @@ type
     FOnPaint: TNotifyEvent;
     FFormOutputSelectedRects: TPdfRectArray;
     FFormFieldFocused: Boolean;
+    FPageShadowSize: Integer;
+    FPageShadowColor: TColor;
+    FPageShadowPadding: Integer;
+    FPageBorderColor: TColor;
 
     procedure WMTimer(var Message: TWMTimer); message WM_TIMER;
     procedure WMVScroll(var Message: TWMVScroll); message WM_VSCROLL;
@@ -92,6 +96,10 @@ type
     function GetSelStart: Integer;
     procedure SetSelection(Active: Boolean; StartIndex, StopIndex: Integer);
     procedure SetScaleMode(const Value: TPdfControlScaleMode);
+    procedure SetPageBorderColor(const Value: TColor);
+    procedure SetPageShadowColor(const Value: TColor);
+    procedure SetPageShadowPadding(const Value: Integer);
+    procedure SetPageShadowSize(const Value: Integer);
     procedure AdjustDrawPos;
     procedure UpdatePageDrawInfo;
     procedure SetPageColor(const Value: TColor);
@@ -102,6 +110,7 @@ type
     procedure DocumentLoaded;
     procedure DrawSelection(DC: HDC; Page: TPdfPage);
     procedure DrawHighlightText(DC: HDC; Page: TPdfPage);
+    procedure DrawBorderAndShadow(DC: HDC);
     function InternPageToDevice(Page: TPdfPage; PageRect: TPdfRect): TRect;
     procedure SetZoomPercentage(Value: Integer);
     procedure DrawPage(DC: HDC; Page: TPdfPage; DirectDrawPage: Boolean);
@@ -205,6 +214,12 @@ type
     property DrawOptions: TPdfPageRenderOptions read FDrawOptions write SetDrawOptions default cPdfControlDefaultDrawOptions;
     property SmoothScroll: Boolean read FSmoothScroll write FSmoothScroll default False;
     property ScrollTimer: Boolean read FScrollTimer write FScrollTimer default True;
+
+    property PageBorderColor: TColor read FPageBorderColor write SetPageBorderColor default clNone;
+    property PageShadowColor: TColor read FPageShadowColor write SetPageShadowColor default clNone;
+    property PageShadowSize: Integer read FPageShadowSize write SetPageShadowSize default 4;
+    property PageShadowPadding: Integer read FPageShadowPadding write SetPageShadowPadding default 44;
+
     property OnWebLinkClick: TPdfControlWebLinkClickEvent read FOnWebLinkClick write FOnWebLinkClick;
     property OnPageChange: TNotifyEvent read FOnPageChange write FOnPageChange;
 
@@ -432,6 +447,11 @@ begin
   FScrollTimer := True;
   FBufferedPageDraw := True;
 
+  FPageBorderColor := clNone;
+  FPageShadowColor := clNone;
+  FPageShadowSize := 4;
+  FPageShadowPadding := 44;
+
   FDocument := TPdfDocument.Create;
   FDocument.OnFormInvalidate := FormInvalidate;
   FDocument.OnFormOutputSelectedRect := FormOutputSelectedRect;
@@ -571,6 +591,35 @@ begin
     finally
       SelBmp.Free;
     end;
+  end;
+end;
+
+procedure TPdfControl.DrawBorderAndShadow(DC: HDC);
+var
+  BorderBrush, ShadowBrush: HBRUSH;
+begin
+  // Draw page borders
+  if PageBorderColor <> clNone then
+  begin
+    BorderBrush := CreateSolidBrush(ColorToRGB(PageBorderColor));
+    FillRect(DC, Rect(FDrawX, FDrawY, FDrawX + FDrawWidth, FDrawY + 1), BorderBrush);                             // top border
+    FillRect(DC, Rect(FDrawX, FDrawY, FDrawX + 1, FDrawY + FDrawHeight), BorderBrush);                            // left border
+    FillRect(DC, Rect(FDrawX + FDrawWidth - 1, FDrawY, FDrawX + FDrawWidth, FDrawY + FDrawHeight), BorderBrush);  // right border
+    FillRect(DC, Rect(FDrawX, FDrawY + FDrawHeight - 1, FDrawX + FDrawWidth, FDrawY + FDrawHeight), BorderBrush); // bottom border
+    DeleteObject(BorderBrush);
+  end;
+
+  // Draw page shadow
+  if (PageShadowColor <> clNone) and (PageShadowSize > 0) then
+  begin
+    ShadowBrush := CreateSolidBrush(ColorToRGB(PageShadowColor));
+    FillRect(DC, Rect(FDrawX + FDrawWidth, FDrawY + PageShadowSize,
+                          FDrawX + FDrawWidth + PageShadowSize, FDrawY + FDrawHeight + PageShadowSize),
+             ShadowBrush); // right shadow
+    FillRect(DC, Rect(FDrawX + PageShadowSize, FDrawY + FDrawHeight,
+                          FDrawX + FDrawWidth + PageShadowSize, FDrawY + FDrawHeight + PageShadowSize),
+             ShadowBrush); // bottom shadow
+    DeleteObject(ShadowBrush);
   end;
 end;
 
@@ -738,19 +787,7 @@ begin
       // Draw the highlighted text overlay
       DrawHighlightText(DrawDC, Page);
 
-      // draw page borders
-      Brush.Color := clBlack;
-      FillRect(DrawDC, Rect(FDrawX, FDrawY, FDrawX+FDrawWidth, FDrawY+1), Brush.Handle);                              // top border
-      FillRect(DrawDC, Rect(FDrawX, FDrawY, FDrawX+1, FDrawY + FDrawHeight), Brush.Handle);                           // left border
-      FillRect(DrawDC, Rect(FDrawX + FDrawWidth-1, FDrawY, FDrawX+FDrawWidth, FDrawY + FDrawHeight), Brush.Handle);   // right border
-      FillRect(DrawDC, Rect(FDrawX, FDrawY + FDrawHeight-1, FDrawX+FDrawWidth, FDrawY+FDrawHeight), Brush.Handle);    // bottom bar
-
-      // draw page shadow
-      Brush.Color := clDkGray;
-      FillRect(DrawDC, Rect(FDrawX + FDrawWidth, FDrawY+4, FDrawX + FDrawWidth+4, FDrawY + FDrawHeight+4), Brush.Handle); // right border
-      FillRect(DrawDC, Rect(FDrawX+4, FDrawY + FDrawHeight, FDrawX+FDrawWidth+4, FDrawY+FDrawHeight+4), Brush.Handle);        // bottom bar
-      Brush.Color := Color;
-
+      DrawBorderAndShadow(DrawDC);
 
       // User painting
       if Assigned(FOnPaint) then
@@ -784,6 +821,7 @@ begin
       FPageBitmap := 0;
     end;
     FillRect(DC, Rect(0, 0, Width, Height), Brush.Handle);
+    DrawBorderAndShadow(DC);
     if Assigned(FOnPaint) then
       FOnPaint(Self);
   end;
@@ -1069,6 +1107,42 @@ begin
   begin
     FRotation := Value;
     PageLayoutChanged;
+  end;
+end;
+
+procedure TPdfControl.SetPageBorderColor(const Value: TColor);
+begin
+  if Value <> FPageBorderColor then
+  begin
+    FPageBorderColor := Value;
+    InvalidatePage;
+  end;
+end;
+
+procedure TPdfControl.SetPageShadowColor(const Value: TColor);
+begin
+  if Value <> FPageShadowColor then
+  begin
+    FPageShadowColor := Value;
+    InvalidatePage;
+  end;
+end;
+
+procedure TPdfControl.SetPageShadowPadding(const Value: Integer);
+begin
+  if Value <> FPageShadowPadding then
+  begin
+    FPageShadowPadding := Value;
+    InvalidatePage;
+  end;
+end;
+
+procedure TPdfControl.SetPageShadowSize(const Value: Integer);
+begin
+  if Value <> FPageShadowSize then
+  begin
+    FPageShadowSize := Value;
+    InvalidatePage;
   end;
 end;
 
@@ -1901,8 +1975,12 @@ procedure TPdfControl.UpdatePageDrawInfo;
           H := Round(PageHeight / 72 * DpiY * (ZoomPercentage / 100));
         end;
     end;
-    w := w - 48;
-    h := h - 48;
+
+    if (PageShadowColor <> clNone) and (PageShadowSize > 0) and (PageShadowPadding > 0) then
+    begin
+      W := W - (PageShadowPadding + PageShadowSize);
+      H := H - (PageShadowPadding + PageShadowSize);
+    end;
   end;
 
 var

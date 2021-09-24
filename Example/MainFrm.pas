@@ -63,6 +63,9 @@ begin
   FCtrl.Parent := Self;
   FCtrl.SendToBack; // put the control behind the buttons
   FCtrl.Color := clGray;
+  //FCtrl.Color := clWhite;
+  //FCtrl.PageBorderColor := clBlack;
+  //FCtrl.PageShadowColor := clDkGray;
   FCtrl.ScaleMode := smFitWidth;
   FCtrl.PageColor := RGB(255, 255, 200);
   FCtrl.OnWebLinkClick := WebLinkClick;
