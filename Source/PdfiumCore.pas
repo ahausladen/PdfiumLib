@@ -8,6 +8,11 @@ interface
 uses
   Windows, WinSpool, Types, SysUtils, Classes, Contnrs, PdfiumLib, Graphics;
 
+const
+  // DIN A4
+  PdfDefaultPageWidth = 595;
+  PdfDefaultPageHeight = 842;
+
 type
   EPdfException = class(Exception);
   EPdfUnsupportedFeatureException = class(EPdfException);
@@ -89,13 +94,15 @@ type
   );
 
   TPdfPrintMode = (
-    pmEMF = 0,
-    pmTextMode = 1,
-    pmPostScript2 = 2,
-    pmPostScript3 = 3,
-    pmPostScriptPassThrough2 = 4,
-    pmPostScriptPassThrough3 = 5,
-    pmEMFImageMasks = 6
+    pmEMF                          = FPDF_PRINTMODE_EMF,
+    pmTextMode                     = FPDF_PRINTMODE_TEXTONLY,
+    pmPostScript2                  = FPDF_PRINTMODE_POSTSCRIPT2,
+    pmPostScript3                  = FPDF_PRINTMODE_POSTSCRIPT3,
+    pmPostScriptPassThrough2       = FPDF_PRINTMODE_POSTSCRIPT2_PASSTHROUGH,
+    pmPostScriptPassThrough3       = FPDF_PRINTMODE_POSTSCRIPT3_PASSTHROUGH,
+    pmEMFImageMasks                = FPDF_PRINTMODE_EMF_IMAGE_MASKS,
+    pmPostScript3Type42            = FPDF_PRINTMODE_POSTSCRIPT3_TYPE42,
+    pmPostScript3Type42PassThrough = FPDF_PRINTMODE_POSTSCRIPT3_TYPE42_PASSTHROUGH
   );
 
   TPdfFileIdType = (
@@ -357,7 +364,10 @@ type
     FOnFormFieldFocus: TPdfFormFieldFocusEvent;
 
     procedure InternLoadFromMem(Buffer: PByte; Size: NativeInt; const APassword: AnsiString);
-    procedure InternLoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord; AParam: Pointer; const APassword: AnsiString);
+    procedure InternLoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord;
+      AParam: Pointer; const APassword: AnsiString);
+    function InternImportPages(Source: TPdfDocument; PageIndices: PInteger; PageIndicesCount: Integer;
+      const Range: AnsiString; Index: Integer; ImportByRange: Boolean): Boolean;
     function GetPage(Index: Integer): TPdfPage;
     function GetPageCount: Integer;
     procedure ExtractPage(APage: TPdfPage);
@@ -394,9 +404,14 @@ type
     procedure SaveToBytes(var Bytes: TBytes; Option: TPdfDocumentSaveOption = dsoRemoveSecurity; FileVersion: Integer = -1);
 
     function NewDocument: Boolean;
+    class function CreateNPagesOnOnePageDocument(Source: TPdfDocument; NewPageWidth, NewPageHeight: Double; NumPagesXAxis, NumPagesYAxis: Integer): TPdfDocument; overload;
+    class function CreateNPagesOnOnePageDocument(Source: TPdfDocument; NumPagesXAxis, NumPagesYAxis: Integer): TPdfDocument; overload;
+    function ImportAllPages(Source: TPdfDocument; Index: Integer = -1): Boolean;
     function ImportPages(Source: TPdfDocument; const Range: string = ''; Index: Integer = -1): Boolean;
+    function ImportPagesByIndex(Source: TPdfDocument; const PageIndices: array of Integer; Index: Integer = -1): Boolean;
     procedure DeletePage(Index: Integer);
-    function NewPage(Width, Height: Double; Index: Integer = -1): TPdfPage;
+    function NewPage(Width, Height: Double; Index: Integer = -1): TPdfPage; overload;
+    function NewPage(Index: Integer = -1): TPdfPage; overload;
     function ApplyViewerPreferences(Source: TPdfDocument): Boolean;
     function IsPageLoaded(PageIndex: Integer): Boolean;
 
@@ -1321,9 +1336,39 @@ begin
     raise EPdfException.CreateRes(@RsDocumentNotActive);
 end;
 
-function TPdfDocument.ImportPages(Source: TPdfDocument; const Range: string; Index: Integer): Boolean;
+class function TPdfDocument.CreateNPagesOnOnePageDocument(Source: TPdfDocument;
+  NumPagesXAxis, NumPagesYAxis: Integer): TPdfDocument;
+begin
+  if Source.PageCount > 0 then
+    Result := CreateNPagesOnOnePageDocument(Source, Source.PageSizes[0].X, Source.PageSizes[0].Y, NumPagesXAxis, NumPagesYAxis)
+  else
+    Result := CreateNPagesOnOnePageDocument(Source, PdfDefaultPageWidth, PdfDefaultPageHeight, NumPagesXAxis, NumPagesYAxis); // DIN A4 page
+end;
+
+class function TPdfDocument.CreateNPagesOnOnePageDocument(Source: TPdfDocument;
+  NewPageWidth, NewPageHeight: Double; NumPagesXAxis, NumPagesYAxis: Integer): TPdfDocument;
+begin
+  Result := TPdfDocument.Create;
+  try
+    if (Source = nil) or not Source.Active then
+      Result.NewDocument
+    else
+    begin
+      Result.FDocument := FPDF_ImportNPagesToOne(Source.FDocument, NewPageWidth, NewPageHeight, NumPagesXAxis, NumPagesYAxis);
+      if Result.FDocument <> nil then
+        Result.DocumentLoaded
+      else
+        Result.NewDocument;
+    end;
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+
+function TPdfDocument.InternImportPages(Source: TPdfDocument; PageIndices: PInteger; PageIndicesCount: Integer;
+  const Range: AnsiString; Index: Integer; ImportByRange: Boolean): Boolean;
 var
-  A: AnsiString;
   I, NewCount, OldCount, InsertCount: Integer;
 begin
   CheckActive;
@@ -1332,8 +1377,12 @@ begin
   OldCount := FPDF_GetPageCount(FDocument);
   if Index < 0 then
     Index := OldCount;
-  A := AnsiString(Range);
-  Result := FPDF_ImportPages(FDocument, Source.FDocument, PAnsiChar(Pointer(A)), Index) <> 0;
+
+  if ImportByRange then // Range = '' => Import all pages
+    Result := FPDF_ImportPages(FDocument, Source.FDocument, PAnsiChar(Pointer(Range)), Index) <> 0
+  else
+    Result := FPDF_ImportPagesByIndex(FDocument, Source.FDocument, PageIndices, PageIndicesCount, Index) <> 0;
+
   NewCount := FPDF_GetPageCount(FDocument);
   InsertCount := NewCount - OldCount;
   if InsertCount > 0 then
@@ -1346,6 +1395,24 @@ begin
         FPages.List[Index] := nil;
     end;
   end;
+end;
+
+function TPdfDocument.ImportAllPages(Source: TPdfDocument; Index: Integer): Boolean;
+begin
+  Result := InternImportPages(Source, nil, 0, '', Index, False);
+end;
+
+function TPdfDocument.ImportPages(Source: TPdfDocument; const Range: string; Index: Integer): Boolean;
+begin
+  Result := InternImportPages(Source, nil, 0, AnsiString(Range), Index, True)
+end;
+
+function TPdfDocument.ImportPagesByIndex(Source: TPdfDocument; const PageIndices: array of Integer; Index: Integer = -1): Boolean;
+begin
+  if Length(PageIndices) > 0 then
+    Result := InternImportPages(Source, @PageIndices[0], Length(PageIndices), '', Index, False)
+  else
+    Result := ImportAllPages(Source, Index);
 end;
 
 procedure TPdfDocument.SaveToFile(const AFileName: string; Option: TPdfDocumentSaveOption; FileVersion: Integer);
@@ -1438,7 +1505,7 @@ var
 begin
   CheckActive;
   if Index < 0 then
-    Index := FPages.Count;
+    Index := FPages.Count; // append new page
   LPage := FPDFPage_New(FDocument, Index, Width, Height);
   if LPage <> nil then
   begin
@@ -1447,6 +1514,11 @@ begin
   end
   else
     Result := nil;
+end;
+
+function TPdfDocument.NewPage(Index: Integer = -1): TPdfPage;
+begin
+  Result := NewPage(PdfDefaultPageWidth, PdfDefaultPageHeight, Index);
 end;
 
 function TPdfDocument.ApplyViewerPreferences(Source: TPdfDocument): Boolean;
@@ -1514,7 +1586,9 @@ var
   SizeF: TFSSizeF;
 begin
   CheckActive;
-  if FPDF_GetPageSizeByIndexF(FDocument, Index, @SizeF) = 0 then
+  Result.X := 0;
+  Result.Y := 0;
+  if FPDF_GetPageSizeByIndexF(FDocument, Index, @SizeF) <> 0 then
   begin
     Result.X := SizeF.width;
     Result.Y := SizeF.height;
