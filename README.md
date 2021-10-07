@@ -4,8 +4,10 @@ Example of a PDF VCL Control using PDFium
 ## Requirements
 pdfium.dll (x86/x64) from the [pdfium-binaries](https://github.com/bblanchon/pdfium-binaries)
 
+Binary release: [chromium/4660](https://github.com/bblanchon/pdfium-binaries/releases/tag/chromium%2F4660)
+
 ## Required pdfium.dll version
-chromium/4243
+chromium/4660
 
 ## Features
 - Multiple PDF load functions:
@@ -16,6 +18,7 @@ chromium/4243
   - Active TSteam (stream must not be released before the PDF document is closed)
   - Callback
 - File Attachments
+- Import pages into other PDF documents
 - Forms
 - PDF rotation (normal, 90° counter clockwise, 180°, 90° clockwise)
 - Highlighted text (e.g. for search results)

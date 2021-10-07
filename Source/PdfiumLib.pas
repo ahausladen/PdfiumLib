@@ -3,7 +3,7 @@
 
 // Use DLLs (x64, x86) from https://github.com/bblanchon/pdfium-binaries
 //
-// DLL Version: chromium/4243
+// DLL Version: chromium/4660
 
 unit PdfiumLib;
 
@@ -80,10 +80,11 @@ type
   PFPDF_LINK = ^FPDF_LINK; // array
   PFPDF_PAGE = ^FPDF_PAGE; // array
 
-  // PDF types - use incomplete types (never completed) just for API type safety.
+  // PDF types - use incomplete types (never completed) to force API type safety.
   FPDF_ACTION            = type __PFPDF_PTRREC;
   FPDF_ANNOTATION        = type __PFPDF_PTRREC;
   FPDF_ATTACHMENT        = type __PFPDF_PTRREC;
+  FPDF_AVAIL             = type __PFPDF_PTRREC;
   FPDF_BITMAP            = type __PFPDF_PTRREC;
   FPDF_BOOKMARK          = type __PFPDF_PTRREC;
   FPDF_CLIPPATH          = type __PFPDF_PTRREC;
@@ -91,6 +92,7 @@ type
   FPDF_DOCUMENT          = type __PFPDF_PTRREC;
   FPDF_FONT              = type __PFPDF_PTRREC;
   FPDF_FORMHANDLE        = type __PFPDF_PTRREC;
+  FPDF_GLYPHPATH         = type __PFPDF_PTRREC;
   FPDF_JAVASCRIPT_ACTION = type __PFPDF_PTRREC;
   FPDF_LINK              = type __PFPDF_PTRREC;
   FPDF_PAGE              = type __PFPDF_PTRREC;
@@ -106,6 +108,7 @@ type
   FPDF_STRUCTTREE        = type __PFPDF_PTRREC;
   FPDF_TEXTPAGE          = type __PFPDF_PTRREC;
   FPDF_WIDGET            = type __PFPDF_PTRREC;
+  FPDF_XOBJECT           = type __PFPDF_PTRREC;
 
   // Basic data types
   FPDF_BOOL  = Integer;
@@ -352,6 +355,12 @@ var
 //                 PostScript via ExtEscape() in PASSTHROUGH mode.
 //                 FPDF_PRINTMODE_EMF_IMAGE_MASKS to output EMF, with more
 //                 efficient processing of documents containing image masks.
+//                 FPDF_PRINTMODE_POSTSCRIPT3_TYPE42 to output level 3
+//                 PostScript with embedded Type 42 fonts, when applicable, into
+//                 EMF as a series of GDI comments.
+//                 FPDF_PRINTMODE_POSTSCRIPT3_TYPE42_PASSTHROUGH to output level
+//                 3 PostScript with embedded Type 42 fonts, when applicable,
+//                 via ExtEscape() in PASSTHROUGH mode.
 // Return value:
 //          True if successful, false if unsuccessful (typically invalid input).
 var
@@ -614,6 +623,23 @@ var
 //          The return value can change over time as the PDF parser evolves.
 var
   FPDF_DocumentHasValidCrossReferenceTable: function(document: FPDF_DOCUMENT): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDF_GetTrailerEnds
+//          Get the byte offsets of trailer ends.
+// Parameters:
+//          document    -   Handle to document. Returned by FPDF_LoadDocument().
+//          buffer      -   The address of a buffer that receives the
+//                          byte offsets.
+//          length      -   The size, in ints, of |buffer|.
+// Return value:
+//          Returns the number of ints in the buffer on success, 0 on error.
+//
+// |buffer| is an array of integers that describes the exact byte offsets of the
+// trailer ends in the document. If |length| is less than the returned length,
+// or |document| or |buffer| is NULL, |buffer| will not be modified.
+var
+  FPDF_GetTrailerEnds: function(document: FPDF_DOCUMENT; buffer: PUINT; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Function: FPDF_GetDocPermission
 //          Get file permission flags of the document.
@@ -1423,6 +1449,8 @@ const
   FPDF_PRINTMODE_POSTSCRIPT2_PASSTHROUGH = 4;
   FPDF_PRINTMODE_POSTSCRIPT3_PASSTHROUGH = 5;
   FPDF_PRINTMODE_EMF_IMAGE_MASKS = 6;
+  FPDF_PRINTMODE_POSTSCRIPT3_TYPE42 = 7;
+  FPDF_PRINTMODE_POSTSCRIPT3_TYPE42_PASSTHROUGH= 8;
 
 type
   PFPDF_IMAGEOBJ_METADATA = ^FPDF_IMAGEOBJ_METADATA;
@@ -1598,6 +1626,36 @@ var
 // and can be used to scale, rotate, shear and translate the |page_object|.
 var
   FPDFPageObj_Transform: procedure(page_object: FPDF_PAGEOBJECT; a, b, c, d, e, f: Double); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the transform matrix of a page object.
+//
+//   page_object - handle to a page object.
+//   matrix      - pointer to struct to receive the matrix value.
+//
+// The matrix is composed as:
+//   |a c e|
+//   |b d f|
+// and used to scale, rotate, shear and translate the page object.
+//
+// Returns TRUE on success.
+var
+  FPDFPageObj_GetMatrix: function(page_object: FPDF_PAGEOBJECT; matrix: PFS_MATRIX): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Set the transform matrix of a page object.
+//
+//   page_object - handle to a page object.
+//   matrix      - pointer to struct with the matrix value.
+//
+// The matrix is composed as:
+//   |a c e|
+//   |b d f|
+// and can be used to scale, rotate, shear and translate the page object.
+//
+// Returns TRUE on success.
+var
+  FPDFPageObj_SetMatrix: function(path: FPDF_PAGEOBJECT; const matrix: PFS_MATRIX): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Transform all annotations in |page|.
 //
@@ -1878,26 +1936,7 @@ var
   FPDFImageObj_LoadJpegFileInline: function(pages: PFPDF_PAGE; count: Integer; image_object: FPDF_PAGEOBJECT;
     file_access: PFPDF_FILEACCESS): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Experimental API.
-// Get the transform matrix of an image object.
-//
-//   image_object - handle to an image object.
-//   a            - matrix value.
-//   b            - matrix value.
-//   c            - matrix value.
-//   d            - matrix value.
-//   e            - matrix value.
-//   f            - matrix value.
-//
-// The matrix is composed as:
-//   |a c e|
-//   |b d f|
-// and used to scale, rotate, shear and translate the image.
-//
-// Returns TRUE on success.
-var
-  FPDFImageObj_GetMatrix: function(image_object: FPDF_PAGEOBJECT; var a, b, c, d, e, f: Double): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
-
+// TODO(thestig): Start deprecating this once FPDFPageObj_SetMatrix() is stable.
 // Set the transform matrix of |image_object|.
 //
 //   image_object - handle to an image object.
@@ -2099,7 +2138,6 @@ var
 var
   FPDFPageObj_SetStrokeWidth: function(page_object: FPDF_PAGEOBJECT; width: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Experimental API.
 // Get the stroke width of a page object.
 //
 // path   - the handle to the page object.
@@ -2173,6 +2211,58 @@ var
 var
   FPDFPageObj_GetFillColor: function(page_object: FPDF_PAGEOBJECT; var R, G, B, A: Cardinal): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Get the line dash |phase| of |page_object|.
+//
+// page_object - handle to a page object.
+// phase - pointer where the dashing phase will be stored.
+//
+// Returns TRUE on success.
+var
+  FPDFPageObj_GetDashPhase: function(page_object: FPDF_PAGEOBJECT; var phase: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Set the line dash phase of |page_object|.
+//
+// page_object - handle to a page object.
+// phase - line dash phase.
+//
+// Returns TRUE on success.
+var
+  FPDFPageObj_SetDashPhase: function(page_object: FPDF_PAGEOBJECT; phase: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the line dash array of |page_object|.
+//
+// page_object - handle to a page object.
+//
+// Returns the line dash array size or -1 on failure.
+var
+  FPDFPageObj_GetDashCount: function(page_object: FPDF_PAGEOBJECT): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the line dash array of |page_object|.
+//
+// page_object - handle to a page object.
+// dash_array - pointer where the dashing array will be stored.
+// dash_count - number of elements in |dash_array|.
+//
+// Returns TRUE on success.
+var
+  FPDFPageObj_GetDashArray: function(page_object: FPDF_PAGEOBJECT; dash_array: PSingle; dash_count: SIZE_T): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Set the line dash array of |page_object|.
+//
+// page_object - handle to a page object.
+// dash_array - the dash array.
+// dash_count - number of elements in |dash_array|.
+// phase - the line dash phase.
+//
+// Returns TRUE on success.
+var
+  FPDFPageObj_SetDashArray: function(page_object: FPDF_PAGEOBJECT; const dash_array: PSingle; dash_count: SIZE_T;
+    phase: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 // Experimental API.
 // Get number of segments inside |path|.
 //
@@ -2185,7 +2275,6 @@ var
 var
   FPDFPath_CountSegments: function(path: FPDF_PAGEOBJECT): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Experimental API.
 // Get segment in |path| at |index|.
 //
 //   path  - handle to a path.
@@ -2195,7 +2284,6 @@ var
 var
   FPDFPath_GetPathSegment: function(path: FPDF_PAGEOBJECT; index: Integer): FPDF_PATHSEGMENT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Experimental API.
 // Get coordinates of |segment|.
 //
 //   segment  - handle to a segment.
@@ -2206,7 +2294,6 @@ var
 var
   FPDFPathSegment_GetPoint: function(segment: FPDF_PATHSEGMENT; var x, y: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Experimental API.
 // Get type of |segment|.
 //
 //   segment - handle to a segment.
@@ -2216,7 +2303,6 @@ var
 var
   FPDFPathSegment_GetType: function(segment: FPDF_PATHSEGMENT): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Experimental API.
 // Gets if the |segment| closes the current subpath of a given path.
 //
 //   segment - handle to a segment.
@@ -2285,7 +2371,6 @@ var
 var
   FPDFPath_SetDrawMode: function(path: FPDF_PAGEOBJECT; fillmode: Integer; stoke: FPDF_BOOL): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Experimental API.
 // Get the drawing mode of a path.
 //
 // path     - the handle to the path object.
@@ -2296,37 +2381,7 @@ var
 var
   FPDFPath_GetDrawMode: function(path: FPDF_PAGEOBJECT; var fillmode: Integer; var stoke: FPDF_BOOL): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Experimental API.
-// Get the transform matrix of a path.
-//
-//   path - handle to a path.
-//   matrix - pointer to struct to receive the matrix value.
-//
-// The matrix is composed as:
-//   |a c e|
-//   |b d f|
-// and used to scale, rotate, shear and translate the path.
-//
-// Returns TRUE on success.
-var
-  FPDFPath_GetMatrix: function(path: FPDF_PAGEOBJECT; matrix: PFS_MATRIX): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
-
-// Experimental API.
-// Set the transform matrix of a path.
-//
-//   path - handle to a path.
-//   matrix - pointer to struct with the matrix value.
-//
-// The matrix is composed as:
-//   |a c e|
-//   |b d f|
-// and can be used to scale, rotate, shear and translate the path.
-//
-// Returns TRUE on success.
-var
-  FPDFPath_SetMatrix: function(path: FPDF_PAGEOBJECT; const matrix: PFS_MATRIX): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
-
-  // Create a new text object using one of the standard PDF fonts.
+// Create a new text object using one of the standard PDF fonts.
 //
 // document   - handle to the document.
 // font       - string containing the font name, without spaces.
@@ -2336,7 +2391,7 @@ var
 var
   FPDFPageObj_NewTextObj: function(document: FPDF_DOCUMENT; font: FPDF_BYTESTRING; font_size: Single): FPDF_PAGEOBJECT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Set the text for a textobject. If it had text, it will be replaced.
+// Set the text for a text object. If it had text, it will be replaced.
 //
 // text_object  - handle to the text object.
 // text         - the UTF-16LE encoded string containing the text to be added.
@@ -2344,6 +2399,18 @@ var
 // Returns TRUE on success
 var
   FPDFText_SetText: function(text_object: FPDF_PAGEOBJECT; text: FPDF_WIDESTRING): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Set the text using charcodes for a text object. If it had text, it will be
+// replaced.
+//
+// text_object  - handle to the text object.
+// charcodes    - pointer to an array of charcodes to be added.
+// count        - number of elements in |charcodes|.
+//
+// Returns TRUE on success
+var
+  FPDFText_SetCharcodes: function(text_object: FPDF_PAGEOBJECT; const charcodes: PUINT; count: SIZE_T): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Returns a font object loaded from a stream of data. The font is loaded
 // into the document.
@@ -2376,30 +2443,16 @@ var
 var
   FPDFText_LoadStandardFont: function(document: FPDF_DOCUMENT; font: FPDF_BYTESTRING): FPDF_FONT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Experimental API.
-// Get the transform matrix of a text object.
-//
-//   text - handle to a text.
-//   matrix - pointer to struct with the matrix value.
-//
-// The matrix is composed as:
-//   |a c e|
-//   |b d f|
-// and used to scale, rotate, shear and translate the text.
-//
-// Returns TRUE on success.
-var
-  FPDFTextObj_GetMatrix: function(text: FPDF_PAGEOBJECT; matrix: PFS_MATRIX): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
-
-// Experimental API.
 // Get the font size of a text object.
 //
 //   text - handle to a text.
 //
-// Returns the font size of the text object, measured in points (about 1/72
-// inch) on success; 0 on failure.
+//   size - pointer to the font size of the text object, measured in points
+//   (about 1/72 inch)
+//
+// Returns TRUE on success.
 var
-  FPDFTextObj_GetFontSize: function(text: FPDF_PAGEOBJECT): Single; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDFTextObj_GetFontSize: function(text: FPDF_PAGEOBJECT; var size: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Close a loaded PDF font.
 //
@@ -2417,7 +2470,6 @@ var
 var
   FPDFPageObj_CreateTextObj: function(document: FPDF_DOCUMENT; font: FPDF_FONT; font_size: Single): FPDF_PAGEOBJECT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Experimental API.
 // Get the text rendering mode of a text object.
 //
 // text     - the handle to the text object.
@@ -2438,23 +2490,6 @@ var
 var
   FPDFTextObj_SetTextRenderMode: function(text: FPDF_PAGEOBJECT; render_mode: FPDF_TEXT_RENDERMODE): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Experimental API.
-// Get the font name of a text object.
-//
-// text             - the handle to the text object.
-// buffer           - the address of a buffer that receives the font name.
-// length           - the size, in bytes, of |buffer|.
-//
-// Returns the number of bytes in the font name (including the trailing NUL
-// character) on success, 0 on error.
-//
-// Regardless of the platform, the |buffer| is always in UTF-8 encoding.
-// If |length| is less than the returned length, or |buffer| is NULL, |buffer|
-// will not be modified.
-var
-  FPDFTextObj_GetFontName: function(text: FPDF_PAGEOBJECT; buffer: Pointer; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
-
-// Experimental API.
 // Get the text of a text object.
 //
 // text_object      - the handle to the text object.
@@ -2469,10 +2504,140 @@ var
 // If |length| is less than the returned length, or |buffer| is NULL, |buffer|
 // will not be modified.
 var
-  FPDFTextObj_GetText: function(text_object: FPDF_PAGEOBJECT; text_page: FPDF_TEXTPAGE; buffer: Pointer;
+  FPDFTextObj_GetText: function(text_object: FPDF_PAGEOBJECT; text_page: FPDF_TEXTPAGE; buffer: FPDF_WCHAR;
     length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
+// Get the font of a text object.
+//
+// text - the handle to the text object.
+//
+// Returns a handle to the font object held by |text| which retains ownership.
+var
+  FPDFTextObj_GetFont: function(text: FPDF_PAGEOBJECT): FPDF_FONT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the font name of a font.
+//
+// font   - the handle to the font object.
+// buffer - the address of a buffer that receives the font name.
+// length - the size, in bytes, of |buffer|.
+//
+// Returns the number of bytes in the font name (including the trailing NUL
+// character) on success, 0 on error.
+//
+// Regardless of the platform, the |buffer| is always in UTF-8 encoding.
+// If |length| is less than the returned length, or |buffer| is NULL, |buffer|
+// will not be modified.
+var
+  FPDFFont_GetFontName: function(font: FPDF_FONT; buffer: PAnsiChar; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the descriptor flags of a font.
+//
+// font - the handle to the font object.
+//
+// Returns the bit flags specifying various characteristics of the font as
+// defined in ISO 32000-1 Table 123, -1 on failure.
+var
+  FPDFFont_GetFlags: function(font: FPDF_FONT): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the font weight of a font.
+//
+// font - the handle to the font object.
+//
+// Returns the font weight, -1 on failure.
+// Typical values are 400 (normal) and 700 (bold).
+var
+  FPDFFont_GetWeight: function(font: FPDF_FONT): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the italic angle of a font.
+//
+// font  - the handle to the font object.
+// angle - pointer where the italic angle will be stored
+//
+// The italic angle of a |font| is defined as degrees counterclockwise
+// from vertical. For a font that slopes to the right, this will be negative.
+//
+// Returns TRUE on success; |angle| unmodified on failure.
+var
+  FPDFFont_GetItalicAngle: function(font: FPDF_FONT; var angle: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get ascent distance of a font.
+//
+// font       - the handle to the font object.
+// font_size  - the size of the |font|.
+// ascent     - pointer where the font ascent will be stored
+//
+// Ascent is the maximum distance in points above the baseline reached by the
+// glyphs of the |font|. One point is 1/72 inch (around 0.3528 mm).
+//
+// Returns TRUE on success; |ascent| unmodified on failure.
+var
+  FPDFFont_GetAscent: function(font: FPDF_FONT; font_size: Single; var ascent: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get descent distance of a font.
+//
+// font       - the handle to the font object.
+// font_size  - the size of the |font|.
+// descent    - pointer where the font descent will be stored
+//
+// Descent is the maximum distance in points below the baseline reached by the
+// glyphs of the |font|. One point is 1/72 inch (around 0.3528 mm).
+//
+// Returns TRUE on success; |descent| unmodified on failure.
+var
+  FPDFFont_GetDescent: function(font: FPDF_FONT; font_size: Single; var descent: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the width of a glyph in a font.
+//
+// font       - the handle to the font object.
+// glyph      - the glyph.
+// font_size  - the size of the font.
+// width      - pointer where the glyph width will be stored
+//
+// Glyph width is the distance from the end of the prior glyph to the next
+// glyph. This will be the vertical distance for vertical writing.
+//
+// Returns TRUE on success; |width| unmodified on failure.
+var
+  FPDFFont_GetGlyphWidth: function(font: FPDF_FONT; glyph: UINT; font_size: Single; var width: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the glyphpath describing how to draw a font glyph.
+//
+// font       - the handle to the font object.
+// glyph      - the glyph being drawn.
+// font_size  - the size of the font.
+//
+// Returns the handle to the segment, or NULL on faiure.
+var
+  FPDFFont_GetGlyphPath: function(font: FPDF_FONT; glyph: UINT; font_size: Single): FPDF_GLYPHPATH; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get number of segments inside glyphpath.
+//
+// glyphpath - handle to a glyph path.
+//
+// Returns the number of objects in |glyphpath| or -1 on failure.
+var
+  FPDFGlyphPath_CountGlyphSegments: function(glyphpath: FPDF_GLYPHPATH): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get segment in glyphpath at index.
+//
+// glyphpath  - handle to a glyph path.
+// index      - the index of a segment.
+//
+// Returns the handle to the segment, or NULL on faiure.
+var
+  FPDFGlyphPath_GetGlyphPathSegment: function(glyphpath: FPDF_GLYPHPATH; index: Integer): FPDF_PATHSEGMENT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 // Get number of page objects inside |form_object|.
 //
 //   form_object - handle to a form object.
@@ -2481,7 +2646,6 @@ var
 var
   FPDFFormObj_CountObjects: function(form_object: FPDF_PAGEOBJECT): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Experimental API.
 // Get page object in |form_object| at |index|.
 //
 //   form_object - handle to a form object.
@@ -2491,33 +2655,37 @@ var
 var
   FPDFFormObj_GetObject: function(form_object: FPDF_PAGEOBJECT; index: LongWord): FPDF_PAGEOBJECT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Experimental API.
-// Get the transform matrix of a form object.
-//
-//   form_object - handle to a form.
-//   matrix      - pointer to struct to receive the matrix value.
-//
-// The matrix is composed as:
-//   |a c e|
-//   |b d f|
-// and used to scale, rotate, shear and translate the form object.
-//
-// Returns TRUE on success.
-var
-  FPDFFormObj_GetMatrix: function(form_object: FPDF_PAGEOBJECT; matrix: PFS_MATRIX): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
-
-
 // *** _FPDF_PPO_H_ ***
+
+// Experimental API.
+// Import pages to a FPDF_DOCUMENT.
+//
+//   dest_doc     - The destination document for the pages.
+//   src_doc      - The document to be imported.
+//   page_indices - An array of page indices to be imported. The first page is
+//                  zero. If |page_indices| is NULL, all pages from |src_doc|
+//                  are imported.
+//   length       - The length of the |page_indices| array.
+//   index        - The page index at which to insert the first imported page
+//                  into |dest_doc|. The first page is zero.
+//
+// Returns TRUE on success. Returns FALSE if any pages in |page_indices| is
+// invalid.
+var
+  FPDF_ImportPagesByIndex: function(dest_doc, src_doc: FPDF_DOCUMENT; page_indices: PInteger;
+    length: LongWord; index: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Import pages to a FPDF_DOCUMENT.
 //
 //   dest_doc  - The destination document for the pages.
 //   src_doc   - The document to be imported.
-//   pagerange - A page range string, Such as "1,3,5-7". If |pagerange| is NULL,
-//               all pages from |src_doc| are imported.
-//   index     - The page index to insert at.
+//   pagerange - A page range string, Such as "1,3,5-7". The first page is one.
+//               If |pagerange| is NULL, all pages from |src_doc| are imported.
+//   index     - The page index at which to insert the first imported page into
+//               |dest_doc|. The first page is zero.
 //
-// Returns TRUE on success.
+// Returns TRUE on success. Returns FALSE if any pages in |pagerange| is
+// invalid or if |pagerange| cannot be read.
 var
   FPDF_ImportPages: function(dest_doc, src_doc: FPDF_DOCUMENT; pagerange: FPDF_BYTESTRING; index: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -2541,6 +2709,29 @@ var
 var
   FPDF_ImportNPagesToOne: function(src_doc: FPDF_DOCUMENT; output_width, output_height: Single;
     num_pages_on_x_axis, num_pages_on_y_axis: SIZE_T): FPDF_DOCUMENT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Create a template to generate form xobjects from |src_doc|'s page at
+// |src_page_index|, for use in |dest_doc|.
+//
+// Returns a handle on success, or NULL on failure. Caller owns the newly
+// created object.
+var
+  FPDF_NewXObjectFromPage: function(dest_doc, src_doc: FPDF_DOCUMENT; src_page_index: Integer): FPDF_XOBJECT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Close an FPDF_XOBJECT handle created by FPDF_NewXObjectFromPage().
+// FPDF_PAGEOBJECTs created from the FPDF_XOBJECT handle are not affected.
+var
+  FPDF_CloseXObject: procedure(xobject: FPDF_XOBJECT); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Create a new form object from an FPDF_XOBJECT object.
+//
+// Returns a new form object on success, or NULL on failure. Caller owns the
+// newly created object.
+var
+  FPDF_NewFormObjectFromXObject: function(xobject: FPDF_XOBJECT): FPDF_PAGEOBJECT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Copy the viewer preferences from |src_doc| into |dest_doc|.
 //
@@ -3472,6 +3663,16 @@ var
 var
   FPDFSignatureObj_GetTime: function(signature: FPDF_SIGNATURE; buffer: PAnsiChar; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
+// Function: FPDFSignatureObj_GetDocMDPPermission
+//          Get the DocMDP permission of a signature object.
+// Parameters:
+//          signature   -   Handle to the signature object. Returned by
+//                          FPDF_GetSignatureObject().
+// Return value:
+//          Returns the permission (1, 2 or 3) on success, 0 on error.
+var
+  FPDFSignatureObj_GetDocMDPPermission: function(signature: FPDF_SIGNATURE): UInt32; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // *** _FPDF_DOC_H_ ***
 
@@ -3573,7 +3774,7 @@ var
 //   document - handle to the document.
 //   bookmark - handle to the bookmark.
 //
-// Returns the handle to the destination data,  NULL if no destination is
+// Returns the handle to the destination data, or NULL if no destination is
 // associated with |bookmark|.
 var
   FPDFBookmark_GetDest: function(document: FPDF_DOCUMENT; bookmark: FPDF_BOOKMARK): FPDF_DEST; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
@@ -3583,8 +3784,11 @@ var
 //   bookmark - handle to the bookmark.
 //
 // Returns the handle to the action data, or NULL if no action is associated
-// with |bookmark|. When NULL is returned, FPDFBookmark_GetDest() should be
-// called to get the |bookmark| destination data.
+// with |bookmark|.
+// If this function returns a valid handle, it is valid as long as |bookmark| is
+// valid.
+// If this function returns NULL, FPDFBookmark_GetDest() should be called to get
+// the |bookmark| destination data.
 var
   FPDFBookmark_GetAction: function(bookmark: FPDF_BOOKMARK): FPDF_ACTION; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -3731,6 +3935,8 @@ var
 //   link - handle to the link.
 //
 // Returns a handle to the action associated to |link|, or NULL if no action.
+// If this function returns a valid handle, it is valid as long as |link| is
+// valid.
 var
   FPDFLink_GetAction: function(link: FPDF_LINK): FPDF_ACTION; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -3792,6 +3998,8 @@ var
 //
 //   Returns the handle to the action data, or NULL if there is no
 //   additional-action of type |aa_type|.
+//   If this function returns a valid handle, it is valid as long as |page| is
+//   valid.
 var
   FPDF_GetPageAAction: function(page: FPDF_PAGE; aa_type: Integer): FPDF_ACTION; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -4283,8 +4491,6 @@ type
   end;
   PFXFileAvail = ^TFXFileAvail;
   TFXFileAvail = FX_FILEAVAIL;
-
-  FPDF_AVAIL = ^__FPDF_PTRREC;
 
 // Create a document availability provider.
 //
@@ -5785,9 +5991,10 @@ var
 //*       hHandle     -   Handle to the form fill module, aseturned by
 //*                       FPDFDOC_InitFormFillEnvironment().
 //*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*       nKeyCode    -   Indicates whether various virtual keys are down.
-//*       modifier    -   Contains the scan code, key-transition code,
-//*                       previous key state, and context code.
+//*       nKeyCode    -   The virtual-key code of the given key (see
+//*                       fpdf_fwlevent.h for virtual key codes).
+//*       modifier    -   Mask of key flags (see fpdf_fwlevent.h for key
+//*                       flag values).
 //* Return Value:
 //*       True indicates success; otherwise false.
 //*
@@ -5801,9 +6008,10 @@ var
 //*       hHandle     -   Handle to the form fill module, as returned by
 //*                       FPDFDOC_InitFormFillEnvironment().
 //*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*       nKeyCode    -   The virtual-key code of the given key.
-//*       modifier    -   Contains the scan code, key-transition code,
-//*                       previous key state, and context code.
+//*       nKeyCode    -   The virtual-key code of the given key (see
+//*                       fpdf_fwlevent.h for virtual key codes).
+//*       modifier    -   Mask of key flags (see fpdf_fwlevent.h for key
+//*                       flag values).
 //* Return Value:
 //*       True indicates success; otherwise false.
 //*
@@ -5815,12 +6023,12 @@ var
 //*       Call this member function when a keystroke translates to a
 //*       nonsystem character.
 //* Parameters:
-//*        hHandle    -   Handle to the form fill module, as returned by
+//*       hHandle     -   Handle to the form fill module, as returned by
 //*                       FPDFDOC_InitFormFillEnvironment().
-//*        page       -   Handle to the page, as returned by FPDF_LoadPage().
-//*        nChar      -   The character code value of the key.
-//*        modifier   -   Contains the scan code, key-transition code,
-//*                       previous key state, and context code.
+//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//*       nChar       -   The character code value itself.
+//*       modifier    -   Mask of key flags (see fpdf_fwlevent.h for key
+//*                       flag values).
 //* Return Value:
 //*       True indicates success; otherwise false.
 //*
@@ -6289,6 +6497,7 @@ const
   FPDF_ANNOT_THREED = 25;
   FPDF_ANNOT_RICHMEDIA = 26;
   FPDF_ANNOT_XFAWIDGET = 27;
+  FPDF_ANNOT_REDACT = 28;
 
   // Refer to PDF Reference (6th edition) table 8.16 for all annotation flags.
   FPDF_ANNOT_FLAG_NONE = 0;
@@ -6333,8 +6542,19 @@ type
 
 // Experimental API.
 // Check if an annotation subtype is currently supported for creation.
-// Currently supported subtypes: circle, highlight, ink, popup, square,
-// squiggly, stamp, strikeout, text, and underline.
+// Currently supported subtypes:
+//    - circle
+//    - freetext
+//    - highlight
+//    - ink
+//    - link
+//    - popup
+//    - square,
+//    - squiggly
+//    - stamp
+//    - strikeout
+//    - text
+//    - underline
 //
 //   subtype   - the subtype to be checked.
 //
@@ -6625,6 +6845,86 @@ var
 // Returns true if successful.
 var
   FPDFAnnot_GetRect: function(annot: FPDF_ANNOTATION; rect: PFS_RECTF): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the vertices of a polygon or polyline annotation. |buffer| is an array of
+// points of the annotation. If |length| is less than the returned length, or
+// |annot| or |buffer| is NULL, |buffer| will not be modified.
+//
+//   annot  - handle to an annotation, as returned by e.g. FPDFPage_GetAnnot()
+//   buffer - buffer for holding the points.
+//   length - length of the buffer in points.
+//
+// Returns the number of points if the annotation is of type polygon or
+// polyline, 0 otherwise.
+var
+  FPDFAnnot_GetVertices: function(annot: FPDF_ANNOTATION; buffer: PFS_POINTF; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the number of paths in the ink list of an ink annotation.
+//
+//   annot  - handle to an annotation, as returned by e.g. FPDFPage_GetAnnot()
+//
+// Returns the number of paths in the ink list if the annotation is of type ink,
+// 0 otherwise.
+var
+  FPDFAnnot_GetInkListCount: function(annot: FPDF_ANNOTATION): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get a path in the ink list of an ink annotation. |buffer| is an array of
+// points of the path. If |length| is less than the returned length, or |annot|
+// or |buffer| is NULL, |buffer| will not be modified.
+//
+//   annot  - handle to an annotation, as returned by e.g. FPDFPage_GetAnnot()
+//   path_index - index of the path
+//   buffer - buffer for holding the points.
+//   length - length of the buffer in points.
+//
+// Returns the number of points of the path if the annotation is of type ink, 0
+// otherwise.
+var
+  FPDFAnnot_GetInkListPath: function(annot: FPDF_ANNOTATION; path_index: LongWord; buffer: PFS_POINTF;
+    length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the starting and ending coordinates of a line annotation.
+//
+//   annot  - handle to an annotation, as returned by e.g. FPDFPage_GetAnnot()
+//   start - starting point
+//   end - ending point
+//
+// Returns true if the annotation is of type line, |start| and |end| are not
+// NULL, false otherwise.
+var
+  FPDFAnnot_GetLine: function(annot: FPDF_ANNOTATION; start, end_: PFS_POINTF): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Set the characteristics of the annotation's border (rounded rectangle).
+//
+//   annot              - handle to an annotation
+//   horizontal_radius  - horizontal corner radius, in default user space units
+//   vertical_radius    - vertical corner radius, in default user space units
+//   border_width       - border width, in default user space units
+//
+// Returns true if setting the border for |annot| succeeds, false otherwise.
+//
+// If |annot| contains an appearance stream that overrides the border values,
+// then the appearance stream will be removed on success.
+var
+  FPDFAnnot_SetBorder: function(annot: FPDF_ANNOTATION; horizontal_radius, vertical_radius, border_width: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the characteristics of the annotation's border (rounded rectangle).
+//
+//   annot              - handle to an annotation
+//   horizontal_radius  - horizontal corner radius, in default user space units
+//   vertical_radius    - vertical corner radius, in default user space units
+//   border_width       - border width, in default user space units
+//
+// Returns true if |horizontal_radius|, |vertical_radius| and |border_width| are
+// not NULL, false otherwise.
+var
+  FPDFAnnot_GetBorder: function(annot: FPDF_ANNOTATION; var horizontal_radius, vertical_radius, border_width: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Check if |annot|'s dictionary has |key| as a key.
@@ -7011,6 +7311,15 @@ var
   FPDFAnnot_GetFormFieldExportValue: function(hHandle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION;
     buffer: PFPDF_WCHAR; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
+// Add a URI action to |annot|, overwriting the existing action, if any.
+//
+//   annot  - handle to a link annotation.
+//   uri    - the URI to be set, encoded in 7-bit ASCII.
+//
+// Returns true if successful.
+var
+  FPDFAnnot_SetURI: function(annot: FPDF_ANNOTATION; uri: PAnsiChar): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // *** _FPDF_CATALOG_H_ ***
 
@@ -7834,7 +8143,7 @@ type
   end;
 
 const
-  ImportFuncs: array[0..371
+  ImportFuncs: array[0..397
     {$IFDEF MSWINDOWS}
     + 2
       {$IFDEF PDFIUM_PRINT_TEXT_WITH_GDI} + 2 {$ENDIF}
@@ -7863,6 +8172,7 @@ const
     (P: @@FPDF_GetFileVersion;                        N: 'FPDF_GetFileVersion'),
     (P: @@FPDF_GetLastError;                          N: 'FPDF_GetLastError'),
     (P: @@FPDF_DocumentHasValidCrossReferenceTable;   N: 'FPDF_DocumentHasValidCrossReferenceTable'),
+    (P: @@FPDF_GetTrailerEnds;                        N: 'FPDF_GetTrailerEnds'),
     (P: @@FPDF_GetDocPermissions;                     N: 'FPDF_GetDocPermissions'),
     (P: @@FPDF_GetSecurityHandlerRevision;            N: 'FPDF_GetSecurityHandlerRevision'),
     (P: @@FPDF_GetPageCount;                          N: 'FPDF_GetPageCount'),
@@ -7934,6 +8244,8 @@ const
     (P: @@FPDFPageObj_HasTransparency;                N: 'FPDFPageObj_HasTransparency'),
     (P: @@FPDFPageObj_GetType;                        N: 'FPDFPageObj_GetType'),
     (P: @@FPDFPageObj_Transform;                      N: 'FPDFPageObj_Transform'),
+    (P: @@FPDFPageObj_GetMatrix;                      N: 'FPDFPageObj_GetMatrix'),
+    (P: @@FPDFPageObj_SetMatrix;                      N: 'FPDFPageObj_SetMatrix'),
     (P: @@FPDFPage_TransformAnnots;                   N: 'FPDFPage_TransformAnnots'),
     (P: @@FPDFPageObj_NewImageObj;                    N: 'FPDFPageObj_NewImageObj'),
     (P: @@FPDFPageObj_CountMarks;                     N: 'FPDFPageObj_CountMarks'),
@@ -7953,7 +8265,6 @@ const
     (P: @@FPDFPageObjMark_RemoveParam;                N: 'FPDFPageObjMark_RemoveParam'),
     (P: @@FPDFImageObj_LoadJpegFile;                  N: 'FPDFImageObj_LoadJpegFile'),
     (P: @@FPDFImageObj_LoadJpegFileInline;            N: 'FPDFImageObj_LoadJpegFileInline'),
-    (P: @@FPDFImageObj_GetMatrix;                     N: 'FPDFImageObj_GetMatrix'),
     (P: @@FPDFImageObj_SetMatrix;                     N: 'FPDFImageObj_SetMatrix'),
     (P: @@FPDFImageObj_SetBitmap;                     N: 'FPDFImageObj_SetBitmap'),
     (P: @@FPDFImageObj_GetBitmap;                     N: 'FPDFImageObj_GetBitmap'),
@@ -7977,6 +8288,11 @@ const
     (P: @@FPDFPageObj_SetLineCap;                     N: 'FPDFPageObj_SetLineCap'),
     (P: @@FPDFPageObj_SetFillColor;                   N: 'FPDFPageObj_SetFillColor'),
     (P: @@FPDFPageObj_GetFillColor;                   N: 'FPDFPageObj_GetFillColor'),
+    (P: @@FPDFPageObj_GetDashPhase;                   N: 'FPDFPageObj_GetDashPhase'),
+    (P: @@FPDFPageObj_SetDashPhase;                   N: 'FPDFPageObj_SetDashPhase'),
+    (P: @@FPDFPageObj_GetDashCount;                   N: 'FPDFPageObj_GetDashCount'),
+    (P: @@FPDFPageObj_GetDashArray;                   N: 'FPDFPageObj_GetDashArray'),
+    (P: @@FPDFPageObj_SetDashArray;                   N: 'FPDFPageObj_SetDashArray'),
     (P: @@FPDFPath_CountSegments;                     N: 'FPDFPath_CountSegments'),
     (P: @@FPDFPath_GetPathSegment;                    N: 'FPDFPath_GetPathSegment'),
     (P: @@FPDFPathSegment_GetPoint;                   N: 'FPDFPathSegment_GetPoint'),
@@ -7988,27 +8304,38 @@ const
     (P: @@FPDFPath_Close;                             N: 'FPDFPath_Close'),
     (P: @@FPDFPath_SetDrawMode;                       N: 'FPDFPath_SetDrawMode'),
     (P: @@FPDFPath_GetDrawMode;                       N: 'FPDFPath_GetDrawMode'),
-    (P: @@FPDFPath_GetMatrix;                         N: 'FPDFPath_GetMatrix'),
-    (P: @@FPDFPath_SetMatrix;                         N: 'FPDFPath_SetMatrix'),
     (P: @@FPDFPageObj_NewTextObj;                     N: 'FPDFPageObj_NewTextObj'),
     (P: @@FPDFText_SetText;                           N: 'FPDFText_SetText'),
+    (P: @@FPDFText_SetCharcodes;                      N: 'FPDFText_SetCharcodes'),
     (P: @@FPDFText_LoadFont;                          N: 'FPDFText_LoadFont'),
     (P: @@FPDFText_LoadStandardFont;                  N: 'FPDFText_LoadStandardFont'),
-    (P: @@FPDFTextObj_GetMatrix;                      N: 'FPDFTextObj_GetMatrix'),
     (P: @@FPDFTextObj_GetFontSize;                    N: 'FPDFTextObj_GetFontSize'),
     (P: @@FPDFFont_Close;                             N: 'FPDFFont_Close'),
     (P: @@FPDFPageObj_CreateTextObj;                  N: 'FPDFPageObj_CreateTextObj'),
     (P: @@FPDFTextObj_GetTextRenderMode;              N: 'FPDFTextObj_GetTextRenderMode'),
     (P: @@FPDFTextObj_SetTextRenderMode;              N: 'FPDFTextObj_SetTextRenderMode'),
-    (P: @@FPDFTextObj_GetFontName;                    N: 'FPDFTextObj_GetFontName'),
     (P: @@FPDFTextObj_GetText;                        N: 'FPDFTextObj_GetText'),
+    (P: @@FPDFTextObj_GetFont;                        N: 'FPDFTextObj_GetFont'),
+    (P: @@FPDFFont_GetFontName;                       N: 'FPDFFont_GetFontName'),
+    (P: @@FPDFFont_GetFlags;                          N: 'FPDFFont_GetFlags'),
+    (P: @@FPDFFont_GetWeight;                         N: 'FPDFFont_GetWeight'),
+    (P: @@FPDFFont_GetItalicAngle;                    N: 'FPDFFont_GetItalicAngle'),
+    (P: @@FPDFFont_GetAscent;                         N: 'FPDFFont_GetAscent'),
+    (P: @@FPDFFont_GetDescent;                        N: 'FPDFFont_GetDescent'),
+    (P: @@FPDFFont_GetGlyphWidth;                     N: 'FPDFFont_GetGlyphWidth'),
+    (P: @@FPDFFont_GetGlyphPath;                      N: 'FPDFFont_GetGlyphPath'),
+    (P: @@FPDFGlyphPath_CountGlyphSegments;           N: 'FPDFGlyphPath_CountGlyphSegments'),
+    (P: @@FPDFGlyphPath_GetGlyphPathSegment;          N: 'FPDFGlyphPath_GetGlyphPathSegment'),
     (P: @@FPDFFormObj_CountObjects;                   N: 'FPDFFormObj_CountObjects'),
     (P: @@FPDFFormObj_GetObject;                      N: 'FPDFFormObj_GetObject'),
-    (P: @@FPDFFormObj_GetMatrix;                      N: 'FPDFFormObj_GetMatrix'),
 
     // *** _FPDF_PPO_H_ ***
+    (P: @@FPDF_ImportPagesByIndex;                    N: 'FPDF_ImportPagesByIndex'),
     (P: @@FPDF_ImportPages;                           N: 'FPDF_ImportPages'),
     (P: @@FPDF_ImportNPagesToOne;                     N: 'FPDF_ImportNPagesToOne'),
+    (P: @@FPDF_NewXObjectFromPage;                    N: 'FPDF_NewXObjectFromPage'),
+    (P: @@FPDF_CloseXObject;                          N: 'FPDF_CloseXObject'),
+    (P: @@FPDF_NewFormObjectFromXObject;              N: 'FPDF_NewFormObjectFromXObject'),
     (P: @@FPDF_CopyViewerPreferences;                 N: 'FPDF_CopyViewerPreferences'),
 
     // *** _FPDF_SAVE_H_ ***
@@ -8068,6 +8395,7 @@ const
     (P: @@FPDFSignatureObj_GetSubFilter;              N: 'FPDFSignatureObj_GetSubFilter'),
     (P: @@FPDFSignatureObj_GetReason;                 N: 'FPDFSignatureObj_GetReason'),
     (P: @@FPDFSignatureObj_GetTime;                   N: 'FPDFSignatureObj_GetTime'),
+    (P: @@FPDFSignatureObj_GetDocMDPPermission;       N: 'FPDFSignatureObj_GetDocMDPPermission'),
 
     // *** _FPDF_FLATTEN_H_ ***
     (P: @@FPDFPage_Flatten;                           N: 'FPDFPage_Flatten'),
@@ -8244,6 +8572,12 @@ const
     (P: @@FPDFAnnot_GetAttachmentPoints;              N: 'FPDFAnnot_GetAttachmentPoints'),
     (P: @@FPDFAnnot_SetRect;                          N: 'FPDFAnnot_SetRect'),
     (P: @@FPDFAnnot_GetRect;                          N: 'FPDFAnnot_GetRect'),
+    (P: @@FPDFAnnot_GetVertices;                      N: 'FPDFAnnot_GetVertices'),
+    (P: @@FPDFAnnot_GetInkListCount;                  N: 'FPDFAnnot_GetInkListCount'),
+    (P: @@FPDFAnnot_GetInkListPath;                   N: 'FPDFAnnot_GetInkListPath'),
+    (P: @@FPDFAnnot_GetLine;                          N: 'FPDFAnnot_GetLine'),
+    (P: @@FPDFAnnot_SetBorder;                        N: 'FPDFAnnot_SetBorder'),
+    (P: @@FPDFAnnot_GetBorder;                        N: 'FPDFAnnot_GetBorder'),
     (P: @@FPDFAnnot_HasKey;                           N: 'FPDFAnnot_HasKey'),
     (P: @@FPDFAnnot_GetValueType;                     N: 'FPDFAnnot_GetValueType'),
     (P: @@FPDFAnnot_SetStringValue;                   N: 'FPDFAnnot_SetStringValue'),
@@ -8271,6 +8605,7 @@ const
     (P: @@FPDFAnnot_GetFormControlCount;              N: 'FPDFAnnot_GetFormControlCount'),
     (P: @@FPDFAnnot_GetFormControlIndex;              N: 'FPDFAnnot_GetFormControlIndex'),
     (P: @@FPDFAnnot_GetFormFieldExportValue;          N: 'FPDFAnnot_GetFormFieldExportValue'),
+    (P: @@FPDFAnnot_SetURI;                           N: 'FPDFAnnot_SetURI'),
 
     {$IFDEF PDF_ENABLE_V8}
     // *** _FPDF_LIBS_H_ ***
