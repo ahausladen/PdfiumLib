@@ -1168,7 +1168,7 @@ var
 begin
   Page := CurrentPage;
   if Page <> nil then
-    Result := CurrentPage.DeviceToPage(FDrawX, FDrawY, FDrawWidth, FDrawHeight, DeviceRect, Rotation)
+    Result := Page.DeviceToPage(FDrawX, FDrawY, FDrawWidth, FDrawHeight, DeviceRect, Rotation)
   else
     Result := TPdfRect.Empty;
 end;
@@ -1179,7 +1179,7 @@ var
 begin
   Page := CurrentPage;
   if Page <> nil then
-    Result := CurrentPage.PageToDevice(FDrawX, FDrawY, FDrawWidth, FDrawHeight, PageX, PageY, Rotation)
+    Result := Page.PageToDevice(FDrawX, FDrawY, FDrawWidth, FDrawHeight, PageX, PageY, Rotation)
   else
     Result := Point(0, 0);
 end;
@@ -1190,7 +1190,7 @@ var
 begin
   Page := CurrentPage;
   if Page <> nil then
-    Result := CurrentPage.PageToDevice(FDrawX, FDrawY, FDrawWidth, FDrawHeight, PageRect, Rotation)
+    Result := Page.PageToDevice(FDrawX, FDrawY, FDrawWidth, FDrawHeight, PageRect, Rotation)
   else
     Result := Rect(0, 0, 0, 0);
 end;
@@ -1206,27 +1206,35 @@ var
   CharIndex: Integer;
   Active: Boolean;
   R: TRect;
+  Page: TPdfPage;
 begin
-  PagePt := DeviceToPage(X, Y);
-  CharIndex := CurrentPage.GetCharIndexAt(PagePt.X, PagePt.Y, MAXWORD, MAXWORD);
-  Result := CharIndex >= 0;
-  if not Result then
-    CharIndex := FSelStopCharIndex;
-
-  if FSelStartCharIndex <> CharIndex then
-    Active := True
-  else
+  Page := CurrentPage;
+  if Page <> nil then
   begin
-    R := PageToDevice(CurrentPage.GetCharBox(FSelStartCharIndex));
-    Active := PtInRect(R, FMouseDownPt) xor PtInRect(R, Point(X, Y));
-  end;
-  SetSelection(Active, FSelStartCharIndex, CharIndex);
+    PagePt := DeviceToPage(X, Y);
+    CharIndex := Page.GetCharIndexAt(PagePt.X, PagePt.Y, MAXWORD, MAXWORD);
+    Result := CharIndex >= 0;
+    if not Result then
+      CharIndex := FSelStopCharIndex;
+
+    if FSelStartCharIndex <> CharIndex then
+      Active := True
+    else
+    begin
+      R := PageToDevice(Page.GetCharBox(FSelStartCharIndex));
+      Active := PtInRect(R, FMouseDownPt) xor PtInRect(R, Point(X, Y));
+    end;
+    SetSelection(Active, FSelStartCharIndex, CharIndex);
+  end
+  else
+    Result := False;
 end;
 
 procedure TPdfControl.MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
 var
   PagePt: TPdfPoint;
   CharIndex: Integer;
+  Page: TPdfPage;
 begin
   inherited MouseDown(Button, Shift, X, Y);
   if Button = mbLeft then
@@ -1237,21 +1245,22 @@ begin
     FMouseDownPt := Point(X, Y); // used to find out if the selection must be cleared or not
   end;
 
-  if IsPageValid then
+  Page := CurrentPage;
+  if Page <> nil then
   begin
     if AllowFormEvents then
     begin
       PagePt := DeviceToPage(X, Y);
       if Button = mbLeft then
       begin
-        if CurrentPage.FormEventLButtonDown(Shift, PagePt.X, PagePt.Y) then
+        if Page.FormEventLButtonDown(Shift, PagePt.X, PagePt.Y) then
           Exit;
       end
       else if Button = mbRight then
       begin
-        if CurrentPage.FormEventFocus(Shift, PagePt.X, PagePt.Y) then
+        if Page.FormEventFocus(Shift, PagePt.X, PagePt.Y) then
           Exit;
-        if CurrentPage.FormEventRButtonDown(Shift, PagePt.X, PagePt.Y) then
+        if Page.FormEventRButtonDown(Shift, PagePt.X, PagePt.Y) then
           Exit;
       end;
     end;
@@ -1261,7 +1270,7 @@ begin
       if Button = mbLeft then
       begin
         PagePt := DeviceToPage(X, Y);
-        CharIndex := CurrentPage.GetCharIndexAt(PagePt.X, PagePt.Y, MAXWORD, MAXWORD);
+        CharIndex := Page.GetCharIndexAt(PagePt.X, PagePt.Y, MAXWORD, MAXWORD);
         if FCheckForTrippleClick and (CharIndex >= SelStart) and (CharIndex < SelStart + SelLength) then
         begin
           FMousePressed := False;
@@ -1290,13 +1299,15 @@ procedure TPdfControl.MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: In
 var
   PagePt: TPdfPoint;
   Url: string;
+  Page: TPdfPage;
 begin
   inherited MouseUp(Button, Shift, X, Y);
 
   if AllowFormEvents and IsPageValid then
   begin
     PagePt := DeviceToPage(X, Y);
-    if (Button = mbLeft) and CurrentPage.FormEventLButtonUp(Shift, PagePt.X, PagePt.Y) then
+    Page := CurrentPage;
+    if (Button = mbLeft) and Page.FormEventLButtonUp(Shift, PagePt.X, PagePt.Y) then
     begin
       if FMousePressed and (Button = mbLeft) then
       begin
@@ -1305,7 +1316,7 @@ begin
       end;
       Exit;
     end;
-    if (Button = mbRight) and CurrentPage.FormEventRButtonUp(Shift, PagePt.X, PagePt.Y) then
+    if (Button = mbRight) and Page.FormEventRButtonUp(Shift, PagePt.X, PagePt.Y) then
       Exit;
   end;
 
@@ -1328,6 +1339,7 @@ var
   PagePt: TPdfPoint;
   Style: NativeInt;
   NewCursor: TCursor;
+  Page: TPdfPage;
 begin
   inherited MouseMove(Shift, X, Y);
   NewCursor := Cursor;
@@ -1335,9 +1347,10 @@ begin
     if AllowFormEvents and IsPageValid then
     begin
       PagePt := DeviceToPage(X, Y);
-      if CurrentPage.FormEventMouseMove(Shift, PagePt.X, PagePt.Y) then
+      Page := CurrentPage;
+      if Page.FormEventMouseMove(Shift, PagePt.X, PagePt.Y) then
       begin
-        case CurrentPage.HasFormFieldAtPoint(PagePt.X, PagePt.Y) of
+        case Page.HasFormFieldAtPoint(PagePt.X, PagePt.Y) of
           fftTextField:
             NewCursor := crIBeam;
           fftComboBox,
@@ -1498,7 +1511,7 @@ begin
     Page := CurrentPage;
     if Page <> nil then
     begin
-      Count := CurrentPage.GetTextRectCount(SelStart, SelLength);
+      Count := Page.GetTextRectCount(SelStart, SelLength);
       SetLength(Result, Count);
       for I := 0 to Count - 1 do
         Result[I] := InternPageToDevice(Page, Page.GetTextRect(I));
@@ -1611,7 +1624,7 @@ begin
     CharCount := Page.GetCharCount;
     if (CharIndex >= 0) and (CharIndex < CharCount) then
     begin
-      while (CharIndex < CharCount) and IsWhiteSpace(CurrentPage.ReadChar(CharIndex)) do
+      while (CharIndex < CharCount) and IsWhiteSpace(Page.ReadChar(CharIndex)) do
         Inc(CharIndex);
 
       if CharIndex < CharCount then
@@ -1619,7 +1632,7 @@ begin
         StartCharIndex := CharIndex - 1;
         while StartCharIndex >= 0 do
         begin
-          Ch := CurrentPage.ReadChar(StartCharIndex);
+          Ch := Page.ReadChar(StartCharIndex);
           if IsWhiteSpace(Ch) then
             Break;
           Dec(StartCharIndex);
@@ -1629,7 +1642,7 @@ begin
         StopCharIndex := CharIndex + 1;
         while StopCharIndex < CharCount do
         begin
-          Ch := CurrentPage.ReadChar(StopCharIndex);
+          Ch := Page.ReadChar(StopCharIndex);
           if IsWhiteSpace(Ch) then
             Break;
           Inc(StopCharIndex);
@@ -1660,7 +1673,7 @@ begin
       StartCharIndex := CharIndex - 1;
       while StartCharIndex >= 0 do
       begin
-        Ch := CurrentPage.ReadChar(StartCharIndex);
+        Ch := Page.ReadChar(StartCharIndex);
         case Ch of
           #10, #13:
             Break;
@@ -1672,7 +1685,7 @@ begin
       StopCharIndex := CharIndex + 1;
       while StopCharIndex < CharCount do
       begin
-        Ch := CurrentPage.ReadChar(StopCharIndex);
+        Ch := Page.ReadChar(StopCharIndex);
         case Ch of
           #10, #13:
             Break;
@@ -1929,7 +1942,7 @@ var
 begin
   Index := GetWebLinkIndex(X, Y);
   Result := Index <> -1;
-  if Result then
+  if Result and IsPageValid then
     Url := CurrentPage.GetWebLinkURL(Index)
   else
     Url := '';
@@ -2330,7 +2343,7 @@ var
 begin
   OldHighlightTextRects := FHighlightTextRects;
   FHighlightTextRects := nil;
-  if IsPageValid and (FHighlightText <> '') then
+  if (FHighlightText <> '') and IsPageValid then
   begin
     Page := CurrentPage;
     Num := 0;
