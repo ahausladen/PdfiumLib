@@ -153,13 +153,13 @@ type
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
 
-    procedure LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord; AParam: Pointer; const APassword: AnsiString = '');
-    procedure LoadFromActiveStream(Stream: TStream; const APassword: AnsiString = ''); // Stream must not be released until the document is closed
-    procedure LoadFromActiveBuffer(Buffer: Pointer; Size: Int64; const APassword: AnsiString = ''); // Buffer must not be released until the document is closed
-    procedure LoadFromBytes(const ABytes: TBytes; const APassword: AnsiString = ''); overload; // The content of the Bytes array must not be changed until the document is closed
-    procedure LoadFromBytes(const ABytes: TBytes; AIndex: Integer; ACount: Integer; const APassword: AnsiString = ''); overload; // The content of the Bytes array must not be changed until the document is closed
-    procedure LoadFromStream(AStream: TStream; const APassword: AnsiString = '');
-    procedure LoadFromFile(const AFileName: string; const APassword: AnsiString = ''; ALoadOption: TPdfDocumentLoadOption = dloMMF);
+    procedure LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord; AParam: Pointer; const APassword: UTF8String = '');
+    procedure LoadFromActiveStream(Stream: TStream; const APassword: UTF8String = ''); // Stream must not be released until the document is closed
+    procedure LoadFromActiveBuffer(Buffer: Pointer; Size: Int64; const APassword: UTF8String = ''); // Buffer must not be released until the document is closed
+    procedure LoadFromBytes(const ABytes: TBytes; const APassword: UTF8String = ''); overload; // The content of the Bytes array must not be changed until the document is closed
+    procedure LoadFromBytes(const ABytes: TBytes; AIndex: Integer; ACount: Integer; const APassword: UTF8String = ''); overload; // The content of the Bytes array must not be changed until the document is closed
+    procedure LoadFromStream(AStream: TStream; const APassword: UTF8String = '');
+    procedure LoadFromFile(const AFileName: string; const APassword: UTF8String = ''; ALoadOption: TPdfDocumentLoadOption = dloMMF);
     procedure Close;
 
     function DeviceToPage(DeviceX, DeviceY: Integer): TPdfPoint; overload;
@@ -972,7 +972,7 @@ begin
 end;
 
 procedure TPdfControl.LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord;
-  AParam: Pointer; const APassword: AnsiString);
+  AParam: Pointer; const APassword: UTF8String);
 begin
   try
     FDocument.LoadFromCustom(ReadFunc, ASize, AParam, APassword);
@@ -981,7 +981,7 @@ begin
   end;
 end;
 
-procedure TPdfControl.LoadFromActiveStream(Stream: TStream; const APassword: AnsiString);
+procedure TPdfControl.LoadFromActiveStream(Stream: TStream; const APassword: UTF8String);
 begin
   try
     FDocument.LoadFromActiveStream(Stream, APassword);
@@ -990,7 +990,7 @@ begin
   end;
 end;
 
-procedure TPdfControl.LoadFromActiveBuffer(Buffer: Pointer; Size: Int64; const APassword: AnsiString);
+procedure TPdfControl.LoadFromActiveBuffer(Buffer: Pointer; Size: Int64; const APassword: UTF8String);
 begin
   try
     FDocument.LoadFromActiveBuffer(Buffer, Size, APassword);
@@ -1000,7 +1000,7 @@ begin
 end;
 
 procedure TPdfControl.LoadFromBytes(const ABytes: TBytes; AIndex, ACount: Integer;
-  const APassword: AnsiString);
+  const APassword: UTF8String);
 begin
   try
     FDocument.LoadFromBytes(ABytes, AIndex, ACount, APassword);
@@ -1009,7 +1009,7 @@ begin
   end;
 end;
 
-procedure TPdfControl.LoadFromBytes(const ABytes: TBytes; const APassword: AnsiString);
+procedure TPdfControl.LoadFromBytes(const ABytes: TBytes; const APassword: UTF8String);
 begin
   try
     FDocument.LoadFromBytes(ABytes, APassword);
@@ -1018,7 +1018,7 @@ begin
   end;
 end;
 
-procedure TPdfControl.LoadFromStream(AStream: TStream; const APassword: AnsiString);
+procedure TPdfControl.LoadFromStream(AStream: TStream; const APassword: UTF8String);
 begin
   try
     FDocument.LoadFromStream(AStream, APassword);
@@ -1027,7 +1027,7 @@ begin
   end;
 end;
 
-procedure TPdfControl.LoadFromFile(const AFileName: string; const APassword: AnsiString;
+procedure TPdfControl.LoadFromFile(const AFileName: string; const APassword: UTF8String;
   ALoadOption: TPdfDocumentLoadOption);
 begin
   try

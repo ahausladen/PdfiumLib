@@ -198,6 +198,7 @@ type
     function GetMouseModifier(const Shift: TShiftState): Integer;
     function GetKeyModifier(KeyData: LPARAM): Integer;
     function GetHandle: FPDF_PAGE;
+    function GetTextHandle: FPDF_TEXTPAGE;
   public
     destructor Destroy; override;
     procedure Close;
@@ -262,6 +263,8 @@ type
     function GetWebLinkRect(LinkIndex, RectIndex: Integer): TPdfRect;
 
     property Handle: FPDF_PAGE read GetHandle;
+    property TextHandle: FPDF_TEXTPAGE read GetTextHandle;
+
     property Width: Single read FWidth;
     property Height: Single read FHeight;
     property Transparency: Boolean read FTransparency;
@@ -363,9 +366,9 @@ type
     FOnFormGetCurrentPage: TPdfFormGetCurrentPageEvent;
     FOnFormFieldFocus: TPdfFormFieldFocusEvent;
 
-    procedure InternLoadFromMem(Buffer: PByte; Size: NativeInt; const APassword: AnsiString);
+    procedure InternLoadFromMem(Buffer: PByte; Size: NativeInt; const APassword: UTF8String);
     procedure InternLoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord;
-      AParam: Pointer; const APassword: AnsiString);
+      AParam: Pointer; const APassword: UTF8String);
     function InternImportPages(Source: TPdfDocument; PageIndices: PInteger; PageIndicesCount: Integer;
       const Range: AnsiString; Index: Integer; ImportByRange: Boolean): Boolean;
     function GetPage(Index: Integer): TPdfPage;
@@ -390,13 +393,13 @@ type
     constructor Create;
     destructor Destroy; override;
 
-    procedure LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord; AParam: Pointer; const APassword: AnsiString = '');
-    procedure LoadFromActiveStream(Stream: TStream; const APassword: AnsiString = ''); // Stream must not be released until the document is closed
-    procedure LoadFromActiveBuffer(Buffer: Pointer; Size: NativeInt; const APassword: AnsiString = ''); // Buffer must not be released until the document is closed
-    procedure LoadFromBytes(const ABytes: TBytes; const APassword: AnsiString = ''); overload;
-    procedure LoadFromBytes(const ABytes: TBytes; AIndex: NativeInt; ACount: NativeInt; const APassword: AnsiString = ''); overload;
-    procedure LoadFromStream(AStream: TStream; const APassword: AnsiString = '');
-    procedure LoadFromFile(const AFileName: string; const APassword: AnsiString = ''; ALoadOption: TPdfDocumentLoadOption = dloMMF);
+    procedure LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord; AParam: Pointer; const APassword: UTF8String = '');
+    procedure LoadFromActiveStream(Stream: TStream; const APassword: UTF8String = ''); // Stream must not be released until the document is closed
+    procedure LoadFromActiveBuffer(Buffer: Pointer; Size: NativeInt; const APassword: UTF8String = ''); // Buffer must not be released until the document is closed
+    procedure LoadFromBytes(const ABytes: TBytes; const APassword: UTF8String = ''); overload;
+    procedure LoadFromBytes(const ABytes: TBytes; AIndex: NativeInt; ACount: NativeInt; const APassword: UTF8String = ''); overload;
+    procedure LoadFromStream(AStream: TStream; const APassword: UTF8String = '');
+    procedure LoadFromFile(const AFileName: string; const APassword: UTF8String = ''; ALoadOption: TPdfDocumentLoadOption = dloMMF);
     procedure Close;
 
     procedure SaveToFile(const AFileName: string; Option: TPdfDocumentSaveOption = dsoRemoveSecurity; FileVersion: Integer = -1);
@@ -419,8 +422,6 @@ type
     function GetMetaText(const TagName: string): string;
 
     class function SetPrintMode(PrintMode: TPdfPrintMode): Boolean; static;
-    class function SetPrintTextWithGDI(UseGdi: Boolean): Boolean; static;
-    class function GetPrintTextWithGDI: Boolean; static;
 
     property FileName: string read FFileName;
     property PageCount: Integer read GetPageCount;
@@ -466,7 +467,6 @@ type
     FPrintArea: TSize;
     FMargins: TPoint;
 
-    FPrintTextWithGDI: Boolean;
     FFitPageToPrintArea: Boolean;
     FOnPrintStatus: TPdfDocumentPrinterStatusEvent;
 
@@ -494,10 +494,6 @@ type
     { Prints all pages of the PDF document. }
     function Print(ADocument: TPdfDocument): Boolean; overload;
 
-
-    { If PrintTextWithGDI is true the text on PDF pages are printed with GDI if the font is
-      installed on the system. Otherwise the text is converted to vectors. }
-    property PrintTextWithGDI: Boolean read FPrintTextWithGDI write FPrintTextWithGDI default False;
 
     { If FitPageToPrintArea is true the page fill be scaled to fit into the printable area. }
     property FitPageToPrintArea: Boolean read FFitPageToPrintArea write FFitPageToPrintArea default True;
@@ -539,9 +535,6 @@ resourcestring
 threadvar
   ThreadPdfUnsupportedFeatureHandler: TPdfUnsupportedFeatureHandler;
   UnsupportedFeatureCurrentDocument: TPdfDocument;
-
-var
-  GPrintTextWithGDI: Boolean = False;
 
 type
   { We don't want to use a TBytes temporary array if we can convert directly into the destination
@@ -1023,7 +1016,7 @@ begin
     Result := Size = 0;
 end;
 
-procedure TPdfDocument.LoadFromFile(const AFileName: string; const APassword: AnsiString; ALoadOption: TPdfDocumentLoadOption);
+procedure TPdfDocument.LoadFromFile(const AFileName: string; const APassword: UTF8String; ALoadOption: TPdfDocumentLoadOption);
 var
   Size: Int64;
   Offset: NativeInt;
@@ -1105,7 +1098,7 @@ begin
   FFileName := AFileName;
 end;
 
-procedure TPdfDocument.LoadFromStream(AStream: TStream; const APassword: AnsiString);
+procedure TPdfDocument.LoadFromStream(AStream: TStream; const APassword: UTF8String);
 var
   Size: NativeInt;
 begin
@@ -1124,19 +1117,19 @@ begin
   end;
 end;
 
-procedure TPdfDocument.LoadFromActiveBuffer(Buffer: Pointer; Size: NativeInt; const APassword: AnsiString);
+procedure TPdfDocument.LoadFromActiveBuffer(Buffer: Pointer; Size: NativeInt; const APassword: UTF8String);
 begin
   Close;
   InternLoadFromMem(Buffer, Size, APassword);
 end;
 
-procedure TPdfDocument.LoadFromBytes(const ABytes: TBytes; const APassword: AnsiString);
+procedure TPdfDocument.LoadFromBytes(const ABytes: TBytes; const APassword: UTF8String);
 begin
   LoadFromBytes(ABytes, 0, Length(ABytes), APassword);
 end;
 
 procedure TPdfDocument.LoadFromBytes(const ABytes: TBytes; AIndex, ACount: NativeInt;
-  const APassword: AnsiString);
+  const APassword: UTF8String);
 var
   Len: NativeInt;
 begin
@@ -1163,7 +1156,7 @@ begin
     Result := Size = 0;
 end;
 
-procedure TPdfDocument.LoadFromActiveStream(Stream: TStream; const APassword: AnsiString);
+procedure TPdfDocument.LoadFromActiveStream(Stream: TStream; const APassword: UTF8String);
 begin
   if Stream = nil then
     Close
@@ -1172,7 +1165,7 @@ begin
 end;
 
 procedure TPdfDocument.LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord;
-  AParam: Pointer; const APassword: AnsiString);
+  AParam: Pointer; const APassword: UTF8String);
 begin
   Close;
   InternLoadFromCustom(ReadFunc, ASize, AParam, APassword);
@@ -1187,7 +1180,7 @@ begin
 end;
 
 procedure TPdfDocument.InternLoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord;
-  AParam: Pointer; const APassword: AnsiString);
+  AParam: Pointer; const APassword: UTF8String);
 var
   OldCurDoc: TPdfDocument;
 begin
@@ -1203,7 +1196,7 @@ begin
     OldCurDoc := UnsupportedFeatureCurrentDocument;
     try
       UnsupportedFeatureCurrentDocument := Self;
-      FDocument := FPDF_LoadCustomDocument(@FCustomLoadData.FileAccess, PAnsiChar(APassword));
+      FDocument := FPDF_LoadCustomDocument(@FCustomLoadData.FileAccess, PAnsiChar(Pointer(APassword)));
       DocumentLoaded;
     finally
       UnsupportedFeatureCurrentDocument := OldCurDoc;
@@ -1211,7 +1204,7 @@ begin
   end;
 end;
 
-procedure TPdfDocument.InternLoadFromMem(Buffer: PByte; Size: NativeInt; const APassword: AnsiString);
+procedure TPdfDocument.InternLoadFromMem(Buffer: PByte; Size: NativeInt; const APassword: UTF8String);
 var
   OldCurDoc: TPdfDocument;
 begin
@@ -1611,19 +1604,6 @@ class function TPdfDocument.SetPrintMode(PrintMode: TPdfPrintMode): Boolean;
 begin
   InitLib;
   Result := FPDF_SetPrintMode(Ord(PrintMode)) <> 0;
-end;
-
-class function TPdfDocument.SetPrintTextWithGDI(UseGdi: Boolean): Boolean;
-begin
-  InitLib;
-  FPDF_SetPrintTextWithGDI(Ord(UseGdi));
-  Result := GPrintTextWithGDI;
-  GPrintTextWithGDI := UseGdi;
-end;
-
-class function TPdfDocument.GetPrintTextWithGDI: Boolean;
-begin
-  Result := GPrintTextWithGDI;
 end;
 
 procedure TPdfDocument.SetFormFieldHighlightAlpha(Value: Integer);
@@ -2376,6 +2356,14 @@ begin
   Result := FPage <> nil;
 end;
 
+function TPdfPage.GetTextHandle: FPDF_TEXTPAGE;
+begin
+  if BeginText then
+    Result := FTextHandle
+  else
+    Result := nil;
+end;
+
 { _TPdfBitmapHideCtor }
 
 procedure _TPdfBitmapHideCtor.Create;
@@ -2528,7 +2516,6 @@ begin
   else
     SetContent(PByte(PAnsiChar(Value)), Length(Value) * SizeOf(AnsiChar));
 end;
-
 
 procedure TPdfAttachment.SetContent(const Value: string; Encoding: TEncoding = nil);
 begin
@@ -2812,7 +2799,6 @@ end;
 constructor TPdfDocumentPrinter.Create;
 begin
   inherited Create;
-  FPrintTextWithGDI := False;
   FFitPageToPrintArea := True;
 end;
 
@@ -2979,7 +2965,6 @@ var
   PageWidth, PageHeight: Double;
   PageScale, PrintScale: Double;
   ScaledWidth, ScaledHeight: Double;
-  OldPrintTextWithGDI: Boolean;
 begin
   PageWidth := APage.Width;
   PageHeight := APage.Height;
@@ -2997,19 +2982,11 @@ begin
   X := X + (Width - ScaledWidth) / 2;
   Y := Y + (Height - ScaledHeight) / 2;
 
-  // PrintTextWithGDI is a global setting in PDFium so we set it only temporary and restore it after
-  // printing the page.
-  OldPrintTextWithGDI := TPdfDocument.SetPrintTextWithGDI(FPrintTextWithGDI);
-  try
-    APage.Draw(
-      FPrinterDC,
-      RoundToInt(X), RoundToInt(Y), RoundToInt(ScaledWidth), RoundToInt(ScaledHeight),
-      prNormal, [proPrinting, proAnnotations]
-    );
-  finally
-    if OldPrintTextWithGDI <> FPrintTextWithGDI then
-      TPdfDocument.SetPrintTextWithGDI(OldPrintTextWithGDI);
-  end;
+  APage.Draw(
+    FPrinterDC,
+    RoundToInt(X), RoundToInt(Y), RoundToInt(ScaledWidth), RoundToInt(ScaledHeight),
+    prNormal, [proPrinting, proAnnotations]
+  );
 end;
 
 initialization

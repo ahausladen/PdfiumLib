@@ -169,7 +169,6 @@ begin
   begin
     PdfPrinter := TPdfDocumentVclPrinter.Create;
     try
-      //PdfPrinter.PrintTextWithGDI := True;
       //PdfPrinter.FitPageToPrintArea := False;
 
       if PrintDialog1.PrintRange = prAllPages then
