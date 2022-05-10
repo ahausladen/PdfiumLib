@@ -3,7 +3,7 @@
 
 // Use DLLs (x64, x86) from https://github.com/bblanchon/pdfium-binaries
 //
-// DLL Version: chromium/4915
+// DLL Version: chromium/5052
 
 unit PdfiumLib;
 
@@ -135,7 +135,7 @@ type
 
   // FPDFSDK always uses UTF-16LE encoded wide strings, each character uses 2
   // bytes (except surrogation), with the low byte first.
-  FPDF_WIDESTRING = PWideChar;
+  FPDF_WIDESTRING = PFPDF_WCHAR;
 
   // Structure for persisting a string beyond the duration of a callback.
   // Note: although represented as a char*, string may be interpreted as
@@ -2790,6 +2790,9 @@ const
   FLATTEN_SUCCESS    = 1;  // Flatten operation succeed.
   FLATTEN_NOTINGTODO = 2;  // Nothing to be flattened.
 
+  FLAT_NORMALDISPLAY = 0;  // Flatten for normal display.
+  FLAT_PRINT         = 1;  // Flatten for print.
+
 // Flatten annotations and form fields into the page contents.
 //
 //   page  - handle to the page.
@@ -3100,20 +3103,22 @@ var
   FPDFText_GetText: function(text_page: FPDF_TEXTPAGE; start_index, count: Integer; result: PWideChar): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Function: FPDFText_CountRects
-//          Count number of rectangular areas occupied by a segment of texts.
+//          Counts number of rectangular areas occupied by a segment of text,
+//          and caches the result for subsequent FPDFText_GetRect() calls.
 // Parameters:
 //          text_page   -   Handle to a text page information structure.
 //                          Returned by FPDFText_LoadPage function.
-//          start_index -   Index for the start characters.
-//          count       -   Number of characters.
+//          start_index -   Index for the start character.
+//          count       -   Number of characters, or -1 for all remaining.
 // Return value:
-//          Number of rectangles. Zero for error.
+//          Number of rectangles, 0 if text_page is null, or -1 on bad
+//          start_index.
 // Comments:
 //          This function, along with FPDFText_GetRect can be used by
 //          applications to detect the position on the page for a text segment,
-//          so proper areas can be highlighted. FPDFTEXT will automatically
-//          merge small character boxes into bigger one if those characters
-//          are on the same line and use same font settings.
+//          so proper areas can be highlighted. The FPDFText_* functions will
+//          automatically merge small character boxes into bigger one if those
+//          characters are on the same line and use same font settings.
 //
 var
   FPDFText_CountRects: function(text_page: FPDF_TEXTPAGE; start_index, count: Integer): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
@@ -4887,7 +4892,9 @@ type
     Field_browse: function(pThis: PIPDF_JsPlatform; filePath: Pointer; length: Integer): Integer; cdecl;
 
     //*
-    //* Pointer to FPDF_FORMFILLINFO interface.
+    //* Pointer for embedder-specific data. Unused by PDFium, and despite
+    //* its name, can be any data the embedder desires, though traditionally
+    //* a FPDF_FORMFILLINFO interface.
     //*
     m_pFormfillinfo: Pointer;
 
@@ -5222,8 +5229,9 @@ type
     //* Return value:
     //*     None.
     //* Comments:
-    //*     See the named actions description of <<PDF Reference, version 1.7>>
-    //*     for more details.
+    //*     See ISO 32000-1:2008, section 12.6.4.11 for descriptions of the
+    //*     standard named actions, but note that a document may supply any
+    //*     name of its choosing.
     //*
     FFI_ExecuteNamedAction: procedure(pThis: PFPDF_FORMFILLINFO; namedAction: FPDF_BYTESTRING); cdecl;
 
@@ -5994,6 +6002,9 @@ var
 //*                       flag values).
 //* Return Value:
 //*       True indicates success; otherwise false.
+//* Comments:
+//*       Currently unimplemented and always returns false. PDFium reserves this
+//*       API and may implement it in the future on an as-needed basis.
 //*
 var
   FORM_OnKeyUp: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; nKeyCode, modifier: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};

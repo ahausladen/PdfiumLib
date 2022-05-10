@@ -217,6 +217,7 @@ type
     function PageToDevice(X, Y, Width, Height: Integer; const R: TPdfRect; Rotate: TPdfPageRotation = prNormal): TRect; overload;
 
     procedure ApplyChanges;
+    procedure Flatten(AFlatPrint: Boolean);
 
     function FormEventFocus(const Shift: TShiftState; PageX, PageY: Double): Boolean;
     function FormEventMouseWheel(const Shift: TShiftState; WheelDelta: Integer; PageX, PageY: Double): Boolean;
@@ -411,6 +412,7 @@ type
     class function CreateNPagesOnOnePageDocument(Source: TPdfDocument; NumPagesXAxis, NumPagesYAxis: Integer): TPdfDocument; overload;
     function ImportAllPages(Source: TPdfDocument; Index: Integer = -1): Boolean;
     function ImportPages(Source: TPdfDocument; const Range: string = ''; Index: Integer = -1): Boolean;
+    function ImportPageRange(Source: TPdfDocument; PageIndex: Integer; Count: Integer = -1; Index: Integer = -1): Boolean;
     function ImportPagesByIndex(Source: TPdfDocument; const PageIndices: array of Integer; Index: Integer = -1): Boolean;
     procedure DeletePage(Index: Integer);
     function NewPage(Width, Height: Double; Index: Integer = -1): TPdfPage; overload;
@@ -1400,6 +1402,32 @@ begin
   Result := InternImportPages(Source, nil, 0, AnsiString(Range), Index, True)
 end;
 
+function TPdfDocument.ImportPageRange(Source: TPdfDocument; PageIndex, Count, Index: Integer): Boolean;
+begin
+  Result := False;
+  if (Source <> nil) and (PageIndex >= 0) then
+  begin
+    if Count = -1 then
+      Count := Source.PageCount - PageIndex
+    else if Count < 0 then
+      Exit;
+
+    if Count > 0 then
+    begin
+      if PageIndex + Count > Source.PageCount then
+      begin
+        Count := Source.PageCount - PageIndex;
+        if Count = 0 then
+          Exit;
+      end;
+      if (PageIndex = 0) and (Count = Source.PageCount) then
+        Result := ImportAllPages(Source, Index)
+      else
+        Result := ImportPages(Source, Format('%d-%d', [PageIndex, PageIndex + Count - 1]));
+    end;
+  end;
+end;
+
 function TPdfDocument.ImportPagesByIndex(Source: TPdfDocument; const PageIndices: array of Integer; Index: Integer = -1): Boolean;
 begin
   if Length(PageIndices) > 0 then
@@ -1759,6 +1787,14 @@ begin
 
   if proPrinting in Options then
   begin
+    if IsValidForm and (FPDFPage_GetAnnotCount(FPage) > 0) then
+    begin
+      // Form content isn't printed unless it was flattend and the page was reloaded.
+      ApplyChanges;
+      Flatten(True);
+      Close;
+      Open;
+    end;
     FPDF_RenderPage(DC, FPage, X, Y, Width, Height, Ord(Rotate), GetDrawFlags(Options));
     Exit;
   end;
@@ -1880,6 +1916,14 @@ procedure TPdfPage.ApplyChanges;
 begin
   if FPage <> nil then
     FPDFPage_GenerateContent(FPage);
+end;
+
+procedure TPdfPage.Flatten(AFlatPrint: Boolean);
+const
+  Flags: array[Boolean] of Integer = (FLAT_NORMALDISPLAY, FLAT_PRINT);
+begin
+  if FPage <> nil then
+    FPDFPage_Flatten(FPage, Flags[AFlatPrint]);
 end;
 
 function TPdfPage.BeginText: Boolean;
