@@ -1,9 +1,9 @@
 {$A8,B-,E-,F-,G+,H+,I+,J-,K-,M-,N-,P+,Q-,R-,S-,T-,U-,V+,X+,Z1}
-{$STRINGCHECKS OFF} // It only slows down Delphi strings in Delphi 2009/2010
+{$STRINGCHECKS OFF} // It only slows down Delphi strings in Delphi 2009 and 2010
 
 // Use DLLs (x64, x86) from https://github.com/bblanchon/pdfium-binaries
 //
-// DLL Version: chromium/5052
+// DLL Version: chromium/5744
 
 unit PdfiumLib;
 
@@ -11,7 +11,7 @@ unit PdfiumLib;
 
 {.$DEFINE DLLEXPORT} // stdcall in WIN32 instead of CDECL in WIN32 (The library switches between those from release to release)
 
-{.$DEFINE _SKIA_SUPPORT_}
+{$DEFINE _SKIA_SUPPORT_}
 {$DEFINE PDF_ENABLE_XFA}
 {$DEFINE PDF_ENABLE_V8}
 
@@ -34,6 +34,9 @@ type
   {$IFEND}
   TIME_T = Longint;
   PTIME_T = ^TIME_T;
+
+// Returns True if the pdfium.dll supports Skia.
+function IsSkiaAvailable: Boolean;
 
 
 // *** _FPDFVIEW_H_ ***
@@ -100,7 +103,7 @@ type
   FPDF_PAGEOBJECTMARK     = type __PFPDF_PTRREC;
   FPDF_PAGERANGE          = type __PFPDF_PTRREC;
   FPDF_PATHSEGMENT        = type __PFPDF_PTRREC;
-  FPDF_RECORDER           = type Pointer;  // Passed into skia.
+  FPDF_RECORDER           = type Pointer;  // Passed into Skia as a SkPictureRecorder.
   FPDF_SCHHANDLE          = type __PFPDF_PTRREC;
   FPDF_SIGNATURE          = type __PFPDF_PTRREC;
   FPDF_STRUCTELEMENT      = type __PFPDF_PTRREC;
@@ -215,6 +218,20 @@ type
   // Const Pointer to FS_POINTF structure.
   FS_LPCPOINTF = ^FS_POINTF;
 
+  PFS_QUADPOINTSF = ^FS_QUADPOINTSF;
+  FS_QUADPOINTSF = record
+    x1: FS_FLOAT;
+    y1: FS_FLOAT;
+    x2: FS_FLOAT;
+    y2: FS_FLOAT;
+    x3: FS_FLOAT;
+    y3: FS_FLOAT;
+    x4: FS_FLOAT;
+    y4: FS_FLOAT;
+  end;
+  PFSQuadPointsF = ^TFSQuadPointsF;
+  TFSQuadPointsF = FS_QUADPOINTSF;
+
   // Annotation enums.
   FPDF_ANNOTATION_SUBTYPE = Integer;
   PFPDF_ANNOTATION_SUBTYPE = ^FPDF_ANNOTATION_SUBTYPE;
@@ -235,6 +252,16 @@ type
 //          future.
 var
   FPDF_InitLibrary: procedure(); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// PDF renderer types - Experimental.
+// Selection of 2D graphics library to use for rendering to FPDF_BITMAPs.
+type
+  FPDF_RENDERER_TYPE = Integer;
+const
+  // Anti-Grain Geometry - https://sourceforge.net/projects/agg/
+  FPDF_RENDERERTYPE_AGG = 0;
+  // Skia - https://skia.org/
+  FPDF_RENDERERTYPE_SKIA = 1;
 
 type
   // Process-wide options for initializing the library.
@@ -261,10 +288,20 @@ type
     // embedders.
     m_v8EmbedderSlot: Cardinal;
 
-    // Version 3 - Experimantal,
+    // Version 3 - Experimental.
 
     // Pointer to the V8::Platform to use.
     m_pPlatform: Pointer;
+
+    // Version 4 - Experimental.
+
+    // Explicit specification of core renderer to use. |m_RendererType| must be
+    // a valid value for |FPDF_LIBRARY_CONFIG| versions of this level or higher,
+    // or else the initialization will fail with an immediate crash.
+    // Note that use of a specified |FPDF_RENDERER_TYPE| value for which the
+    // corresponding render library is not included in the build will similarly
+    // fail with an immediate crash.
+    m_RendererType: FPDF_RENDERER_TYPE;
   end;
   PFPdfLibraryConfig = ^TFPdfLibraryConfig;
   TFPdfLibraryConfig = FPDF_LIBRARY_CONFIG;
@@ -578,7 +615,8 @@ const
 //          A 32-bit integer indicating error code as defined above.
 // Comments:
 //          If the previous SDK call succeeded, the return value of this
-//          function is not defined.
+//          function is not defined. This function only works in conjunction
+//          with APIs that mention FPDF_GetLastError() in their documentation.
 var
   FPDF_GetLastError: function(): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -867,6 +905,16 @@ var
     clipping: PFS_RECTF; flags: Integer); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 {$IFDEF _SKIA_SUPPORT_}
+// Experimental API.
+// Function: FPDF_RenderPageSkp
+//          Render contents of a page to a Skia SkPictureRecorder.
+// Parameters:
+//          page        -   Handle to the page.
+//          size_x      -   Horizontal size (in pixels) for displaying the page.
+//          size_y      -   Vertical size (in pixels) for displaying the page.
+// Return value:
+//          The SkPictureRecorder that holds the rendering of the page, or NULL
+//          on failure. Caller takes ownership of the returned result.
 var
   FPDF_RenderPageSkp: function(page: FPDF_PAGE; size_x, size_y: Integer): FPDF_RECORDER; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 {$ENDIF _SKIA_SUPPORT_}
@@ -1017,8 +1065,15 @@ const
 //          first_scan  -   A pointer to the first byte of the first line if
 //                          using an external buffer. If this parameter is NULL,
 //                          then the a new buffer will be created.
-//          stride      -   Number of bytes for each scan line, for external
-//                          buffer only.
+//                          then a new buffer will be created.
+//          stride      -   Number of bytes for each scan line. The value must
+//                          be 0 or greater. When the value is 0,
+//                          FPDFBitmap_CreateEx() will automatically calculate
+//                          the appropriate value using |width| and |format|.
+//                          When using an external buffer, it is recommended for
+//                          the caller to pass in the value.
+//                          When not using an external buffer, it is recommended
+//                          for the caller to pass in 0.
 // Return value:
 //          The bitmap handle, or NULL if parameter error or out of memory.
 // Comments:
@@ -1027,9 +1082,11 @@ const
 //          function can be used in any place that a FPDF_BITMAP handle is
 //          required.
 //
-//          If an external buffer is used, then the application should destroy
-//          the buffer by itself. FPDFBitmap_Destroy function will not destroy
-//          the buffer.
+//          If an external buffer is used, then the caller should destroy the
+//          buffer. FPDFBitmap_Destroy() will not destroy the buffer.
+//
+//          It is recommended to use FPDFBitmap_GetStride() to get the stride
+//          value.
 var
   FPDFBitmap_CreateEx: function(width, height: Integer; format: Integer; first_scan: Pointer;
     stride: Integer): FPDF_BITMAP; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
@@ -1088,8 +1145,7 @@ var
 //          then manipulate any color and/or alpha values for any pixels in the
 //          bitmap.
 //
-//          The data is in BGRA format. Where the A maybe unused if alpha was
-//          not specified.
+//          Use FPDFBitmap_GetFormat() to find out the format of the data.
 var
   FPDFBitmap_GetBuffer: function(bitmap: FPDF_BITMAP): Pointer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -1957,7 +2013,7 @@ var
 // Get a bitmap rasterization of |image_object| that takes the image mask and
 // image matrix into account. To render correctly, the caller must provide the
 // |document| associated with |image_object|. If there is a |page| associated
-// with |image_object| the caller should provide that as well.
+// with |image_object|, the caller should provide that as well.
 // The returned bitmap will be owned by the caller, and FPDFBitmap_Destroy()
 // must be called on the returned bitmap when it is no longer needed.
 //
@@ -1965,7 +2021,7 @@ var
 //   page         - handle to an optional page associated with |image_object|.
 //   image_object - handle to an image object.
 //
-// Returns the bitmap.
+// Returns the bitmap or NULL on failure.
 var
   FPDFImageObj_GetRenderedBitmap: function(document: FPDF_DOCUMENT; page: FPDF_PAGE;
     image_object: FPDF_PAGEOBJECT): FPDF_BITMAP; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
@@ -2035,6 +2091,17 @@ var
   FPDFImageObj_GetImageMetadata: function(image_object: FPDF_PAGEOBJECT; page: FPDF_PAGE;
     metadata: PFPDF_IMAGEOBJ_METADATA): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
+// Get the image size in pixels. Faster method to get only image size.
+//
+//   image_object - handle to an image object.
+//   width        - receives the image width in pixels; must not be NULL.
+//   height       - receives the image height in pixels; must not be NULL.
+//
+// Returns true if successful.
+var
+  FPDFImageObj_GetImagePixelSize: function(image_object: FPDF_PAGEOBJECT; var width, height: UInt32): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 // Create a new path object at an initial position.
 //
 //   x - initial horizontal position.
@@ -2063,9 +2130,27 @@ var
 // right        - pointer where the right coordinate will be stored
 // top          - pointer where the top coordinate will be stored
 //
-// Returns TRUE on success.
+// On success, returns TRUE and fills in the 4 coordinates.
 var
   FPDFPageObj_GetBounds: function(page_object: FPDF_PAGEOBJECT; var left, bottom, right, top: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the quad points that bounds |page_object|.
+//
+// page_object  - handle to a page object.
+// quad_points  - pointer where the quadrilateral points will be stored.
+//
+// On success, returns TRUE and fills in |quad_points|.
+//
+// Similar to FPDFPageObj_GetBounds(), this returns the bounds of a page
+// object. When the object is rotated by a non-multiple of 90 degrees, this API
+// returns a tighter bound that cannot be represented with just the 4 sides of
+// a rectangle.
+//
+// Currently only works the following |page_object| types: FPDF_PAGEOBJ_TEXT and
+// FPDF_PAGEOBJ_IMAGE.
+var
+  FPDFPageObj_GetRotatedBounds: function(page_object: FPDF_PAGEOBJECT; quad_points: PFS_QUADPOINTSF): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Set the blend mode of |page_object|.
 //
@@ -2481,6 +2566,23 @@ var
     length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
+// Get a bitmap rasterization of |text_object|. To render correctly, the caller
+// must provide the |document| associated with |text_object|. If there is a
+// |page| associated with |text_object|, the caller should provide that as well.
+// The returned bitmap will be owned by the caller, and FPDFBitmap_Destroy()
+// must be called on the returned bitmap when it is no longer needed.
+//
+//   document    - handle to a document associated with |text_object|.
+//   page        - handle to an optional page associated with |text_object|.
+//   text_object - handle to a text object.
+//   scale       - the scaling factor, which must be greater than 0.
+//
+// Returns the bitmap or NULL on failure.
+var
+  FPDFTextObj_GetRenderedBitmap: function(document: FPDF_DOCUMENT; page: FPDF_PAGE; text_object: FPDF_PAGEOBJECT;
+    scale: Single): FPDF_BITMAP; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
 // Get the font of a text object.
 //
 // text - the handle to the text object.
@@ -2504,6 +2606,37 @@ var
 // will not be modified.
 var
   FPDFFont_GetFontName: function(font: FPDF_FONT; buffer: PAnsiChar; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the decoded data from the |font| object.
+//
+// font       - The handle to the font object. (Required)
+// buffer     - The address of a buffer that receives the font data.
+// buflen     - Length of the buffer.
+// out_buflen - Pointer to variable that will receive the minimum buffer size
+//              to contain the font data. Not filled if the return value is
+//              FALSE. (Required)
+//
+// Returns TRUE on success. In which case, |out_buflen| will be filled, and
+// |buffer| will be filled if it is large enough. Returns FALSE if any of the
+// required parameters are null.
+//
+// The decoded data is the uncompressed font data. i.e. the raw font data after
+// having all stream filters applied, when the data is embedded.
+//
+// If the font is not embedded, then this API will instead return the data for
+// the substitution font it is using.
+var
+  FPDFFont_GetFontData: function(font: FPDF_FONT; buffer: PByte; buflen: SIZE_T; var out_buflen: SIZE_T): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get whether |font| is embedded or not.
+//
+// font - the handle to the font object.
+//
+// Returns 1 if the font is embedded, 0 if it not, and -1 on failure.
+var
+  FPDFFont_GetIsEmbedded: function(font: FPDF_FONT): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Get the descriptor flags of a font.
@@ -2861,6 +2994,36 @@ var
 var
   FPDFText_GetUnicode: function(text_page: FPDF_TEXTPAGE; index: Integer): WideChar; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
+// Function: FPDFText_IsGenerated
+//          Get if a character in a page is generated by PDFium.
+// Parameters:
+//          text_page   -   Handle to a text page information structure.
+//                          Returned by FPDFText_LoadPage function.
+//          index       -   Zero-based index of the character.
+// Return value:
+//          1 if the character is generated by PDFium.
+//          0 if the character is not generated by PDFium.
+//          -1 if there was an error.
+//
+var
+  FPDFText_IsGenerated: function(text_page: FPDF_TEXTPAGE; index: Integer): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDFText_HasUnicodeMapError
+//          Get if a character in a page has an invalid unicode mapping.
+// Parameters:
+//          text_page   -   Handle to a text page information structure.
+//                          Returned by FPDFText_LoadPage function.
+//          index       -   Zero-based index of the character.
+// Return value:
+//          1 if the character has an invalid unicode mapping.
+//          0 if the character has no known unicode mapping issues.
+//          -1 if there was an error.
+//
+var
+  FPDFText_HasUnicodeMapError: function(text_page: FPDF_TEXTPAGE; index: Integer): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 // Function: FPDFText_GetFontSize
 //          Get the font size of a particular character.
 // Parameters:
@@ -3098,6 +3261,10 @@ var
 //          trailing terminator.
 // Comments:
 //          This function ignores characters without unicode information.
+//          It returns all characters on the page, even those that are not
+//          visible when the page has a cropbox. To filter out the characters
+//          outside of the cropbox, use FPDF_GetPageBoundingBox() and
+//          FPDFText_GetCharBox().
 //
 var
   FPDFText_GetText: function(text_page: FPDF_TEXTPAGE; start_index, count: Integer; result: PWideChar): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
@@ -3682,22 +3849,6 @@ type
     FILEIDTYPE_CHANGING = 1
   );
 
-// _FS_DEF_STRUCTURE_QUADPOINTSF_
-type
-  PFS_QUADPOINTSF = ^FS_QUADPOINTSF;
-  FS_QUADPOINTSF = record
-    x1: FS_FLOAT;
-    y1: FS_FLOAT;
-    x2: FS_FLOAT;
-    y2: FS_FLOAT;
-    x3: FS_FLOAT;
-    y3: FS_FLOAT;
-    x4: FS_FLOAT;
-    y4: FS_FLOAT;
-  end;
-  PFSQuadPointsF = ^TFSQuadPointsF;
-  TFSQuadPointsF = FS_QUADPOINTSF;
-
 // Get the first child of |bookmark|, or the first top-level bookmark item.
 //
 //   document - handle to the document.
@@ -3737,6 +3888,19 @@ var
 // required length, or |buffer| is NULL, |buffer| will not be modified.
 var
   FPDFBookmark_GetTitle: function(bookmark: FPDF_BOOKMARK; buffer: Pointer; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the number of chlidren of |bookmark|.
+//
+//   bookmark - handle to the bookmark.
+//
+// Returns a signed integer that represents the number of sub-items the given
+// bookmark has. If the value is positive, child items shall be shown by default
+// (open state). If the value is negative, child items shall be hidden by
+// default (closed state). Please refer to PDF 32000-1:2008, Table 153.
+// Returns 0 if the bookmark has no children or is invalid.
+var
+  FPDFBookmark_GetCount: function(bookmark: FPDF_BOOKMARK): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Find the bookmark with |title| in |document|.
 //
@@ -3829,8 +3993,18 @@ var
 // character, or 0 on error, typically because the arguments were bad or the
 // action was of the wrong type.
 //
-// The |buffer| is always encoded in 7-bit ASCII. If |buflen| is less than the
-// returned length, or |buffer| is NULL, |buffer| will not be modified.
+// The |buffer| may contain badly encoded data. The caller should validate the
+// output. e.g. Check to see if it is UTF-8.
+//
+// If |buflen| is less than the returned length, or |buffer| is NULL, |buffer|
+// will not be modified.
+//
+// Historically, the documentation for this API claimed |buffer| is always
+// encoded in 7-bit ASCII, but did not actually enforce it.
+// https://pdfium.googlesource.com/pdfium.git/+/d609e84cee2e14a18333247485af91df48a40592
+// added that enforcement, but that did not work well for real world PDFs that
+// used UTF-8. As of this writing, this API reverted back to its original
+// behavior prior to commit d609e84cee.
 var
   FPDFAction_GetURIPath: function(document: FPDF_DOCUMENT; action: FPDF_ACTION; buffer: Pointer; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -5682,11 +5856,13 @@ type
 //*       Initialize form fill environment.
 //* Parameters:
 //*       document        -   Handle to document from FPDF_LoadDocument().
-//*       pFormFillInfo   -   Pointer to a FPDF_FORMFILLINFO structure.
+//*       formInfo        -   Pointer to a FPDF_FORMFILLINFO structure.
 //* Return Value:
 //*       Handle to the form fill module, or NULL on failure.
 //* Comments:
 //*       This function should be called before any form fill operation.
+//*       The FPDF_FORMFILLINFO passed in via |formInfo| must remain valid until
+//*       the returned FPDF_FORMHANDLE is closed.
 //*
 var
   FPDFDOC_InitFormFillEnvironment: function(document: FPDF_DOCUMENT; formInfo: PFPDF_FORMFILLINFO): FPDF_FORMHANDLE; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
@@ -6066,13 +6242,33 @@ var
 var
   FORM_GetSelectedText: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; buffer: Pointer; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+//* Experimental API
+//* Function: FORM_ReplaceAndKeepSelection
+//*       Call this function to replace the selected text in a form
+//*       text field or user-editable form combobox text field with another
+//*       text string (which can be empty or non-empty). If there is no
+//*       selected text, this function will append the replacement text after
+//*       the current caret position. After the insertion, the inserted text
+//*       will be selected.
+//* Parameters:
+//*       hHandle     -   Handle to the form fill module, as returned by
+//*                       FPDFDOC_InitFormFillEnvironment().
+//*       page        -   Handle to the page, as Returned by FPDF_LoadPage().
+//*       wsText      -   The text to be inserted, in UTF-16LE format.
+//* Return Value:
+//*       None.
+//*
+var
+  FORM_ReplaceAndKeepSelection: procedure(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; wsText: FPDF_WIDESTRING); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 //*
 //* Function: FORM_ReplaceSelection
 //*       Call this function to replace the selected text in a form
 //*       text field or user-editable form combobox text field with another
 //*       text string (which can be empty or non-empty). If there is no
 //*       selected text, this function will append the replacement text after
-//*       the current caret position.
+//*       the current caret position. After the insertion, the selection range
+//*       will be set to empty.
 //* Parameters:
 //*       hHandle     -   Handle to the form fill module, as returned by
 //*                       FPDFDOC_InitFormFillEnvironment().
@@ -6525,6 +6721,16 @@ const
   FPDF_FORMFLAG_CHOICE_EDIT = (1 shl 18);
   FPDF_FORMFLAG_CHOICE_MULTI_SELECT = (1 shl 21);
 
+  // Additional actions type of form field:
+  //   K, on key stroke, JavaScript action.
+  //   F, on format, JavaScript action.
+  //   V, on validate, JavaScript action.
+  //   C, on calculate, JavaScript action.
+  FPDF_ANNOT_AACTION_KEY_STROKE = 12;
+  FPDF_ANNOT_AACTION_FORMAT = 13;
+  FPDF_ANNOT_AACTION_VALIDATE = 14;
+  FPDF_ANNOT_AACTION_CALCULATE = 15;
+
 type
   FPDFANNOT_COLORTYPE = (
     FPDFANNOT_COLORTYPE_Color = 0,
@@ -6918,6 +7124,28 @@ var
   FPDFAnnot_GetBorder: function(annot: FPDF_ANNOTATION; var horizontal_radius, vertical_radius, border_width: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
+// Get the JavaScript of an event of the annotation's additional actions.
+// |buffer| is only modified if |buflen| is large enough to hold the whole
+// JavaScript string. If |buflen| is smaller, the total size of the JavaScript
+// is still returned, but nothing is copied.  If there is no JavaScript for
+// |event| in |annot|, an empty string is written to |buf| and 2 is returned,
+// denoting the size of the null terminator in the buffer.  On other errors,
+// nothing is written to |buffer| and 0 is returned.
+//
+//    hHandle     -   handle to the form fill module, returned by
+//                    FPDFDOC_InitFormFillEnvironment().
+//    annot       -   handle to an interactive form annotation.
+//    event       -   event type, one of the FPDF_ANNOT_AACTION_* values.
+//    buffer      -   buffer for holding the value string, encoded in UTF-16LE.
+//    buflen      -   length of the buffer in bytes.
+//
+// Returns the length of the string value in bytes, including the 2-byte
+// null terminator.
+var
+  FPDFAnnot_GetFormAdditionalActionJavaScript: function(hHandle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION;
+    event: Integer; buffer: PFPDF_WCHAR; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
 // Check if |annot|'s dictionary has |key| as a key.
 //
 //   annot  - handle to an annotation.
@@ -7095,6 +7323,24 @@ var
 // Returns the length of the string value in bytes.
 var
   FPDFAnnot_GetFormFieldName: function(hHandle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION; buffer: PFPDF_WCHAR;
+    buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Gets the alternate name of |annot|, which is an interactive form annotation.
+// |buffer| is only modified if |buflen| is longer than the length of contents.
+// In case of error, nothing will be added to |buffer| and the return value will
+// be 0. Note that return value of empty string is 2 for "\0\0".
+//
+//    hHandle     -   handle to the form fill module, returned by
+//                    FPDFDOC_InitFormFillEnvironment().
+//    annot       -   handle to an interactive form annotation.
+//    buffer      -   buffer for holding the alternate name string, encoded in
+//                    UTF-16LE.
+//    buflen      -   length of the buffer in bytes.
+//
+// Returns the length of the string value in bytes.
+var
+  FPDFAnnot_GetFormFieldAlternateName: function(hHandle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION; buffer: PFPDF_WCHAR;
     buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
@@ -8350,7 +8596,7 @@ type
   end;
 
 const
-  ImportFuncs: array[0..411
+  ImportFuncs: array[0..422
     {$IFDEF MSWINDOWS}
     + 2
       {$IFDEF _SKIA_SUPPORT_            } + 2 {$ENDIF}
@@ -8392,7 +8638,7 @@ const
     (P: @@FPDF_RenderPageBitmap;                        N: 'FPDF_RenderPageBitmap'),
     (P: @@FPDF_RenderPageBitmapWithMatrix;              N: 'FPDF_RenderPageBitmapWithMatrix'),
     {$IFDEF _SKIA_SUPPORT_}
-    (P: @@FPDF_RenderPageSkp;                           N: 'FPDF_RenderPageSkp'),
+    (P: @@FPDF_RenderPageSkp;                           N: 'FPDF_RenderPageSkp'; Quirk: True; Optional: True),
     {$ENDIF _SKIA_SUPPORT_}
     (P: @@FPDF_ClosePage;                               N: 'FPDF_ClosePage'),
     (P: @@FPDF_CloseDocument;                           N: 'FPDF_CloseDocument'),
@@ -8476,9 +8722,11 @@ const
     (P: @@FPDFImageObj_GetImageFilterCount;             N: 'FPDFImageObj_GetImageFilterCount'),
     (P: @@FPDFImageObj_GetImageFilter;                  N: 'FPDFImageObj_GetImageFilter'),
     (P: @@FPDFImageObj_GetImageMetadata;                N: 'FPDFImageObj_GetImageMetadata'),
+    (P: @@FPDFImageObj_GetImagePixelSize;               N: 'FPDFImageObj_GetImagePixelSize'),
     (P: @@FPDFPageObj_CreateNewPath;                    N: 'FPDFPageObj_CreateNewPath'),
     (P: @@FPDFPageObj_CreateNewRect;                    N: 'FPDFPageObj_CreateNewRect'),
     (P: @@FPDFPageObj_GetBounds;                        N: 'FPDFPageObj_GetBounds'),
+    (P: @@FPDFPageObj_GetRotatedBounds;                 N: 'FPDFPageObj_GetRotatedBounds'),
     (P: @@FPDFPageObj_SetBlendMode;                     N: 'FPDFPageObj_SetBlendMode'),
     (P: @@FPDFPageObj_SetStrokeColor;                   N: 'FPDFPageObj_SetStrokeColor'),
     (P: @@FPDFPageObj_GetStrokeColor;                   N: 'FPDFPageObj_GetStrokeColor'),
@@ -8517,8 +8765,11 @@ const
     (P: @@FPDFTextObj_GetTextRenderMode;                N: 'FPDFTextObj_GetTextRenderMode'),
     (P: @@FPDFTextObj_SetTextRenderMode;                N: 'FPDFTextObj_SetTextRenderMode'),
     (P: @@FPDFTextObj_GetText;                          N: 'FPDFTextObj_GetText'),
+    (P: @@FPDFTextObj_GetRenderedBitmap;                N: 'FPDFTextObj_GetRenderedBitmap'),
     (P: @@FPDFTextObj_GetFont;                          N: 'FPDFTextObj_GetFont'),
     (P: @@FPDFFont_GetFontName;                         N: 'FPDFFont_GetFontName'),
+    (P: @@FPDFFont_GetFontData;                         N: 'FPDFFont_GetFontData'),
+    (P: @@FPDFFont_GetIsEmbedded;                       N: 'FPDFFont_GetIsEmbedded'),
     (P: @@FPDFFont_GetFlags;                            N: 'FPDFFont_GetFlags'),
     (P: @@FPDFFont_GetWeight;                           N: 'FPDFFont_GetWeight'),
     (P: @@FPDFFont_GetItalicAngle;                      N: 'FPDFFont_GetItalicAngle'),
@@ -8549,6 +8800,8 @@ const
     (P: @@FPDFText_ClosePage;                           N: 'FPDFText_ClosePage'),
     (P: @@FPDFText_CountChars;                          N: 'FPDFText_CountChars'),
     (P: @@FPDFText_GetUnicode;                          N: 'FPDFText_GetUnicode'),
+    (P: @@FPDFText_IsGenerated;                         N: 'FPDFText_IsGenerated'),
+    (P: @@FPDFText_HasUnicodeMapError;                  N: 'FPDFText_HasUnicodeMapError'),
     (P: @@FPDFText_GetFontSize;                         N: 'FPDFText_GetFontSize'),
     (P: @@FPDFText_GetFontInfo;                         N: 'FPDFText_GetFontInfo'),
     (P: @@FPDFText_GetFontWeight;                       N: 'FPDFText_GetFontWeight'),
@@ -8606,6 +8859,7 @@ const
     (P: @@FPDFBookmark_GetFirstChild;                   N: 'FPDFBookmark_GetFirstChild'),
     (P: @@FPDFBookmark_GetNextSibling;                  N: 'FPDFBookmark_GetNextSibling'),
     (P: @@FPDFBookmark_GetTitle;                        N: 'FPDFBookmark_GetTitle'),
+    (P: @@FPDFBookmark_GetCount;                        N: 'FPDFBookmark_GetCount'),
     (P: @@FPDFBookmark_Find;                            N: 'FPDFBookmark_Find'),
     (P: @@FPDFBookmark_GetDest;                         N: 'FPDFBookmark_GetDest'),
     (P: @@FPDFBookmark_GetAction;                       N: 'FPDFBookmark_GetAction'),
@@ -8673,6 +8927,7 @@ const
     (P: @@FORM_OnChar;                                  N: 'FORM_OnChar'),
     (P: @@FORM_GetFocusedText;                          N: 'FORM_GetFocusedText'),
     (P: @@FORM_GetSelectedText;                         N: 'FORM_GetSelectedText'),
+    (P: @@FORM_ReplaceAndKeepSelection;                 N: 'FORM_ReplaceAndKeepSelection'),
     (P: @@FORM_ReplaceSelection;                        N: 'FORM_ReplaceSelection'),
     (P: @@FORM_SelectAllText;                           N: 'FORM_SelectAllText'),
     (P: @@FORM_CanUndo;                                 N: 'FORM_CanUndo'),
@@ -8689,7 +8944,7 @@ const
     (P: @@FPDF_RemoveFormFieldHighlight;                N: 'FPDF_RemoveFormFieldHighlight'),
     (P: @@FPDF_FFLDraw;                                 N: 'FPDF_FFLDraw'),
     {$IFDEF _SKIA_SUPPORT_}
-    (P: @@FPDF_FFLRecord;                               N: 'FPDF_FFLRecord'),
+    (P: @@FPDF_FFLRecord;                               N: 'FPDF_FFLRecord'; Quirk: True; Optional: True),
     {$ENDIF _SKIA_SUPPORT_}
 
     (P: @@FPDF_GetFormType;                             N: 'FPDF_GetFormType'),
@@ -8794,6 +9049,7 @@ const
     (P: @@FPDFAnnot_GetLine;                            N: 'FPDFAnnot_GetLine'),
     (P: @@FPDFAnnot_SetBorder;                          N: 'FPDFAnnot_SetBorder'),
     (P: @@FPDFAnnot_GetBorder;                          N: 'FPDFAnnot_GetBorder'),
+    (P: @@FPDFAnnot_GetFormAdditionalActionJavaScript;  N: 'FPDFAnnot_GetFormAdditionalActionJavaScript'),
     (P: @@FPDFAnnot_HasKey;                             N: 'FPDFAnnot_HasKey'),
     (P: @@FPDFAnnot_GetValueType;                       N: 'FPDFAnnot_GetValueType'),
     (P: @@FPDFAnnot_SetStringValue;                     N: 'FPDFAnnot_SetStringValue'),
@@ -8807,6 +9063,7 @@ const
     (P: @@FPDFAnnot_GetFormFieldFlags;                  N: 'FPDFAnnot_GetFormFieldFlags'),
     (P: @@FPDFAnnot_GetFormFieldAtPoint;                N: 'FPDFAnnot_GetFormFieldAtPoint'),
     (P: @@FPDFAnnot_GetFormFieldName;                   N: 'FPDFAnnot_GetFormFieldName'),
+    (P: @@FPDFAnnot_GetFormFieldAlternateName;          N: 'FPDFAnnot_GetFormFieldAlternateName'),
     (P: @@FPDFAnnot_GetFormFieldType;                   N: 'FPDFAnnot_GetFormFieldType'),
     (P: @@FPDFAnnot_GetOptionCount;                     N: 'FPDFAnnot_GetOptionCount'),
     (P: @@FPDFAnnot_GetOptionLabel;                     N: 'FPDFAnnot_GetOptionLabel'),
@@ -8866,6 +9123,16 @@ begin
   {$ENDIF PDF_ENABLE_XFA}
 end;
 
+function IsSkiaAvailable: Boolean;
+begin
+  {$IFDEF _SKIA_SUPPORT_}
+  Result := Assigned(FPDF_RenderPageSkp) and (@FPDF_RenderPageSkp <> @NotLoaded) and (@FPDF_RenderPageSkp <> @FunctionNotSupported)
+            and Assigned(FPDF_FFLRecord) and (@FPDF_FFLRecord <> @NotLoaded) and (@FPDF_FFLRecord <> @FunctionNotSupported);
+  {$ELSE}
+  Result := False;
+  {$ENDIF _SKIA_SUPPORT_}
+end;
+
 procedure Init;
 var
   I: Integer;
@@ -8886,6 +9153,7 @@ procedure InitPDFiumEx(const DllFileName: string{$IFDEF PDF_ENABLE_V8}; const Re
 var
   I: Integer;
   Path: string;
+  LibraryConfig: FPDF_LIBRARY_CONFIG;
 begin
   if PdfiumModule <> 0 then
     Exit;
@@ -8913,6 +9181,7 @@ begin
     {$IFEND}
   end;
 
+  // Import the pdfium.dll functions
   for I := 0 to Length(ImportFuncs) - 1 do
   begin
     if ImportFuncs[I].P^ = @NotLoaded then
@@ -8967,7 +9236,13 @@ begin
     @FPDF_InitEmbeddedLibraries := @FunctionNotSupported;
   {$ENDIF PDF_ENABLE_V8}
 
-  FPDF_InitLibrary;
+  // Initialize the pdfium library
+  FillChar(LibraryConfig, SizeOf(LibraryConfig), 0);
+  LibraryConfig.version := 4;
+  LibraryConfig.m_RendererType := FPDF_RENDERERTYPE_AGG;
+  {if IsSkiaAvailable and SkiaRendererEnabled then
+    LibraryConfig.m_RendererType := FPDF_RENDERERTYPE_SKIA;}
+  FPDF_InitLibraryWithConfig(@LibraryConfig);
 end;
 
 initialization

@@ -233,6 +233,7 @@ type
     function FormGetFocusedText: string;
     function FormGetSelectedText: string;
     function FormReplaceSelection(const ANewText: string): Boolean;
+    function FormReplaceAndKeepSelection(const ANewText: string): Boolean;
     function FormSelectAllText: Boolean;
     function FormCanUndo: Boolean;
     function FormCanRedo: Boolean;
@@ -2321,6 +2322,17 @@ begin
   if IsValidForm then
   begin
     FORM_ReplaceSelection(FDocument.FForm, FPage, PWideChar(ANewText));
+    Result := True;
+  end
+  else
+    Result := False;
+end;
+
+function TPdfPage.FormReplaceAndKeepSelection(const ANewText: string): Boolean;
+begin
+  if IsValidForm then
+  begin
+    FORM_ReplaceAndKeepSelection(FDocument.FForm, FPage, PWideChar(ANewText));
     Result := True;
   end
   else
