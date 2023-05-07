@@ -8596,7 +8596,7 @@ type
   end;
 
 const
-  ImportFuncs: array[0..422
+  ImportFuncs: array[0..423
     {$IFDEF MSWINDOWS}
     + 2
       {$IFDEF _SKIA_SUPPORT_            } + 2 {$ENDIF}
@@ -9065,6 +9065,7 @@ const
     (P: @@FPDFAnnot_GetFormFieldName;                   N: 'FPDFAnnot_GetFormFieldName'),
     (P: @@FPDFAnnot_GetFormFieldAlternateName;          N: 'FPDFAnnot_GetFormFieldAlternateName'),
     (P: @@FPDFAnnot_GetFormFieldType;                   N: 'FPDFAnnot_GetFormFieldType'),
+    (P: @@FPDFAnnot_GetFormFieldValue;                  N: 'FPDFAnnot_GetFormFieldValue'),
     (P: @@FPDFAnnot_GetOptionCount;                     N: 'FPDFAnnot_GetOptionCount'),
     (P: @@FPDFAnnot_GetOptionLabel;                     N: 'FPDFAnnot_GetOptionLabel'),
     (P: @@FPDFAnnot_IsOptionSelected;                   N: 'FPDFAnnot_IsOptionSelected'),
