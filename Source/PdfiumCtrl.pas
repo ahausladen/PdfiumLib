@@ -72,6 +72,7 @@ type
     FPageShadowColor: TColor;
     FPageShadowPadding: Integer;
     FPageBorderColor: TColor;
+    FChangePageOnMouseScrolling: Boolean;
 
     procedure WMTimer(var Message: TWMTimer); message WM_TIMER;
     procedure WMVScroll(var Message: TWMVScroll); message WM_VSCROLL;
@@ -214,6 +215,7 @@ type
     property DrawOptions: TPdfPageRenderOptions read FDrawOptions write SetDrawOptions default cPdfControlDefaultDrawOptions;
     property SmoothScroll: Boolean read FSmoothScroll write FSmoothScroll default False;
     property ScrollTimer: Boolean read FScrollTimer write FScrollTimer default True;
+    property ChangePageOnMouseScrolling: Boolean read FChangePageOnMouseScrolling write FChangePageOnMouseScrolling default False;
 
     property PageBorderColor: TColor read FPageBorderColor write SetPageBorderColor default clNone;
     property PageShadowColor: TColor read FPageShadowColor write SetPageShadowColor default clNone;
@@ -2274,10 +2276,21 @@ begin
     else
     begin
       if ssShift in Shift then
-        ScrollContent(-WheelDelta, 0, SmoothScroll)
+        Result := ScrollContent(-WheelDelta, 0, SmoothScroll)
       else
-        ScrollContent(0, -WheelDelta, SmoothScroll);
-      Result := True;
+        Result := ScrollContent(0, -WheelDelta, SmoothScroll);
+      if (not Result) and (FChangePageOnMouseScrolling) then
+      begin
+        if WheelDelta < 0 then
+          Self.GotoNextPage()
+        else
+        if Self.PageIndex>0 then
+        begin
+          Self.GotoPrevPage();
+          Self.ScrollContentTo(0,999999999);
+        end;
+      end else
+        Result := true;
     end;
   end;
 end;
