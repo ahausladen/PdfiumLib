@@ -49,6 +49,7 @@ type
     FSmoothScroll: Boolean;
     FScrollTimerActive: Boolean;
     FScrollTimer: Boolean;
+    FChangePageOnMouseScrolling: Boolean;
     FSelStartCharIndex: Integer;
     FSelStopCharIndex: Integer;
     FMouseDownPt: TPoint;
@@ -72,7 +73,6 @@ type
     FPageShadowColor: TColor;
     FPageShadowPadding: Integer;
     FPageBorderColor: TColor;
-    FChangePageOnMouseScrolling: Boolean;
 
     procedure WMTimer(var Message: TWMTimer); message WM_TIMER;
     procedure WMVScroll(var Message: TWMVScroll); message WM_VSCROLL;
@@ -2279,18 +2279,19 @@ begin
         Result := ScrollContent(-WheelDelta, 0, SmoothScroll)
       else
         Result := ScrollContent(0, -WheelDelta, SmoothScroll);
-      if (not Result) and (FChangePageOnMouseScrolling) then
+
+      if not Result and FChangePageOnMouseScrolling then
       begin
         if WheelDelta < 0 then
-          Self.GotoNextPage()
-        else
-        if Self.PageIndex>0 then
+          GotoNextPage()
+        else if PageIndex > 0 then
         begin
-          Self.GotoPrevPage();
-          Self.ScrollContentTo(0,999999999);
+          GotoPrevPage();
+          ScrollContentTo(0, MaxInt);
         end;
-      end else
-        Result := true;
+      end
+      else
+        Result := True;
     end;
   end;
 end;
