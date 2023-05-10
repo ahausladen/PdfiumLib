@@ -21,6 +21,7 @@ type
     OpenDialog1: TOpenDialog;
     ListViewAttachments: TListView;
     SaveDialog1: TSaveDialog;
+    chkChangePageOnMouseScrolling: TCheckBox;
     procedure FormCreate(Sender: TObject);
     procedure btnPrevClick(Sender: TObject);
     procedure btnNextClick(Sender: TObject);
@@ -31,6 +32,7 @@ type
     procedure edtZoomChange(Sender: TObject);
     procedure btnPrintClick(Sender: TObject);
     procedure ListViewAttachmentsDblClick(Sender: TObject);
+    procedure chkChangePageOnMouseScrollingClick(Sender: TObject);
   private
     { Private-Deklarationen }
     FCtrl: TPdfControl;
@@ -136,6 +138,11 @@ end;
 procedure TfrmMain.WebLinkClick(Sender: TObject; Url: string);
 begin
   ShowMessage(Url);
+end;
+
+procedure TfrmMain.chkChangePageOnMouseScrollingClick(Sender: TObject);
+begin
+  FCtrl.ChangePageOnMouseScrolling := chkChangePageOnMouseScrolling.Checked;
 end;
 
 procedure TfrmMain.chkLCDOptimizeClick(Sender: TObject);

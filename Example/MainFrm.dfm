@@ -3,16 +3,14 @@ object frmMain: TfrmMain
   Top = 0
   Caption = 'PDFium Test'
   ClientHeight = 647
-  ClientWidth = 655
+  ClientWidth = 780
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
   Font.Height = -11
   Font.Name = 'Tahoma'
   Font.Style = []
-  OldCreateOrder = False
   OnCreate = FormCreate
-  PixelsPerInch = 96
   TextHeight = 13
   object btnPrev: TButton
     Left = 0
@@ -91,7 +89,7 @@ object frmMain: TfrmMain
   object ListViewAttachments: TListView
     Left = 0
     Top = 600
-    Width = 655
+    Width = 780
     Height = 47
     Align = alBottom
     Columns = <>
@@ -99,6 +97,15 @@ object frmMain: TfrmMain
     ViewStyle = vsList
     Visible = False
     OnDblClick = ListViewAttachmentsDblClick
+  end
+  object chkChangePageOnMouseScrolling: TCheckBox
+    Left = 599
+    Top = 4
+    Width = 162
+    Height = 17
+    Caption = 'ChangePageOnMouseScrolling'
+    TabOrder = 9
+    OnClick = chkChangePageOnMouseScrollingClick
   end
   object PrintDialog1: TPrintDialog
     MinPage = 1

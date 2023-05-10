@@ -49,6 +49,7 @@ type
     FSmoothScroll: Boolean;
     FScrollTimerActive: Boolean;
     FScrollTimer: Boolean;
+    FChangePageOnMouseScrolling: Boolean;
     FSelStartCharIndex: Integer;
     FSelStopCharIndex: Integer;
     FMouseDownPt: TPoint;
@@ -214,6 +215,7 @@ type
     property DrawOptions: TPdfPageRenderOptions read FDrawOptions write SetDrawOptions default cPdfControlDefaultDrawOptions;
     property SmoothScroll: Boolean read FSmoothScroll write FSmoothScroll default False;
     property ScrollTimer: Boolean read FScrollTimer write FScrollTimer default True;
+    property ChangePageOnMouseScrolling: Boolean read FChangePageOnMouseScrolling write FChangePageOnMouseScrolling default False;
 
     property PageBorderColor: TColor read FPageBorderColor write SetPageBorderColor default clNone;
     property PageShadowColor: TColor read FPageShadowColor write SetPageShadowColor default clNone;
@@ -2274,10 +2276,22 @@ begin
     else
     begin
       if ssShift in Shift then
-        ScrollContent(-WheelDelta, 0, SmoothScroll)
+        Result := ScrollContent(-WheelDelta, 0, SmoothScroll)
       else
-        ScrollContent(0, -WheelDelta, SmoothScroll);
-      Result := True;
+        Result := ScrollContent(0, -WheelDelta, SmoothScroll);
+
+      if not Result and FChangePageOnMouseScrolling then
+      begin
+        if WheelDelta < 0 then
+          GotoNextPage()
+        else if PageIndex > 0 then
+        begin
+          GotoPrevPage();
+          ScrollContentTo(0, MaxInt);
+        end;
+      end
+      else
+        Result := True;
     end;
   end;
 end;
