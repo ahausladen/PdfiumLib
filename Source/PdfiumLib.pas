@@ -8596,7 +8596,7 @@ type
   end;
 
 const
-  ImportFuncs: array[0..423
+  ImportFuncs: array[0..424
     {$IFDEF MSWINDOWS}
     + 2
       {$IFDEF _SKIA_SUPPORT_            } + 2 {$ENDIF}
@@ -8864,6 +8864,7 @@ const
     (P: @@FPDFBookmark_GetDest;                         N: 'FPDFBookmark_GetDest'),
     (P: @@FPDFBookmark_GetAction;                       N: 'FPDFBookmark_GetAction'),
     (P: @@FPDFAction_GetDest;                           N: 'FPDFAction_GetDest'),
+    (P: @@FPDFAction_GetType;                           N: 'FPDFAction_GetType'),
     (P: @@FPDFAction_GetFilePath;                       N: 'FPDFAction_GetFilePath'),
     (P: @@FPDFAction_GetURIPath;                        N: 'FPDFAction_GetURIPath'),
     (P: @@FPDFDest_GetDestPageIndex;                    N: 'FPDFDest_GetDestPageIndex'),
