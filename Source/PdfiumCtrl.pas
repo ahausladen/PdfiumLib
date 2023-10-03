@@ -893,8 +893,11 @@ begin
   begin
     ClearSelection;
     // Close the previous page to keep memory usage low (especially for large PDF files)
-    if (FPageIndex >= 0) and (FPageIndex < PageCount) and FDocument.IsPageLoaded(FPageIndex) then
+    if (FPageIndex >= 0) and (FPageIndex < PageCount) and FDocument.IsPageLoaded(FPageIndex) and
+       not FDocument.Pages[FPageIndex].Annotations.AnnotationsLoaded then // Issue #28: Don't close the page if annotations are loaded
+    begin
       FDocument.Pages[FPageIndex].Close;
+    end;
     OldPageIndex := FPageIndex;
     FPageIndex := Value;
     ScrollInfo.cbSize := SizeOf(ScrollInfo);
