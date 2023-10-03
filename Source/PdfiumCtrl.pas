@@ -1,3 +1,7 @@
+{$IFDEF FPC}
+  {$MODE DelphiUnicode}
+{$ENDIF FPC}
+
 {$A8,B-,E-,F-,G+,H+,I+,J-,K-,M-,N-,P+,Q-,R-,S-,T-,U-,V+,X+,Z1}
 {$STRINGCHECKS OFF}
 
@@ -6,9 +10,23 @@ unit PdfiumCtrl;
 // Show invalidated paint regions. Don't enable this if you aren't trying to optimize the repainting
 {.$DEFINE REPAINTTEST}
 
+{$IFDEF FPC}
+  {$DEFINE USE_PRINTCLIENT_WORKAROUND}
+{$ELSE}
+  {$IF CompilerVersion <= 20.0} // 2009 and older
+    {$DEFINE USE_PRINTCLIENT_WORKAROUND}
+  {$IFEND}
+  {$IF CompilerVersion >= 21.0} // 2010+
+    {$DEFINE VCL_HAS_TOUCH}
+  {$IFEND}
+{$ENDIF FPC}
+
 interface
 
 uses
+  {$IFDEF FPC}
+  LCLType, PrintersDlgs, Win32Extra,
+  {$ENDIF FPC}
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, Dialogs, PdfiumCore;
 
 const
@@ -37,9 +55,9 @@ type
     FDrawWidth: Integer;
     FDrawHeight: Integer;
     FRotation: TPdfPageRotation;
-    {$IF CompilerVersion <= 20.0} // 2009
+    {$IFDEF USE_PRINTCLIENT_WORKAROUND}
     FPrintClient: Boolean;
-    {$IFEND}
+    {$ENDIF USE_PRINTCLIENT_WORKAROUND}
     FMousePressed: Boolean;
     FSelectionActive: Boolean;
     FAllowUserTextSelection: Boolean;
@@ -80,9 +98,9 @@ type
     procedure WMEraseBkgnd(var Message: TWMEraseBkgnd); message WM_ERASEBKGND;
     procedure WMGetDlgCode(var Message: TWMGetDlgCode); message WM_GETDLGCODE;
     procedure CMColorchanged(var Message: TMessage); message CM_COLORCHANGED;
-    {$IF CompilerVersion <= 20.0} // 2009
+    {$IFDEF USE_PRINTCLIENT_WORKAROUND}
     procedure WMPrintClient(var Message: TWMPrintClient); message WM_PRINTCLIENT;
-    {$IFEND}
+    {$ENDIF USE_PRINTCLIENT_WORKAROUND}
     procedure CMMouseleave(var Message: TMessage); message CM_MOUSELEAVE;
 
     procedure GetPageWebLinks;
@@ -253,7 +271,9 @@ type
     property OnKeyDown;
     property OnKeyPress;
     property OnKeyUp;
+    {$IFNDEF FPC}
     property OnMouseActivate;
+    {$ENDIF ~FPC}
     property OnMouseDown;
     property OnMouseEnter;
     property OnMouseLeave;
@@ -262,10 +282,10 @@ type
     property OnPaint: TNotifyEvent read FOnPaint write FOnPaint;
     property OnStartDock;
     property OnStartDrag;
-    {$IF CompilerVersion >= 21.0} // 2010+
+    {$IFDEF VCL_HAS_TOUCH}
     property Touch;
     property OnGesture;
-    {$IFEND}
+    {$ENDIF VCL_HAS_TOUCH}
   end;
 
   TPdfDocumentVclPrinter = class(TPdfDocumentPrinter)
@@ -301,11 +321,15 @@ const
 
 function IsWhitespace(Ch: Char): Boolean;
 begin
-  {$IF CompilerVersion >= 25.0} // XE4
-  Result := Ch.IsWhiteSpace;
-  {$ELSE}
+  {$IFDEF FPC}
   Result := TCharacter.IsWhiteSpace(Ch);
-  {$IFEND}
+  {$ELSE}
+    {$IF CompilerVersion >= 25.0} // XE4
+  Result := Ch.IsWhiteSpace;
+    {$ELSE}
+  Result := TCharacter.IsWhiteSpace(Ch);
+    {$IFEND}
+  {$ENDIF FPC}
 end;
 
 function VclAbortProc(Prn: HDC; Error: Integer): Bool; stdcall;
@@ -367,7 +391,7 @@ end;
 
 function TPdfDocumentVclPrinter.GetPrinterDC: HDC;
 begin
-  Result := Printer.Handle;
+  Result := Printer.Canvas.Handle;
 end;
 
 class function TPdfDocumentVclPrinter.PrintDocument(ADocument: TPdfDocument;
@@ -397,10 +421,14 @@ begin
       end;
 
       // Show the PrintDialog
+      {$IFDEF FPC}
+      Result := Dlg.Execute;
+      {$ELSE}
       if (AParentWnd = 0) or not IsWindow(AParentWnd) then
         Result := Dlg.Execute
       else
         Result := Dlg.Execute(AParentWnd);
+      {$ENDIF FPC}
 
       if not Result then
         Exit;
@@ -485,7 +513,7 @@ begin
   inherited DestroyWnd;
 end;
 
-{$IF CompilerVersion <= 20.0} // 2009
+{$IFDEF USE_PRINTCLIENT_WORKAROUND}
 procedure TPdfControl.WMPrintClient(var Message: TWMPrintClient);
 // Emulate Delphi 2010's TControlState.csPrintClient
 var
@@ -499,7 +527,7 @@ begin
     FPrintClient := LastPrintClient;
   end;
 end;
-{$IFEND}
+{$ENDIF USE_PRINTCLIENT_WORKAROUND}
 
 procedure TPdfControl.WMEraseBkgnd(var Message: TWMEraseBkgnd);
 begin
@@ -744,11 +772,11 @@ begin
 
       // copy the clipping region and adjust to the bitmap's device units
       Rgn := CreateRectRgn(0, 0, 1, 1);
-      {$IF CompilerVersion >= 21.0} // 2010+
-      if csPrintClient in ControlState then
-      {$ELSE}
+      {$IFDEF USE_PRINTCLIENT_WORKAROUND}
       if FPrintClient then
-      {$IFEND}
+      {$ELSE}
+      if csPrintClient in ControlState then
+      {$ENDIF USE_PRINTCLIENT_WORKAROUND}
       begin
         if GetClipRgn(DC, Rgn) = 1 then // application clip region
         begin

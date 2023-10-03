@@ -1,12 +1,16 @@
-{$A8,B-,E-,F-,G+,H+,I+,J-,K-,M-,N-,P+,Q-,R-,S-,T-,U-,V+,X+,Z1}
-{$STRINGCHECKS OFF} // It only slows down Delphi strings in Delphi 2009 and 2010
-
 // Use DLLs (x64, x86) from https://github.com/bblanchon/pdfium-binaries
 //
 // DLL Version: chromium/5744
 
 unit PdfiumLib;
+{$IFDEF FPC}
+  {$MODE DelphiUnicode}
+{$ENDIF FPC}
 
+{$IFNDEF FPC}
+  {$A8,B-,E-,F-,G+,H+,I+,J-,K-,M-,N-,P+,Q-,R-,S-,T-,U-,V+,X+,Z1}
+  {$STRINGCHECKS OFF} // It only slows down Delphi strings in Delphi 2009 and 2010
+{$ENDIF ~FPC}
 {$SCOPEDENUMS ON}
 
 {.$DEFINE DLLEXPORT} // stdcall in WIN32 instead of CDECL in WIN32 (The library switches between those from release to release)
@@ -18,19 +22,33 @@ unit PdfiumLib;
 interface
 
 uses
-  {$IF CompilerVersion >= 23.0} // XE2+
-  WinApi.Windows;
-  {$ELSE}
+  {$IFDEF FPC}
+    {$IFDEF MSWINDOWS}
   Windows;
-  {$IFEND}
+    {$ELSE}
+  dynlibs;
+    {$ENDIF MSWINDOWS}
+  {$ELSE}
+    {$IF CompilerVersion >= 23.0} // XE2+
+  WinApi.Windows;
+    {$ELSE}
+  Windows;
+    {$IFEND}
+  {$ENDIF FPC}
 
 type
-  // Delphi version compatibility types
+  // Delphi/FPC version compatibility types
   {$IF not declared(SIZE_T)}
   SIZE_T = LongWord;
   {$IFEND}
   {$IF not declared(DWORD)}
   DWORD = UInt32;
+  {$IFEND}
+  {$IF not declared(UINT)}
+  UINT = LongWord;
+  {$IFEND}
+  {$IF not declared(PUINT)}
+  PUINT = ^UINT;
   {$IFEND}
   TIME_T = Longint;
   PTIME_T = ^TIME_T;
@@ -8586,7 +8604,11 @@ end;
 type
   TImportFuncRec = record
     P: PPointer;
+    {$IF defined(FPC) and not defined(MSWINDOWS)}
+    N: AnsiString; // The "dynlibs" unit's GetProcAddress uses an AnsiString instead of PAnsiChar
+    {$ELSE}
     N: PAnsiChar;
+    {$IFEND}
     Quirk: Boolean; // True: if the symbol can't be found, no exception is raised. If both Quirk
                     //       and Optional are True and the symbol can't be found, it will be mapped
                     //       to FunctionNotSupported.
@@ -8596,13 +8618,15 @@ type
   end;
 
 const
+  {$IFDEF FPC}
+    {$WARN 3175 off : Some fields coming before "$1" were not initialized}
+    {$WARN 3177 off : Some fields coming after "$1" were not initialized}
+  {$ENDIF FPC}
   ImportFuncs: array[0..424
-    {$IFDEF MSWINDOWS}
-    + 2
-      {$IFDEF _SKIA_SUPPORT_            } + 2 {$ENDIF}
-      {$IFDEF PDF_ENABLE_V8             } + 3 {$ENDIF}
-      {$IFDEF PDF_ENABLE_XFA            } + 3 {$ENDIF}
-    {$ENDIF}
+    {$IFDEF MSWINDOWS     } + 2 {$ENDIF}
+    {$IFDEF _SKIA_SUPPORT_} + 2 {$ENDIF}
+    {$IFDEF PDF_ENABLE_V8 } + 3 {$ENDIF}
+    {$IFDEF PDF_ENABLE_XFA} + 3 {$ENDIF}
     ] of TImportFuncRec = (
 
     // *** _FPDFVIEW_H_ ***
@@ -9099,6 +9123,10 @@ const
     (P: @@FPDFPage_GetRawThumbnailData;                 N: 'FPDFPage_GetRawThumbnailData'),
     (P: @@FPDFPage_GetThumbnailAsBitmap;                N: 'FPDFPage_GetThumbnailAsBitmap')
   );
+  {$IFDEF FPC}
+    {$WARN 3175 on : Some fields coming before "$1" were not initialized}
+    {$WARN 3177 on : Some fields coming after "$1" were not initialized}
+  {$ENDIF FPC}
 
 const
   pdfium_dll = 'pdfium.dll';
@@ -9161,9 +9189,13 @@ begin
     Exit;
 
   {$IFDEF CPUX64}
+    {$IFDEF FPC}
+  SetExceptionMask([exInvalidOp, exDenormalized, exZeroDivide, exOverflow, exUnderflow, exPrecision]);
+    {$ELSE}
   // Pdfium requires all arithmetic exceptions to be masked in 64bit mode
   if GetExceptionMask <> exAllArithmeticExceptions then
     SetExceptionMask(exAllArithmeticExceptions);
+    {$ENDIF FPC}
   {$ENDIF CPUX64}
 
   if DllFileName <> '' then
@@ -9173,7 +9205,7 @@ begin
 
   if PdfiumModule = 0 then
   begin
-    {$IF CompilerVersion >= 24.0} // XE3+
+    {$IF not defined(FPC) and (CompilerVersion >= 24.0)} // XE3+
     if DllFileName <> '' then
       RaiseLastOSError(GetLastError, '.'#10#10 + DllFileName)
     else
@@ -9239,7 +9271,9 @@ begin
   {$ENDIF PDF_ENABLE_V8}
 
   // Initialize the pdfium library
+  {$IFDEF FPC} {$WARN 5057 off : Local variable "$1" does not seem to be initialized} {$ENDIF FPC}
   FillChar(LibraryConfig, SizeOf(LibraryConfig), 0);
+  {$IFDEF FPC} {$WARN 5057 on} {$ENDIF FPC}
   LibraryConfig.version := 4;
   LibraryConfig.m_RendererType := FPDF_RENDERERTYPE_AGG;
   {if IsSkiaAvailable and SkiaRendererEnabled then

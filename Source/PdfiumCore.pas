@@ -1,12 +1,29 @@
-{$A8,B-,E-,F-,G+,H+,I+,J-,K-,M-,N-,P+,Q-,R-,S-,T-,U-,V+,X+,Z1}
-{$STRINGCHECKS OFF}
-
 unit PdfiumCore;
+
+{$IFDEF FPC}
+  {$MODE DelphiUnicode}
+{$ENDIF FPC}
+
+{$IFNDEF FPC}
+  {$A8,B-,E-,F-,G+,H+,I+,J-,K-,M-,N-,P+,Q-,R-,S-,T-,U-,V+,X+,Z1}
+  {$STRINGCHECKS OFF}
+{$ENDIF ~FPC}
 
 interface
 
+{.$UNDEF MSWINDOWS}
+
 uses
-  Windows, WinSpool, Types, SysUtils, Classes, Contnrs, PdfiumLib, Graphics;
+  {$IFDEF MSWINDOWS}
+  Windows, //WinSpool,
+  {$ELSE}
+    {$IFDEF FPC}
+  LCLType,
+    {$ENDIF FPC}
+  ExtCtrls,
+  {$ENDIF MSWINDOWS}
+  Types, SysUtils, Classes, Contnrs,
+  PdfiumLib;
 
 const
   // DIN A4
@@ -492,8 +509,10 @@ type
     FPages: TObjectList;
     FAttachments: TPdfAttachmentList;
     FFileName: string;
+    {$IFDEF MSWINDOWS}
     FFileHandle: THandle;
     FFileMapping: THandle;
+    {$ENDIF MSWINDOWS}
     FBuffer: PByte;
     FBytes: TBytes;
     FClosing: Boolean;
@@ -502,7 +521,7 @@ type
 
     FForm: FPDF_FORMHANDLE;
     FFormFillHandler: TPdfFormFillHandler;
-    FFormFieldHighlightColor: TColor;
+    FFormFieldHighlightColor: TColorRef;
     FFormFieldHighlightAlpha: Integer;
     FPrintHidesFormFieldHighlight: Boolean;
     FFormModified: Boolean;
@@ -531,7 +550,7 @@ type
     function GetNumCopies: Integer;
     procedure DocumentLoaded;
     procedure SetFormFieldHighlightAlpha(Value: Integer);
-    procedure SetFormFieldHighlightColor(const Value: TColor);
+    procedure SetFormFieldHighlightColor(const Value: TColorRef);
     function FindPage(Page: FPDF_PAGE): TPdfPage;
     procedure UpdateFormFieldHighlight;
   public
@@ -590,7 +609,7 @@ type
     property Handle: FPDF_DOCUMENT read FDocument;
     property FormHandle: FPDF_FORMHANDLE read FForm;
 
-    property FormFieldHighlightColor: TColor read FFormFieldHighlightColor write SetFormFieldHighlightColor default $FFE4DD;
+    property FormFieldHighlightColor: TColorRef read FFormFieldHighlightColor write SetFormFieldHighlightColor default $FFE4DD;
     property FormFieldHighlightAlpha: Integer read FFormFieldHighlightAlpha write SetFormFieldHighlightAlpha default 100;
     property PrintHidesFormFieldHighlight: Boolean read FPrintHidesFormFieldHighlight write FPrintHidesFormFieldHighlight default True;
 
@@ -663,7 +682,9 @@ resourcestring
   RsUnsupportedFeature = 'Function %s not supported';
   RsArgumentsOutOfRange = 'Function argument "%s" (%d) out of range';
   RsDocumentNotActive = 'PDF document is not open';
+  {$IFNDEF CPUX64}
   RsFileTooLarge = 'PDF file "%s" is too large';
+  {$ENDIF ~CPUX64}
 
   RsPdfCannotDeleteAttachmnent = 'Cannot delete the PDF attachment %d';
   RsPdfCannotAddAttachmnent = 'Cannot add the PDF attachment "%s"';
@@ -672,13 +693,15 @@ resourcestring
 
   RsPdfAnnotationNotAFormFieldError = 'The annotation is not a form field';
 
-  RsPdfErrorSuccess  = 'No error';
-  RsPdfErrorUnknown  = 'Unknown error';
-  RsPdfErrorFile     = 'File not found or can''t be opened';
-  RsPdfErrorFormat   = 'File is not a PDF document or is corrupted';
-  RsPdfErrorPassword = 'Password required oder invalid password';
-  RsPdfErrorSecurity = 'Security schema is not support';
-  RsPdfErrorPage     = 'Page does not exist or data error';
+  RsPdfErrorSuccess   = 'No error';
+  RsPdfErrorUnknown   = 'Unknown error';
+  RsPdfErrorFile      = 'File not found or can''t be opened';
+  RsPdfErrorFormat    = 'File is not a PDF document or is corrupted';
+  RsPdfErrorPassword  = 'Password required oder invalid password';
+  RsPdfErrorSecurity  = 'Security schema is not support';
+  RsPdfErrorPage      = 'Page does not exist or data error';
+  RsPdfErrorXFALoad   = 'Load XFA error';
+  RsPdfErrorXFALayout = 'Layout XFA error';
 
 threadvar
   ThreadPdfUnsupportedFeatureHandler: TPdfUnsupportedFeatureHandler;
@@ -690,7 +713,7 @@ type
   TEncodingAccess = class(TEncoding)
   public
     function GetMemCharCount(Bytes: PByte; ByteCount: Integer): Integer;
-    function GetMemChars(Bytes: PByte; ByteCount: Integer; Chars: PChar; CharCount: Integer): Integer;
+    function GetMemChars(Bytes: PByte; ByteCount: Integer; Chars: PWideChar; CharCount: Integer): Integer;
   end;
 
 function TEncodingAccess.GetMemCharCount(Bytes: PByte; ByteCount: Integer): Integer;
@@ -698,7 +721,7 @@ begin
   Result := GetCharCount(Bytes, ByteCount);
 end;
 
-function TEncodingAccess.GetMemChars(Bytes: PByte; ByteCount: Integer; Chars: PChar; CharCount: Integer): Integer;
+function TEncodingAccess.GetMemChars(Bytes: PByte; ByteCount: Integer; Chars: PWideChar; CharCount: Integer): Integer;
 begin
   Result := GetChars(Bytes, ByteCount, Chars, CharCount);
 end;
@@ -709,8 +732,8 @@ begin
   ThreadPdfUnsupportedFeatureHandler := Handler;
 end;
 
-{$IF not declared(GetFileSizeEx)}
-function GetFileSizeEx(hFile: THandle; var lpFileSize: Int64): Boolean; stdcall;
+{$IF defined(MSWINDOWS) and not declared(GetFileSizeEx)}
+function GetFileSizeEx(hFile: THandle; var lpFileSize: Int64): BOOL; stdcall;
   external kernel32 name 'GetFileSizeEx';
 {$IFEND}
 
@@ -815,7 +838,7 @@ end;
 
 procedure RaiseLastPdfError;
 begin
-  case FPDF_GetLastError of
+  case FPDF_GetLastError() of
     FPDF_ERR_SUCCESS:
       raise EPdfException.CreateRes(@RsPdfErrorSuccess);
     FPDF_ERR_FILE:
@@ -828,6 +851,12 @@ begin
       raise EPdfException.CreateRes(@RsPdfErrorSecurity);
     FPDF_ERR_PAGE:
       raise EPdfException.CreateRes(@RsPdfErrorPage);
+    {$IF declared(FPDF_ERR_XFALOAD)}
+    FPDF_ERR_XFALOAD:
+      raise EPdfException.CreateRes(@RsPdfErrorXFALoad);
+    FPDF_ERR_XFALAYOUT:
+      raise EPdfException.CreateRes(@RsPdfErrorXFALayout);
+    {$IFEND}
   else
     raise EPdfException.CreateRes(@RsPdfErrorUnknown);
   end;
@@ -883,6 +912,7 @@ begin
   end;
 end;
 
+{$IFDEF MSWINDOWS}
 var
   FFITimers: array of record
     Id: UINT;
@@ -966,14 +996,100 @@ begin
       I := Length(FFITimers) - 1;
       while (I >= 0) and (FFITimers[I].Id = 0) do
         Dec(I);
-      SetLength(FFITimers, I + 1);
+      if Length(FFITimers) <> I + 1 then
+        SetLength(FFITimers, I + 1);
     finally
       LeaveCriticalSection(FFITimersCritSect);
     end;
   end;
 end;
+{$ELSE MSWINDOWS}
+type
+  TFFITimer = class(TTimer)
+  public
+    FId: Integer;
+    FTimerFunc: TFPDFTimerCallback;
+    procedure DoTimerEvent(Sender: TObject);
+  end;
+
+var
+  FFITimers: array of TFFITimer;
+  FFITimersCritSect: TRTLCriticalSection;
+
+{ TFFITimer }
+
+procedure TFFITimer.DoTimerEvent(Sender: TObject);
+begin
+  FTimerFunc(FId);
+end;
+
+function FFI_SetTimer(pThis: PFPDF_FORMFILLINFO; uElapse: Integer; lpTimerFunc: TFPDFTimerCallback): Integer; cdecl;
+var
+  I: Integer;
+  Id: Integer;
+  Timer: TFFITimer;
+begin
+  // Find highest Id
+  Id := 0;
+  for I := 0 to Length(FFITimers) - 1 do
+    if (FFITimers[I] <> nil) and (FFITimers[I].FId > Id) then
+      Id := FFITimers[I].FId;
+  Inc(Id);
+
+  Timer := TFFITimer.Create(nil);
+  Timer.FId := Id;
+  Timer.FTimerFunc:= lpTimerFunc;
+  Timer.OnTimer := Timer.DoTimerEvent;
+  Timer.Interval := uElapse;
+
+  Result := Id;
+  EnterCriticalSection(FFITimersCritSect);
+  try
+    for I := 0 to Length(FFITimers) - 1 do
+    begin
+      if FFITimers[I] = nil then
+      begin
+        FFITimers[I] := Timer;
+        Exit;
+      end;
+    end;
+    I := Length(FFITimers);
+    SetLength(FFITimers, I + 1);
+    FFITimers[I] := Timer;
+  finally
+    LeaveCriticalSection(FFITimersCritSect);
+  end;
+end;
+
+procedure FFI_KillTimer(pThis: PFPDF_FORMFILLINFO; nTimerID: Integer); cdecl;
+var
+  I: Integer;
+begin
+  if nTimerID <> 0 then
+  begin
+    EnterCriticalSection(FFITimersCritSect);
+    try
+      for I := 0 to Length(FFITimers) - 1 do
+        if (FFITimers[I] <> nil) and (FFITimers[I].FId = nTimerID) then
+          FreeAndNil(FFITimers[I]);
+
+      I := Length(FFITimers) - 1;
+      while (I >= 0) and (FFITimers[I] = nil) do
+        Dec(I);
+      if Length(FFITimers) <> I + 1 then
+        SetLength(FFITimers, I + 1);
+    finally
+      LeaveCriticalSection(FFITimersCritSect);
+    end;
+  end;
+end;
+{$ENDIF MSWINDOWS}
 
 function FFI_GetLocalTime(pThis: PFPDF_FORMFILLINFO): FPDF_SYSTEMTIME; cdecl;
+{$IF not declared(PSystemTime)}
+type
+  PSystemTime = ^TSystemTime;
+{$IFEND}
 begin
   GetLocalTime(PSystemTime(@Result)^);
 end;
@@ -1033,7 +1149,6 @@ begin
 end;
 
 
-
 { TPdfRect }
 
 procedure TPdfRect.Offset(XOffset, YOffset: Double);
@@ -1079,7 +1194,9 @@ begin
   inherited Create;
   FPages := TObjectList.Create;
   FAttachments := TPdfAttachmentList.Create(Self);
+  {$IFDEF MSWINDOWS}
   FFileHandle := INVALID_HANDLE_VALUE;
+  {$ENDIF MSWINDOWS}
   FFormFieldHighlightColor := $FFE4DD;
   FFormFieldHighlightAlpha := 100;
   FPrintHidesFormFieldHighlight := True;
@@ -1121,6 +1238,7 @@ begin
       FCustomLoadData := nil;
     end;
 
+    {$IFDEF MSWINDOWS}
     if FFileMapping <> 0 then
     begin
       if FBuffer <> nil then
@@ -1131,18 +1249,22 @@ begin
       CloseHandle(FFileMapping);
       FFileMapping := 0;
     end
-    else if FBuffer <> nil then
+    else
+    {$ENDIF MSWINDOWS}
+    if FBuffer <> nil then
     begin
       FreeMem(FBuffer);
       FBuffer := nil;
     end;
     FBytes := nil;
 
+    {$IFDEF MSWINDOWS}
     if FFileHandle <> INVALID_HANDLE_VALUE then
     begin
       CloseHandle(FFileHandle);
       FFileHandle := INVALID_HANDLE_VALUE;
     end;
+    {$ENDIF MSWINDOWS}
 
     FFileName := '';
     FFormModified := False;
@@ -1151,6 +1273,7 @@ begin
   end;
 end;
 
+{$IFDEF MSWINDOWS}
 function ReadFromActiveFile(Param: Pointer; Position: LongWord; Buffer: PByte; Size: LongWord): Boolean;
 var
   NumRead: DWORD;
@@ -1163,18 +1286,24 @@ begin
   else
     Result := Size = 0;
 end;
+{$ENDIF MSWINDOWS}
 
 procedure TPdfDocument.LoadFromFile(const AFileName: string; const APassword: UTF8String; ALoadOption: TPdfDocumentLoadOption);
 var
+  {$IFDEF MSWINDOWS}
   Size: Int64;
   Offset: NativeInt;
   NumRead: DWORD;
   LastError: DWORD;
+  {$ELSE}
+  Stream: TFileStream;
+  {$ENDIF MSWINDOWS}
 begin
   Close;
   // We don't use FPDF_LoadDocument because it is limited to ANSI file names and dloOnDemand emulates it
 
-  FFileHandle := CreateFile(PChar(AFileName), GENERIC_READ, FILE_SHARE_READ, nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+  {$IFDEF MSWINDOWS}
+  FFileHandle := CreateFileW(PWideChar(AFileName), GENERIC_READ, FILE_SHARE_READ, nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
   if FFileHandle = INVALID_HANDLE_VALUE then
     RaiseLastOSError;
   try
@@ -1243,6 +1372,14 @@ begin
     Close;
     raise;
   end;
+  {$ELSE}
+  Stream := TFileStream.Create(AFileName, fmOpenRead or fmShareDenyWrite);
+  try
+    LoadFromStream(Stream, APassword);
+  finally
+    Stream.Free;
+  end;
+  {$ENDIF MSWINDOWS}
   FFileName := AFileName;
 end;
 
@@ -1411,7 +1548,7 @@ end;
 
 procedure TPdfDocument.UpdateFormFieldHighlight;
 begin
-  FPDF_SetFormFieldHighlightColor(FForm, 0, {ColorToRGB}(FFormFieldHighlightColor));
+  FPDF_SetFormFieldHighlightColor(FForm, 0, FFormFieldHighlightColor);
   FPDF_SetFormFieldHighlightAlpha(FForm, FFormFieldHighlightAlpha);
 end;
 
@@ -1723,7 +1860,7 @@ begin
   if Len > 0 then
   begin
     SetLength(Result, Len);
-    FPDF_GetMetaText(FDocument, PAnsiChar(A), PChar(Result), (Len + 1) * SizeOf(WideChar));
+    FPDF_GetMetaText(FDocument, PAnsiChar(A), PWideChar(Result), (Len + 1) * SizeOf(WideChar));
   end
   else
     Result := '';
@@ -1777,7 +1914,11 @@ end;
 class function TPdfDocument.SetPrintMode(PrintMode: TPdfPrintMode): Boolean;
 begin
   InitLib;
+  {$IFDEF MSWINDOWS}
   Result := FPDF_SetPrintMode(Ord(PrintMode)) <> 0;
+  {$ELSE}
+  Result := False;
+  {$ENDIF MSWINDOWS}
 end;
 
 procedure TPdfDocument.SetFormFieldHighlightAlpha(Value: Integer);
@@ -1795,13 +1936,13 @@ begin
   end;
 end;
 
-procedure TPdfDocument.SetFormFieldHighlightColor(const Value: TColor);
+procedure TPdfDocument.SetFormFieldHighlightColor(const Value: TColorRef);
 begin
   if Value <> FFormFieldHighlightColor then
   begin
     FFormFieldHighlightColor := Value;
     if Active then
-      FPDF_SetFormFieldHighlightColor(FForm, 0, {ColorToRGB}(FFormFieldHighlightColor));
+      FPDF_SetFormFieldHighlightColor(FForm, 0, FFormFieldHighlightColor);
   end;
 end;
 
@@ -1936,6 +2077,7 @@ var
 begin
   Open;
 
+  {$IFDEF MSWINDOWS}
   if proPrinting in Options then
   begin
     if IsValidForm and (FPDFPage_GetAnnotCount(FPage) > 0) then
@@ -1949,6 +2091,7 @@ begin
     FPDF_RenderPage(DC, FPage, X, Y, Width, Height, Ord(Rotate), GetDrawFlags(Options));
     Exit;
   end;
+  {$ENDIF MSWINDOWS}
 
 
   FillChar(BitmapInfo, SizeOf(BitmapInfo), 0);
@@ -2110,7 +2253,7 @@ begin
     else
       StartIndex := 0;
 
-    FSearchHandle := FPDFText_FindStart(FTextHandle, PChar(SearchString), Flags, StartIndex);
+    FSearchHandle := FPDFText_FindStart(FTextHandle, PWideChar(SearchString), Flags, StartIndex);
   end;
   Result := FSearchHandle <> nil;
 end;
@@ -2205,7 +2348,7 @@ begin
   if (Count > 0) and BeginText then
   begin
     SetLength(Result, Count); // we let GetText overwrite our #0 terminator with its #0
-    Len := FPDFText_GetText(FTextHandle, CharIndex, Count, PChar(Result)) - 1; // returned length includes the #0
+    Len := FPDFText_GetText(FTextHandle, CharIndex, Count, PWideChar(Result)) - 1; // returned length includes the #0
     if Len <= 0 then
       Result := ''
     else if Len < Count then
@@ -2224,7 +2367,7 @@ begin
     Len := FPDFText_GetBoundedText(FTextHandle, Left, Top, Right, Bottom, nil, 0); // excluding #0 terminator
     SetLength(Result, Len);
     if Len > 0 then
-      FPDFText_GetBoundedText(FTextHandle, Left, Top, Right, Bottom, PChar(Result), Len);
+      FPDFText_GetBoundedText(FTextHandle, Left, Top, Right, Bottom, PWideChar(Result), Len);
   end
   else
     Result := '';
@@ -2274,7 +2417,7 @@ begin
     if Len > 0 then
     begin
       SetLength(Result, Len);
-      FPDFLink_GetURL(FLinkHandle, LinkIndex, PChar(Result), Len + 1); // including #0 terminator
+      FPDFLink_GetURL(FLinkHandle, LinkIndex, PWideChar(Result), Len + 1); // including #0 terminator
     end;
   end;
 end;
@@ -2317,10 +2460,12 @@ const
   AltMask = $20000000;
 begin
   Result := 0;
+  {$IFDEF MSWINDOWS}
   if GetKeyState(VK_SHIFT) < 0 then
     Result := Result or FWL_EVENTFLAG_ShiftKey;
   if GetKeyState(VK_CONTROL) < 0 then
     Result := Result or FWL_EVENTFLAG_ControlKey;
+  {$ENDIF MSWINDOWS}
   if KeyData and AltMask <> 0 then
     Result := Result or FWL_EVENTFLAG_AltKey;
 end;
@@ -3599,11 +3744,21 @@ begin
 end;
 
 initialization
+  {$IFDEF FPC}
+  InitCriticalSection(PDFiumInitCritSect);
+  InitCriticalSection(FFITimersCritSect);
+  {$ELSE}
   InitializeCriticalSectionAndSpinCount(PDFiumInitCritSect, 4000);
   InitializeCriticalSectionAndSpinCount(FFITimersCritSect, 4000);
+  {$ENDIF FPC}
 
 finalization
+  {$IFDEF FPC}
+  DoneCriticalSection(FFITimersCritSect);
+  DoneCriticalSection(PDFiumInitCritSect);
+  {$ELSE}
   DeleteCriticalSection(FFITimersCritSect);
   DeleteCriticalSection(PDFiumInitCritSect);
+  {$ENDIF FPC}
 
 end.
