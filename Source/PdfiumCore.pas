@@ -520,6 +520,7 @@ type
     FCustomLoadData: PCustomLoadDataRec;
 
     FForm: FPDF_FORMHANDLE;
+    FJSPlatform: IPDF_JsPlatform;
     FFormFillHandler: TPdfFormFillHandler;
     FFormFieldHighlightColor: TColorRef;
     FFormFieldHighlightAlpha: Integer;
@@ -1532,6 +1533,11 @@ begin
 
   if PDF_USE_XFA then
   begin
+    FJSPlatform.version := 3;
+    // FJSPlatform callbacks not implemented
+
+    FFormFillHandler.FormFillInfo.m_pJsPlatform := @FJSPlatform;
+
     FFormFillHandler.FormFillInfo.version := 2;
     FFormFillHandler.FormFillInfo.xfa_disabled := 1; // Disable XFA support for now
   end;
@@ -1539,6 +1545,8 @@ begin
   FForm := FPDFDOC_InitFormFillEnvironment(FDocument, @FFormFillHandler.FormFillInfo);
   if FForm <> nil then
   begin
+    if PDF_USE_XFA and (FFormFillHandler.FormFillInfo.xfa_disabled = 0) then
+      FPDF_LoadXFA(FDocument);
     UpdateFormFieldHighlight;
 
     FORM_DoDocumentJSAction(FForm);

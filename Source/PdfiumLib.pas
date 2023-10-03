@@ -1,6 +1,6 @@
 // Use DLLs (x64, x86) from https://github.com/bblanchon/pdfium-binaries
 //
-// DLL Version: chromium/5744
+// DLL Version: chromium/6043
 
 unit PdfiumLib;
 {$IFDEF FPC}
@@ -54,7 +54,7 @@ type
   PTIME_T = ^TIME_T;
 
 // Returns True if the pdfium.dll supports Skia.
-function IsSkiaAvailable: Boolean;
+function PDF_IsSkiaAvailable: Boolean;
 
 
 // *** _FPDFVIEW_H_ ***
@@ -121,9 +121,9 @@ type
   FPDF_PAGEOBJECTMARK     = type __PFPDF_PTRREC;
   FPDF_PAGERANGE          = type __PFPDF_PTRREC;
   FPDF_PATHSEGMENT        = type __PFPDF_PTRREC;
-  FPDF_RECORDER           = type Pointer;  // Passed into Skia as a SkPictureRecorder.
   FPDF_SCHHANDLE          = type __PFPDF_PTRREC;
   FPDF_SIGNATURE          = type __PFPDF_PTRREC;
+  FPDF_SKIA_CANVAS        = type Pointer;  // Passed into Skia as an SkCanvas.
   FPDF_STRUCTELEMENT      = type __PFPDF_PTRREC;
   FPDF_STRUCTELEMENT_ATTR = type __PFPDF_PTRREC;
   FPDF_STRUCTTREE         = type __PFPDF_PTRREC;
@@ -150,12 +150,14 @@ type
   PFPDF_WCHAR = PWideChar;
   FPDF_WCHAR = WideChar;
 
-  // FPDFSDK may use three types of strings: byte string, wide string (UTF-16LE
-  // encoded), and platform dependent string
+  // The public PDFium API uses three types of strings: byte string, wide string
+  // (UTF-16LE encoded), and platform dependent string.
+
+  // Public PDFium API type for byte strings.
   FPDF_BYTESTRING = PAnsiChar;
 
-  // FPDFSDK always uses UTF-16LE encoded wide strings, each character uses 2
-  // bytes (except surrogation), with the low byte first.
+  // The public PDFium API always uses UTF-16LE encoded wide strings, each
+  // character uses 2 bytes (except surrogation), with the low byte first.
   FPDF_WIDESTRING = PFPDF_WCHAR;
 
   // Structure for persisting a string beyond the duration of a callback.
@@ -258,19 +260,6 @@ type
   // Dictionary value types.
   FPDF_OBJECT_TYPE = Integer;
 
-// Function: FPDF_InitLibrary
-//          Initialize the FPDFSDK library
-// Parameters:
-//          None
-// Return value:
-//          None.
-// Comments:
-//          Convenience function to call FPDF_InitLibraryWithConfig() for
-//          backwards compatibility purposes. This will be deprecated in the
-//          future.
-var
-  FPDF_InitLibrary: procedure(); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
-
 // PDF renderer types - Experimental.
 // Selection of 2D graphics library to use for rendering to FPDF_BITMAPs.
 type
@@ -325,7 +314,7 @@ type
   TFPdfLibraryConfig = FPDF_LIBRARY_CONFIG;
 
 // Function: FPDF_InitLibraryWithConfig
-//          Initialize the FPDFSDK library
+//          Initialize the PDFium library and allocate global resources for it.
 // Parameters:
 //          config - configuration information as above.
 // Return value:
@@ -336,15 +325,34 @@ type
 var
   FPDF_InitLibraryWithConfig: procedure(config: PFPDF_LIBRARY_CONFIG); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Function: FPDF_InitLibrary
+//          Initialize the PDFium library (alternative form).
+// Parameters:
+//          None
+// Return value:
+//          None.
+// Comments:
+//          Convenience function to call FPDF_InitLibraryWithConfig() with a
+//          default configuration for backwards compatibility purposes. New
+//          code should call FPDF_InitLibraryWithConfig() instead. This will
+//          be deprecated in the future.
+var
+  FPDF_InitLibrary: procedure(); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 // Function: FPDF_DestroyLibary
-//          Release all resources allocated by the FPDFSDK library.
+//          Release global resources allocated to the PDFium library by
+//          FPDF_InitLibrary() or FPDF_InitLibraryWithConfig().
 // Parameters:
 //          None.
 // Return value:
 //          None.
 // Comments:
-//          You can call this function to release all memory blocks allocated by the library.
-//          After this function is called, you should not call any PDF processing functions.
+//          After this function is called, you must not call any PDF
+//          processing functions.
+//
+//          Calling this function does not automatically close other
+//          objects. It is recommended to close other objects before
+//          closing the library with this function.
 var
   FPDF_DestroyLibrary: procedure(); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -477,7 +485,7 @@ type
     // Position is specified by byte offset from the beginning of the file.
     // The pointer to the buffer is never NULL and the size is never 0.
     // The position and size will never go out of range of the file length.
-    // It may be possible for FPDFSDK to call this function multiple times for
+    // It may be possible for PDFium to call this function multiple times for
     // the same position.
     // Return value: should be non-zero if successful, zero for error.
     m_GetBlock: function(param: Pointer; position: LongWord; pBuf: PByte; size: LongWord): Integer; cdecl;
@@ -670,17 +678,28 @@ var
 var
   FPDF_GetTrailerEnds: function(document: FPDF_DOCUMENT; buffer: PUINT; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Function: FPDF_GetDocPermission
+// Function: FPDF_GetDocPermissions
 //          Get file permission flags of the document.
 // Parameters:
 //          document    -   Handle to a document. Returned by FPDF_LoadDocument.
 // Return value:
 //          A 32-bit integer indicating permission flags. Please refer to the
 //          PDF Reference for detailed descriptions. If the document is not
-//          protected, 0xffffffff will be returned.
+//          protected or was unlocked by the owner, 0xffffffff will be returned.
 var
   FPDF_GetDocPermissions: function(document: FPDF_DOCUMENT): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Function: FPDF_GetDocUserPermissions
+//          Get user file permission flags of the document.
+// Parameters:
+//          document    -   Handle to a document. Returned by FPDF_LoadDocument.
+// Return value:
+//          A 32-bit integer indicating permission flags. Please refer to the
+//          PDF Reference for detailed descriptions. If the document is not
+//          protected, 0xffffffff will be returned. Always returns user
+//          permissions, even if the document was unlocked by the owner.
+var
+  FPDF_GetDocUserPermissions: function(document: FPDF_DOCUMENT): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Function: FPDF_GetSecurityHandlerRevision
 //          Get the revision for the security handler.
@@ -923,18 +942,17 @@ var
     clipping: PFS_RECTF; flags: Integer); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 {$IFDEF _SKIA_SUPPORT_}
-// Experimental API.
-// Function: FPDF_RenderPageSkp
-//          Render contents of a page to a Skia SkPictureRecorder.
+// Function: FPDF_RenderPageSkia
+//          Render contents of a page to a Skia SkCanvas.
 // Parameters:
+//          canvas      -   SkCanvas to render to.
 //          page        -   Handle to the page.
 //          size_x      -   Horizontal size (in pixels) for displaying the page.
 //          size_y      -   Vertical size (in pixels) for displaying the page.
 // Return value:
-//          The SkPictureRecorder that holds the rendering of the page, or NULL
-//          on failure. Caller takes ownership of the returned result.
+//          None.
 var
-  FPDF_RenderPageSkp: function(page: FPDF_PAGE; size_x, size_y: Integer): FPDF_RECORDER; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDF_RenderPageSkia: procedure(canvas: FPDF_SKIA_CANVAS; page: FPDF_PAGE; size_x, size_y: Integer); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 {$ENDIF _SKIA_SUPPORT_}
 
 // Function: FPDF_ClosePage
@@ -1549,6 +1567,36 @@ var
 //   page_index - the index of the page to delete.
 var
   FPDFPage_Delete: procedure(document: FPDF_DOCUMENT; page_index: Integer); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Move the given pages to a new index position.
+//
+//  page_indices     - the ordered list of pages to move. No duplicates allowed.
+//  page_indices_len - the number of elements in |page_indices|
+//  dest_page_index  - the new index position to which the pages in
+//                     |page_indices| are moved.
+//
+// Returns TRUE on success. If it returns FALSE, the document may be left in an
+// indeterminate state.
+//
+// Example: The PDF document starts out with pages [A, B, C, D], with indices
+// [0, 1, 2, 3].
+//
+// >  Move(doc, [3, 2], 2, 1); // returns true
+// >  // The document has pages [A, D, C, B].
+// >
+// >  Move(doc, [0, 4, 3], 3, 1); // returns false
+// >  // Returned false because index 4 is out of range.
+// >
+// >  Move(doc, [0, 3, 1], 3, 2); // returns false
+// >  // Returned false because index 2 is out of range for 3 page indices.
+// >
+// >  Move(doc, [2, 2], 2, 0); // returns false
+// >  // Returned false because [2, 2] contains duplicates.
+//
+var
+  FPDF_MovePages: function(document: FPDF_DOCUMENT; page_indices: PInteger; page_indices_len: LongWord;
+    dest_page_index: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Get the rotation of |page|.
 //
@@ -3026,6 +3074,21 @@ var
 //
 var
   FPDFText_IsGenerated: function(text_page: FPDF_TEXTPAGE; index: Integer): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDFText_IsHyphen
+//          Get if a character in a page is a hyphen.
+// Parameters:
+//          text_page   -   Handle to a text page information structure.
+//                          Returned by FPDFText_LoadPage function.
+//          index       -   Zero-based index of the character.
+// Return value:
+//          1 if the character is a hyphen.
+//          0 if the character is not a hyphen.
+//          -1 if there was an error.
+//
+var
+  FPDFText_IsHyphen: function(text_page: FPDF_TEXTPAGE; index: Integer): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Function: FPDFText_HasUnicodeMapError
@@ -6590,7 +6653,7 @@ var
 
 {$IFDEF _SKIA_SUPPORT_}
 var
-  FPDF_FFLRecord: procedure(hHandle: FPDF_FORMHANDLE; recorder: FPDF_RECORDER; page: FPDF_PAGE;
+  FPDF_FFLDrawSkia: procedure(hHandle: FPDF_FORMHANDLE; canvas: FPDF_SKIA_CANVAS; page: FPDF_PAGE;
     start_x, start_y, size_x, size_y, rotate, flags: Integer); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 {$ENDIF _SKIA_SUPPORT_}
 
@@ -8622,7 +8685,7 @@ const
     {$WARN 3175 off : Some fields coming before "$1" were not initialized}
     {$WARN 3177 off : Some fields coming after "$1" were not initialized}
   {$ENDIF FPC}
-  ImportFuncs: array[0..424
+  ImportFuncs: array[0..427
     {$IFDEF MSWINDOWS     } + 2 {$ENDIF}
     {$IFDEF _SKIA_SUPPORT_} + 2 {$ENDIF}
     {$IFDEF PDF_ENABLE_V8 } + 3 {$ENDIF}
@@ -8630,8 +8693,8 @@ const
     ] of TImportFuncRec = (
 
     // *** _FPDFVIEW_H_ ***
-    (P: @@FPDF_InitLibrary;                             N: 'FPDF_InitLibrary'),
     (P: @@FPDF_InitLibraryWithConfig;                   N: 'FPDF_InitLibraryWithConfig'),
+    (P: @@FPDF_InitLibrary;                             N: 'FPDF_InitLibrary'),
     (P: @@FPDF_DestroyLibrary;                          N: 'FPDF_DestroyLibrary'),
     (P: @@FPDF_SetSandBoxPolicy;                        N: 'FPDF_SetSandBoxPolicy'),
     {$IFDEF MSWINDOWS}
@@ -8646,6 +8709,7 @@ const
     (P: @@FPDF_DocumentHasValidCrossReferenceTable;     N: 'FPDF_DocumentHasValidCrossReferenceTable'),
     (P: @@FPDF_GetTrailerEnds;                          N: 'FPDF_GetTrailerEnds'),
     (P: @@FPDF_GetDocPermissions;                       N: 'FPDF_GetDocPermissions'),
+    (P: @@FPDF_GetDocUserPermissions;                   N: 'FPDF_GetDocUserPermissions'),
     (P: @@FPDF_GetSecurityHandlerRevision;              N: 'FPDF_GetSecurityHandlerRevision'),
     (P: @@FPDF_GetPageCount;                            N: 'FPDF_GetPageCount'),
     (P: @@FPDF_LoadPage;                                N: 'FPDF_LoadPage'),
@@ -8662,7 +8726,7 @@ const
     (P: @@FPDF_RenderPageBitmap;                        N: 'FPDF_RenderPageBitmap'),
     (P: @@FPDF_RenderPageBitmapWithMatrix;              N: 'FPDF_RenderPageBitmapWithMatrix'),
     {$IFDEF _SKIA_SUPPORT_}
-    (P: @@FPDF_RenderPageSkp;                           N: 'FPDF_RenderPageSkp'; Quirk: True; Optional: True),
+    (P: @@FPDF_RenderPageSkia;                          N: 'FPDF_RenderPageSkia'; Quirk: True; Optional: True),
     {$ENDIF _SKIA_SUPPORT_}
     (P: @@FPDF_ClosePage;                               N: 'FPDF_ClosePage'),
     (P: @@FPDF_CloseDocument;                           N: 'FPDF_CloseDocument'),
@@ -8704,6 +8768,7 @@ const
     (P: @@FPDF_CreateNewDocument;                       N: 'FPDF_CreateNewDocument'),
     (P: @@FPDFPage_New;                                 N: 'FPDFPage_New'),
     (P: @@FPDFPage_Delete;                              N: 'FPDFPage_Delete'),
+    (P: @@FPDF_MovePages;                               N: 'FPDF_MovePages'),
     (P: @@FPDFPage_GetRotation;                         N: 'FPDFPage_GetRotation'),
     (P: @@FPDFPage_SetRotation;                         N: 'FPDFPage_SetRotation'),
     (P: @@FPDFPage_InsertObject;                        N: 'FPDFPage_InsertObject'),
@@ -8825,6 +8890,7 @@ const
     (P: @@FPDFText_CountChars;                          N: 'FPDFText_CountChars'),
     (P: @@FPDFText_GetUnicode;                          N: 'FPDFText_GetUnicode'),
     (P: @@FPDFText_IsGenerated;                         N: 'FPDFText_IsGenerated'),
+    (P: @@FPDFText_IsHyphen;                            N: 'FPDFText_IsHyphen'),
     (P: @@FPDFText_HasUnicodeMapError;                  N: 'FPDFText_HasUnicodeMapError'),
     (P: @@FPDFText_GetFontSize;                         N: 'FPDFText_GetFontSize'),
     (P: @@FPDFText_GetFontInfo;                         N: 'FPDFText_GetFontInfo'),
@@ -8969,7 +9035,7 @@ const
     (P: @@FPDF_RemoveFormFieldHighlight;                N: 'FPDF_RemoveFormFieldHighlight'),
     (P: @@FPDF_FFLDraw;                                 N: 'FPDF_FFLDraw'),
     {$IFDEF _SKIA_SUPPORT_}
-    (P: @@FPDF_FFLRecord;                               N: 'FPDF_FFLRecord'; Quirk: True; Optional: True),
+    (P: @@FPDF_FFLDrawSkia;                             N: 'FPDF_FFLDrawSkia'; Quirk: True; Optional: True),
     {$ENDIF _SKIA_SUPPORT_}
 
     (P: @@FPDF_GetFormType;                             N: 'FPDF_GetFormType'),
@@ -9153,11 +9219,11 @@ begin
   {$ENDIF PDF_ENABLE_XFA}
 end;
 
-function IsSkiaAvailable: Boolean;
+function PDF_IsSkiaAvailable: Boolean;
 begin
   {$IFDEF _SKIA_SUPPORT_}
-  Result := Assigned(FPDF_RenderPageSkp) and (@FPDF_RenderPageSkp <> @NotLoaded) and (@FPDF_RenderPageSkp <> @FunctionNotSupported)
-            and Assigned(FPDF_FFLRecord) and (@FPDF_FFLRecord <> @NotLoaded) and (@FPDF_FFLRecord <> @FunctionNotSupported);
+  Result := Assigned(FPDF_RenderPageSkia) and (@FPDF_RenderPageSkia <> @NotLoaded) and (@FPDF_RenderPageSkia <> @FunctionNotSupported)
+            and Assigned(FPDF_FFLDrawSkia) and (@FPDF_FFLDrawSkia <> @NotLoaded) and (@FPDF_FFLDrawSkia <> @FunctionNotSupported);
   {$ELSE}
   Result := False;
   {$ENDIF _SKIA_SUPPORT_}
