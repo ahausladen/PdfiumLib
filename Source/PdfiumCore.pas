@@ -345,7 +345,7 @@ type
     function IsLoaded: Boolean;
 
     procedure Draw(DC: HDC; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation = prNormal;
-      const Options: TPdfPageRenderOptions = []);
+      const Options: TPdfPageRenderOptions = []; PageBackground: TColorRef = $FFFFFF);
     procedure DrawToPdfBitmap(APdfBitmap: TPdfBitmap; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation = prNormal;
       const Options: TPdfPageRenderOptions = []);
     procedure DrawFormToPdfBitmap(APdfBitmap: TPdfBitmap; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation = prNormal;
@@ -1925,7 +1925,8 @@ begin
     Result := Result or FPDF_REVERSE_BYTE_ORDER;
 end;
 
-procedure TPdfPage.Draw(DC: HDC; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation; const Options: TPdfPageRenderOptions);
+procedure TPdfPage.Draw(DC: HDC; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation;
+  const Options: TPdfPageRenderOptions; PageBackground: TColorRef);
 var
   BitmapInfo: TBitmapInfo;
   Bmp, OldBmp: HBITMAP;
@@ -1964,10 +1965,7 @@ begin
     try
       PdfBmp := TPdfBitmap.Create(Width, Height, bfBGRA, BmpBits, Width * 4);
       try
-        if Transparency then
-          PdfBmp.FillRect(0, 0, Width, Height, $00FFFFFF)
-        else
-          PdfBmp.FillRect(0, 0, Width, Height, $FFFFFFFF);
+        PdfBmp.FillRect(0, 0, Width, Height, $FF000000 or PageBackground);
         DrawToPdfBitmap(PdfBmp, 0, 0, Width, Height, Rotate, Options);
         DrawFormToPdfBitmap(PdfBmp, 0, 0, Width, Height, Rotate, Options);
       finally

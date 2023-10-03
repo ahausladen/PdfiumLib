@@ -630,15 +630,22 @@ procedure TPdfControl.DrawPage(DC: HDC; Page: TPdfPage; DirectDrawPage: Boolean)
   procedure Draw(DC: HDC; X, Y: Integer; Page: TPdfPage);
   var
     PageBrush: HBRUSH;
+    ColorRef: TColorRef;
   begin
     if PageColor = clDefault then
-      PageBrush := CreateSolidBrush(ColorToRGB(Color))
+      ColorRef := ColorToRGB(Color)
     else
-      PageBrush := CreateSolidBrush(ColorToRGB(PageColor));
-    FillRect(DC, Rect(X, Y, X + FDrawWidth, Y + FDrawHeight), PageBrush);
-    DeleteObject(PageBrush);
+      ColorRef := ColorToRGB(PageColor);
 
-    Page.Draw(DC, X, Y, FDrawWidth, FDrawHeight, Rotation, FDrawOptions);
+    // Page.Draw doesn't paint the background if proPrinting is enabled.
+    if proPrinting in FDrawOptions then
+    begin
+      PageBrush := CreateSolidBrush(ColorRef);
+      FillRect(DC, Rect(X, Y, X + FDrawWidth, Y + FDrawHeight), PageBrush);
+      DeleteObject(PageBrush);
+    end;
+
+    Page.Draw(DC, X, Y, FDrawWidth, FDrawHeight, Rotation, FDrawOptions, ColorRef);
   end;
 
 var
