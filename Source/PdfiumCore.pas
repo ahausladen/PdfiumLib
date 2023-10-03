@@ -296,6 +296,7 @@ type
     function GetCount: Integer;
     function GetItem(Index: Integer): TPdfAnnotation;
     function GetFormFields: TPdfFormFieldList;
+    function GetAnnotationsLoaded: Boolean;
   protected
     procedure DestroyingItem(Item: TPdfAnnotation);
     procedure DestroyingFormField(FormField: TPdfFormField);
@@ -303,6 +304,7 @@ type
     constructor Create(APage: TPdfPage);
     destructor Destroy; override;
     procedure CloseAnnotations;
+    property AnnotationsLoaded: Boolean read GetAnnotationsLoaded;
 
     property Count: Integer read GetCount;
     property Items[Index: Integer]: TPdfAnnotation read GetItem; default;
@@ -3057,6 +3059,11 @@ begin
   if FFormFields = nil then
     FFormFields := TPdfFormFieldList.Create(Self);
   Result := FFormFields;
+end;
+
+function TPdfAnnotationList.GetAnnotationsLoaded: Boolean;
+begin
+  Result := FItems.Count > 0;
 end;
 
 { TPdfFormFieldList }
