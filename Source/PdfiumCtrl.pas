@@ -30,7 +30,7 @@ uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, Dialogs, PdfiumCore;
 
 const
-  cPdfControlDefaultDrawOptions = [];
+  cPdfControlDefaultDrawOptions = [proAnnotations];
 
 type
   TPdfControlScaleMode = (
@@ -40,7 +40,7 @@ type
     smZoom
   );
 
-  TPdfControlWebLinkClickEvent = procedure(Sender: TObject; Url: string) of object;
+  TPdfControlLinkClickEvent = procedure(Sender: TObject; Url: string) of object;
   TPdfControlRectArray = array of TRect;
   TPdfControlPdfRectArray = array of TPdfRect;
 
@@ -82,7 +82,7 @@ type
     FHighlightText: string;
     FHighlightMatchCase: Boolean;
     FHighlightMatchWholeWord: Boolean;
-    FOnWebLinkClick: TPdfControlWebLinkClickEvent;
+    FOnLinkClick: TPdfControlLinkClickEvent;
     FOnPageChange: TNotifyEvent;
     FOnPaint: TNotifyEvent;
     FFormOutputSelectedRects: TPdfRectArray;
@@ -154,7 +154,7 @@ type
     procedure WMChar(var Message: TWMChar); message WM_CHAR;
     procedure WMKillFocus(var Message: TWMKillFocus); message WM_KILLFOCUS;
 
-    procedure WebLinkClick(Url: string); virtual;
+    procedure LinkClick(const Url: string); virtual;
     procedure PageChange; virtual;
     procedure PageContentChanged(Closing: Boolean);
     procedure PageLayoutChanged;
@@ -203,8 +203,8 @@ type
     procedure HightlightText(const SearchText: string; MatchCase, MatchWholeWord: Boolean);
     procedure ClearHighlightText;
 
-    function IsWebLinkAt(X, Y: Integer): Boolean; overload;
-    function IsWebLinkAt(X, Y: Integer; var Url: string): Boolean; overload;
+    function IsLinkAt(X, Y: Integer): Boolean; overload;
+    function IsLinkAt(X, Y: Integer; var Url: string): Boolean; overload;
 
     function GotoNextPage(ScrollTransition: Boolean = False): Boolean;
     function GotoPrevPage(ScrollTransition: Boolean = False): Boolean;
@@ -240,7 +240,7 @@ type
     property PageShadowSize: Integer read FPageShadowSize write SetPageShadowSize default 4;
     property PageShadowPadding: Integer read FPageShadowPadding write SetPageShadowPadding default 44;
 
-    property OnWebLinkClick: TPdfControlWebLinkClickEvent read FOnWebLinkClick write FOnWebLinkClick;
+    property OnLinkClick: TPdfControlLinkClickEvent read FOnLinkClick write FOnLinkClick;
     property OnPageChange: TNotifyEvent read FOnPageChange write FOnPageChange;
 
     property Align;
@@ -311,7 +311,7 @@ type
 implementation
 
 uses
-  Math, Clipbrd, Character, Printers;
+  Math, Clipbrd, Character, Printers, PdfiumLib;
 
 const
   cScrollTimerId = 1;
@@ -1368,8 +1368,8 @@ begin
       StopScrollTimer;
       if AllowUserTextSelection and not FFormFieldFocused then
         SetSelStopCharIndex(X, Y);
-      if not FSelectionActive and IsWebLinkAt(X, Y, Url) then
-        WebLinkClick(Url);
+      if not FSelectionActive and IsLinkAt(X, Y, Url) then
+        LinkClick(Url);
     end;
   end;
 end;
@@ -1380,6 +1380,7 @@ var
   Style: NativeInt;
   NewCursor: TCursor;
   Page: TPdfPage;
+  Proceed: Boolean;
 begin
   inherited MouseMove(Shift, X, Y);
   NewCursor := Cursor;
@@ -1390,7 +1391,11 @@ begin
       Page := CurrentPage;
       if Page.FormEventMouseMove(Shift, PagePt.X, PagePt.Y) then
       begin
+        Proceed := False;
         case Page.HasFormFieldAtPoint(PagePt.X, PagePt.Y) of
+          fftUnknown:
+            // Could be a annotation link with a URL
+            Proceed := True;
           fftTextField:
             NewCursor := crIBeam;
           fftComboBox,
@@ -1399,7 +1404,8 @@ begin
         else
           NewCursor := crDefault;
         end;
-        Exit;
+        if not Proceed then
+          Exit;
       end;
     end;
 
@@ -1437,7 +1443,7 @@ begin
         if IsPageValid then
         begin
           PagePt := DeviceToPage(X, Y);
-          if Assigned(FOnWebLinkClick) and IsWebLinkAt(X, Y) then
+          if Assigned(FOnLinkClick) and IsLinkAt(X, Y) then
             NewCursor := crHandPoint
           else if CurrentPage.GetCharIndexAt(PagePt.X, PagePt.Y, 5, 5) >= 0 then
             NewCursor := crIBeam
@@ -1456,7 +1462,7 @@ procedure TPdfControl.CMMouseleave(var Message: TMessage);
 begin
   if (Cursor = crIBeam) or (Cursor = crHandPoint) then
   begin
-    if AllowUserTextSelection or Assigned(FOnWebLinkClick) then
+    if AllowUserTextSelection or Assigned(FOnLinkClick) then
       Cursor := crDefault;
   end;
   inherited;
@@ -1956,42 +1962,55 @@ end;
 function TPdfControl.GetWebLinkIndex(X, Y: Integer): Integer;
 var
   RectIndex: Integer;
-  Pt: TPoint;
+  Pt: TPdfPoint;
   Page: TPdfPage;
 begin
-  Pt := Point(X, Y);
   Page := CurrentPage;
   if Page <> nil then
   begin
+    Pt := DeviceToPage(X, Y);
     for Result := 0 to Length(FWebLinksRects) - 1 do
       for RectIndex := 0 to Length(FWebLinksRects[Result]) - 1 do
-        if PtInRect(InternPageToDevice(Page, FWebLinksRects[Result][RectIndex]), Pt) then
+        if FWebLinksRects[Result][RectIndex].PtIn(Pt) then
           Exit;
   end;
   Result := -1;
 end;
 
-function TPdfControl.IsWebLinkAt(X, Y: Integer): Boolean;
+function TPdfControl.IsLinkAt(X, Y: Integer): Boolean;
+var
+  PdfPt: TPdfPoint;
 begin
   Result := GetWebLinkIndex(X, Y) <> -1;
+  if not Result and IsPageValid then
+  begin
+    // Annotation Links cannot be found with the WebLink interface
+    PdfPt := DeviceToPage(X, Y);
+    Result := CurrentPage.IsLinkAtPoint(PdfPt.X, PdfPt.Y);
+  end;
 end;
 
-function TPdfControl.IsWebLinkAt(X, Y: Integer; var Url: string): Boolean;
+function TPdfControl.IsLinkAt(X, Y: Integer; var Url: string): Boolean;
 var
   Index: Integer;
+  PdfPt: TPdfPoint;
 begin
   Index := GetWebLinkIndex(X, Y);
   Result := Index <> -1;
-  if Result and IsPageValid then
+  Url := '';
+  if Result then
     Url := CurrentPage.GetWebLinkURL(Index)
-  else
-    Url := '';
+  else if IsPageValid then
+  begin
+    PdfPt := DeviceToPage(X, Y);
+    Result := CurrentPage.IsLinkAtPoint(PdfPt.X, PdfPt.Y, Url);
+  end;
 end;
 
-procedure TPdfControl.WebLinkClick(Url: string);
+procedure TPdfControl.LinkClick(const Url: string);
 begin
-  if Assigned(FOnWebLinkClick) then
-    FOnWebLinkClick(Self, Url);
+  if Assigned(FOnLinkClick) then
+    FOnLinkClick(Self, Url);
 end;
 
 procedure TPdfControl.UpdatePageDrawInfo;

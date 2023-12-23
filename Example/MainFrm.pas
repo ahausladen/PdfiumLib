@@ -36,7 +36,7 @@ type
   private
     { Private-Deklarationen }
     FCtrl: TPdfControl;
-    procedure WebLinkClick(Sender: TObject; Url: string);
+    procedure LinkClick(Sender: TObject; Url: string);
     procedure ListAttachments;
   public
     { Public-Deklarationen }
@@ -70,7 +70,7 @@ begin
   //FCtrl.PageShadowColor := clDkGray;
   FCtrl.ScaleMode := smFitWidth;
   //FCtrl.PageColor := RGB(255, 255, 200);
-  FCtrl.OnWebLinkClick := WebLinkClick;
+  FCtrl.OnLinkClick := LinkClick;
 
   edtZoom.Value := FCtrl.ZoomPercentage;
 
@@ -135,7 +135,7 @@ begin
   Caption := GetEnumName(TypeInfo(TPdfControlScaleMode), Ord(FCtrl.ScaleMode));
 end;
 
-procedure TfrmMain.WebLinkClick(Sender: TObject; Url: string);
+procedure TfrmMain.LinkClick(Sender: TObject; Url: string);
 begin
   ShowMessage(Url);
 end;

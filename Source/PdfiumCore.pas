@@ -60,7 +60,9 @@ type
     property Width: Double read GetWidth write SetWidth;
     property Height: Double read GetHeight write SetHeight;
     procedure Offset(XOffset, YOffset: Double);
+    function PtIn(const Pt: TPdfPoint): Boolean;
 
+    class function New(Left, Top, Right, Bottom: Double): TPdfRect; static;
     class function Empty: TPdfRect; static;
   public
     case Integer of
@@ -341,7 +343,7 @@ type
     FAnnotations: TPdfAnnotationList;
     FTextHandle: FPDF_TEXTPAGE;
     FSearchHandle: FPDF_SCHHANDLE;
-    FLinkHandle: FPDF_PAGELINK;
+    FPageLinkHandle: FPDF_PAGELINK;
     constructor Create(ADocument: TPdfDocument; APage: FPDF_PAGE);
     procedure UpdateMetrics;
     procedure Open;
@@ -415,6 +417,8 @@ type
     function GetTextRect(RectIndex: Integer): TPdfRect;
 
     function HasFormFieldAtPoint(X, Y: Double): TPdfFormFieldType;
+    function IsLinkAtPoint(X, Y: Double): Boolean; overload;
+    function IsLinkAtPoint(X, Y: Double; var Uri: string): Boolean; overload;
 
     function GetWebLinkCount: Integer;
     function GetWebLinkURL(LinkIndex: Integer): string;
@@ -1186,6 +1190,27 @@ end;
 procedure TPdfRect.SetWidth(const Value: Double);
 begin
   Right := Left + Value;
+end;
+
+class function TPdfRect.New(Left, Top, Right, Bottom: Double): TPdfRect;
+begin
+  Result.Left := Left;
+  Result.Top := Top;
+  Result.Right := Right;
+  Result.Bottom := Bottom;
+end;
+
+function TPdfRect.PtIn(const Pt: TPdfPoint): Boolean;
+begin
+  Result := (Pt.X >= Left) and (Pt.X < Right);
+  if Result then
+  begin
+    // Page coordinates are upside down.
+    if Top > Bottom then
+      Result := (Pt.Y >= Bottom) and (Pt.Y < Top)
+    else
+      Result := (Pt.Y >= Top) and (Pt.Y < Bottom)
+  end;
 end;
 
 { TPdfDocument }
@@ -2022,10 +2047,10 @@ begin
     FORM_OnBeforeClosePage(FPage, FDocument.FForm);
   end;
 
-  if FLinkHandle <> nil then
+  if FPageLinkHandle <> nil then
   begin
-    FPDFLink_CloseWebLinks(FLinkHandle);
-    FLinkHandle := nil;
+    FPDFLink_CloseWebLinks(FPageLinkHandle);
+    FPageLinkHandle := nil;
   end;
   if FSearchHandle <> nil then
   begin
@@ -2185,9 +2210,18 @@ begin
 end;
 
 function TPdfPage.DeviceToPage(X, Y, Width, Height: Integer; const R: TRect; Rotate: TPdfPageRotation): TPdfRect;
+var
+  T: Double;
 begin
   Result.TopLeft := DeviceToPage(X, Y, Width, Height, R.Left, R.Top, Rotate);
   Result.BottomRight := DeviceToPage(X, Y, Width, Height, R.Right, R.Bottom, Rotate);
+{  // Page coordinales are upside down, but device coordinates aren't. So we need to swap Top and Bottom.
+  if Result.Top < Result.Bottom then
+  begin
+    T := Result.Top;
+    Result.Top := Result.Bottom;
+    Result.Bottom := T;
+  end;}
 end;
 
 function TPdfPage.PageToDevice(X, Y, Width, Height: Integer; const R: TPdfRect; Rotate: TPdfPageRotation): TRect;
@@ -2196,6 +2230,7 @@ var
 begin
   Result.TopLeft := PageToDevice(X, Y, Width, Height, R.Left, R.Top, Rotate);
   Result.BottomRight := PageToDevice(X, Y, Width, Height, R.Right, R.Bottom, Rotate);
+  // Page coordinales are upside down, but device coordinates aren't.
   if Result.Top > Result.Bottom then
   begin
     T := Result.Top;
@@ -2237,9 +2272,11 @@ end;
 
 function TPdfPage.BeginWebLinks: Boolean;
 begin
-  if (FLinkHandle = nil) and BeginText then
-    FLinkHandle := FPDFLink_LoadWebLinks(FTextHandle);
-  Result := FLinkHandle <> nil;
+  // WebLinks are not stored in the PDF but are created by parsing the page's text for URLs.
+  // They are accessed differently than annotation links, which are stored in the PDF.
+  if (FPageLinkHandle = nil) and BeginText then
+    FPageLinkHandle := FPDFLink_LoadWebLinks(FTextHandle);
+  Result := FPageLinkHandle <> nil;
 end;
 
 function TPdfPage.BeginFind(const SearchString: string; MatchCase, MatchWholeWord,
@@ -2402,11 +2439,52 @@ begin
     Result := TPdfRect.Empty;
 end;
 
+function TPdfPage.IsLinkAtPoint(X, Y: Double): Boolean;
+var
+  Link: FPDF_LINK;
+begin
+  Link := FPDFLink_GetLinkAtPoint(Handle, X, Y);
+  Result := (Link <> nil) and (FPDFLink_GetAction(Link) <> nil);
+end;
+
+function TPdfPage.IsLinkAtPoint(X, Y: Double; var Uri: string): Boolean;
+var
+  Link: FPDF_LINK;
+  Action: FPDF_ACTION;
+  Buf: UTF8String;
+  ByteSize: Integer;
+begin
+  Result := False;
+  Action := nil;
+  Link := FPDFLink_GetLinkAtPoint(Handle, X, Y);
+  if Link <> nil then
+    Action := FPDFLink_GetAction(Link);
+  if Action <> nil then
+    Result := True;
+
+  Uri := '';
+  if Result then
+  begin
+    // Get required ByteSize
+    ByteSize := FPDFAction_GetURIPath(FDocument.Handle, Action, nil, 0);
+    if ByteSize > 0 then
+    begin
+      SetLength(Buf, ByteSize); // we could optimize this with "SetLength(Buf, ByteSize - 1)" and use already existing #0 terminator
+      ByteSize := FPDFAction_GetURIPath(FDocument.Handle, Action, PAnsiChar(Buf), Length(Buf));
+    end;
+    if ByteSize > 0 then
+    begin
+      SetLength(Buf, ByteSize - 1); // ByteSize includes #0
+      Uri := UTF8ToString(Buf);
+    end;
+  end;
+end;
+
 function TPdfPage.GetWebLinkCount: Integer;
 begin
   if BeginWebLinks then
   begin
-    Result := FPDFLink_CountWebLinks(FLinkHandle);
+    Result := FPDFLink_CountWebLinks(FPageLinkHandle);
     if Result < 0 then
       Result := 0;
   end
@@ -2421,11 +2499,11 @@ begin
   Result := '';
   if BeginWebLinks then
   begin
-    Len := FPDFLink_GetURL(FLinkHandle, LinkIndex, nil, 0) - 1; // including #0 terminator
+    Len := FPDFLink_GetURL(FPageLinkHandle, LinkIndex, nil, 0) - 1; // including #0 terminator
     if Len > 0 then
     begin
       SetLength(Result, Len);
-      FPDFLink_GetURL(FLinkHandle, LinkIndex, PWideChar(Result), Len + 1); // including #0 terminator
+      FPDFLink_GetURL(FPageLinkHandle, LinkIndex, PWideChar(Result), Len + 1); // including #0 terminator
     end;
   end;
 end;
@@ -2433,7 +2511,7 @@ end;
 function TPdfPage.GetWebLinkRectCount(LinkIndex: Integer): Integer;
 begin
   if BeginWebLinks then
-    Result := FPDFLink_CountRects(FLinkHandle, LinkIndex)
+    Result := FPDFLink_CountRects(FPageLinkHandle, LinkIndex)
   else
     Result := 0;
 end;
@@ -2441,7 +2519,7 @@ end;
 function TPdfPage.GetWebLinkRect(LinkIndex, RectIndex: Integer): TPdfRect;
 begin
   if BeginWebLinks then
-    FPDFLink_GetRect(FLinkHandle, LinkIndex, RectIndex, Result.Left, Result.Top, Result.Right, Result.Bottom)
+    FPDFLink_GetRect(FPageLinkHandle, LinkIndex, RectIndex, Result.Left, Result.Top, Result.Right, Result.Bottom)
   else
     Result := TPdfRect.Empty;
 end;
