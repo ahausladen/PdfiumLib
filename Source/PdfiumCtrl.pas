@@ -40,7 +40,8 @@ type
     smZoom
   );
 
-  TPdfControlLinkClickEvent = procedure(Sender: TObject; Url: string) of object;
+  TPdfControlWebLinkClickEvent = procedure(Sender: TObject; Url: string) of object;
+  TPdfControlAnnotationLinkClickEvent = procedure(Sender: TObject; Link: TPdfAnnotation) of object;
   TPdfControlRectArray = array of TRect;
   TPdfControlPdfRectArray = array of TPdfRect;
 
@@ -72,7 +73,7 @@ type
     FSelStopCharIndex: Integer;
     FMouseDownPt: TPoint;
     FCheckForTrippleClick: Boolean;
-    FWebLinksRects: array of TPdfControlPdfRectArray;
+    FWebLinkInfo: TPdfPageWebLinkInfo;
     FDrawOptions: TPdfPageRenderOptions;
     FScaleMode: TPdfControlScaleMode;
     FZoomPercentage: Integer;
@@ -82,7 +83,8 @@ type
     FHighlightText: string;
     FHighlightMatchCase: Boolean;
     FHighlightMatchWholeWord: Boolean;
-    FOnLinkClick: TPdfControlLinkClickEvent;
+    FOnWebLinkClick: TPdfControlWebLinkClickEvent;
+    FOnAnnotationLinkClick: TPdfControlAnnotationLinkClickEvent;
     FOnPageChange: TNotifyEvent;
     FOnPaint: TNotifyEvent;
     FFormOutputSelectedRects: TPdfRectArray;
@@ -154,13 +156,14 @@ type
     procedure WMChar(var Message: TWMChar); message WM_CHAR;
     procedure WMKillFocus(var Message: TWMKillFocus); message WM_KILLFOCUS;
 
-    procedure LinkClick(const Url: string); virtual;
+    function IsClickableLinkAt(X, Y: Integer): Boolean;
+    procedure WebLinkClick(const Url: string); virtual;
+    procedure AnnotationLinkClick(LinkAnnotation: TPdfAnnotation); virtual;
     procedure PageChange; virtual;
     procedure PageContentChanged(Closing: Boolean);
     procedure PageLayoutChanged;
     function IsPageValid: Boolean;
     function GetSelectionRects: TPdfControlRectArray;
-    function GetWebLinkIndex(X, Y: Integer): Integer;
     procedure DestroyWnd; override;
 
     property DrawX: Integer read FDrawX;
@@ -205,8 +208,11 @@ type
     procedure HightlightText(const SearchText: string; MatchCase, MatchWholeWord: Boolean);
     procedure ClearHighlightText;
 
-    function IsLinkAt(X, Y: Integer): Boolean; overload;
-    function IsLinkAt(X, Y: Integer; var Url: string): Boolean; overload;
+    function IsWebLinkAt(X, Y: Integer): Boolean; overload;
+    function IsWebLinkAt(X, Y: Integer; var Url: string): Boolean; overload;
+    function IsUriAnnotationLinkAt(X, Y: Integer): Boolean;
+    function IsAnnotationLinkAt(X, Y: Integer): Boolean;
+    function GetAnnotationLinkAt(X, Y: Integer): TPdfAnnotation;
 
     function GotoNextPage(ScrollTransition: Boolean = False): Boolean;
     function GotoPrevPage(ScrollTransition: Boolean = False): Boolean;
@@ -242,7 +248,12 @@ type
     property PageShadowSize: Integer read FPageShadowSize write SetPageShadowSize default 4;
     property PageShadowPadding: Integer read FPageShadowPadding write SetPageShadowPadding default 44;
 
-    property OnLinkClick: TPdfControlLinkClickEvent read FOnLinkClick write FOnLinkClick;
+    { OnWebLinkClick is only called for WebLinks (URLs parsed from the document text). If OnAnnotationLinkClick is
+      not assigned, OnWebLinkClick is also called URI link annontations for backward compatibility reasons. }
+    property OnWebLinkClick: TPdfControlWebLinkClickEvent read FOnWebLinkClick write FOnWebLinkClick;
+    { OnAnnotationLinkClick is called for all link annotation but not for WebLinks. }
+    property OnAnnotationLinkClick: TPdfControlAnnotationLinkClickEvent read FOnAnnotationLinkClick write FOnAnnotationLinkClick;
+    { OnPageChange is called if the current page is switched. }
     property OnPageChange: TNotifyEvent read FOnPageChange write FOnPageChange;
 
     property Align;
@@ -1342,6 +1353,7 @@ var
   PagePt: TPdfPoint;
   Url: string;
   Page: TPdfPage;
+  LinkAnnotation: TPdfAnnotation;
 begin
   inherited MouseUp(Button, Shift, X, Y);
 
@@ -1370,8 +1382,23 @@ begin
       StopScrollTimer;
       if AllowUserTextSelection and not FFormFieldFocused then
         SetSelStopCharIndex(X, Y);
-      if not FSelectionActive and IsLinkAt(X, Y, Url) then
-        LinkClick(Url);
+      if not FSelectionActive then
+      begin
+        if Assigned(FOnAnnotationLinkClick) or Assigned(FOnWebLinkClick) then
+        begin
+          LinkAnnotation := GetAnnotationLinkAt(X, Y);
+          if LinkAnnotation <> nil then
+          begin
+            if Assigned(FonAnnotationLinkClick) then
+              AnnotationLinkClick(LinkAnnotation)
+            else if LinkAnnotation.LinkType = altURI then
+              WebLinkClick(LinkAnnotation.LinkUri);
+          end
+          // If we have a Link Annotation and a WebLink, then the link annotation is prefered
+          else if Assigned(FOnWebLinkClick) and IsWebLinkAt(X, Y, Url) then
+            WebLinkClick(Url);
+        end;
+      end;
     end;
   end;
 end;
@@ -1445,7 +1472,7 @@ begin
         if IsPageValid then
         begin
           PagePt := DeviceToPage(X, Y);
-          if Assigned(FOnLinkClick) and IsLinkAt(X, Y) then
+          if IsClickableLinkAt(X, Y) then
             NewCursor := crHandPoint
           else if CurrentPage.GetCharIndexAt(PagePt.X, PagePt.Y, 5, 5) >= 0 then
             NewCursor := crIBeam
@@ -1464,7 +1491,7 @@ procedure TPdfControl.CMMouseleave(var Message: TMessage);
 begin
   if (Cursor = crIBeam) or (Cursor = crHandPoint) then
   begin
-    if AllowUserTextSelection or Assigned(FOnLinkClick) then
+    if AllowUserTextSelection or Assigned(FOnWebLinkClick) or Assigned(FOnAnnotationLinkClick) then
       Cursor := crDefault;
   end;
   inherited;
@@ -1940,79 +1967,96 @@ end;
 
 procedure TPdfControl.GetPageWebLinks;
 var
-  LinkIndex, LinkCount: Integer;
-  RectIndex, RectCount: Integer;
   Page: TPdfPage;
 begin
+  FreeAndNil(FWebLinkInfo);
   Page := CurrentPage;
   if Page <> nil then
+    FWebLinkInfo := TPdfPageWebLinkInfo.Create(Page);
+end;
+
+function TPdfControl.IsClickableLinkAt(X, Y: Integer): Boolean;
+begin
+  if Assigned(FOnWebLinkClick) and IsWebLinkAt(X, Y) then
+    Result := True
+  else if Assigned(FOnAnnotationLinkClick) and IsAnnotationLinkAt(X, Y) then
+    Result := True
+  // Fallback in case OnAnnotationLinkClick is not assigend but OnWebLinkClick is, then we use
+  // WebLinkClick for the URI-Action Links.
+  else if not Assigned(FOnAnnotationLinkClick) and Assigned(FOnWebLinkClick) and IsUriAnnotationLinkAt(X, Y) then
+    Result := True
+  else
+    Result := False;
+end;
+
+function TPdfControl.IsWebLinkAt(X, Y: Integer): Boolean;
+var
+  PdfPt: TPdfPoint;
+begin
+  if (FWebLinkInfo <> nil) and IsPageValid then
   begin
-    LinkCount := Page.GetWebLinkCount;
-    SetLength(FWebLinksRects, LinkCount);
-    for LinkIndex := 0 to LinkCount - 1 do
-    begin
-      RectCount := Page.GetWebLinkRectCount(LinkIndex);
-      SetLength(FWebLinksRects[LinkIndex], RectCount);
-      for RectIndex := 0 to RectCount - 1 do
-        FWebLinksRects[LinkIndex][RectIndex] := Page.GetWebLinkRect(LinkIndex, RectIndex);
-    end;
+    PdfPt := DeviceToPage(X, Y);
+    Result := FWebLinkInfo.IsWebLinkAt(PdfPt.X, PdfPt.Y);
   end
   else
-    FWebLinksRects := nil;
+    Result := False;
 end;
 
-function TPdfControl.GetWebLinkIndex(X, Y: Integer): Integer;
-var
-  RectIndex: Integer;
-  Pt: TPdfPoint;
-  Page: TPdfPage;
-begin
-  Page := CurrentPage;
-  if Page <> nil then
-  begin
-    Pt := DeviceToPage(X, Y);
-    for Result := 0 to Length(FWebLinksRects) - 1 do
-      for RectIndex := 0 to Length(FWebLinksRects[Result]) - 1 do
-        if FWebLinksRects[Result][RectIndex].PtIn(Pt) then
-          Exit;
-  end;
-  Result := -1;
-end;
-
-function TPdfControl.IsLinkAt(X, Y: Integer): Boolean;
+function TPdfControl.IsWebLinkAt(X, Y: Integer; var Url: string): Boolean;
 var
   PdfPt: TPdfPoint;
 begin
-  Result := GetWebLinkIndex(X, Y) <> -1;
-  if not Result and IsPageValid then
-  begin
-    // Annotation Links cannot be found with the WebLink interface
-    PdfPt := DeviceToPage(X, Y);
-    Result := CurrentPage.IsLinkAtPoint(PdfPt.X, PdfPt.Y);
-  end;
-end;
-
-function TPdfControl.IsLinkAt(X, Y: Integer; var Url: string): Boolean;
-var
-  Index: Integer;
-  PdfPt: TPdfPoint;
-begin
-  Index := GetWebLinkIndex(X, Y);
-  Result := Index <> -1;
   Url := '';
-  if Result then
-    Url := CurrentPage.GetWebLinkURL(Index)
-  else if IsPageValid then
+  if (FWebLinkInfo <> nil) and IsPageValid then
   begin
     PdfPt := DeviceToPage(X, Y);
-    Result := CurrentPage.IsLinkAtPoint(PdfPt.X, PdfPt.Y, Url);
-  end;
+    Result := FWebLinkInfo.IsWebLinkAt(PdfPt.X, PdfPt.Y, Url);
+  end
+  else
+    Result := False;
 end;
 
-procedure TPdfControl.LinkClick(const Url: string);
+function TPdfControl.IsUriAnnotationLinkAt(X, Y: Integer): Boolean;
+var
+  PdfPt: TPdfPoint;
 begin
-  if Assigned(FOnLinkClick) then
-    FOnLinkClick(Self, Url);
+  if IsPageValid then
+  begin
+    PdfPt := DeviceToPage(X, Y);
+    Result := CurrentPage.IsUriLinkAtPoint(PdfPt.X, PdfPt.Y);
+  end
+  else
+    Result := False;
+end;
+
+function TPdfControl.IsAnnotationLinkAt(X, Y: Integer): Boolean;
+begin
+  Result := GetAnnotationLinkAt(X, Y) <> nil;
+end;
+
+function TPdfControl.GetAnnotationLinkAt(X, Y: Integer): TPdfAnnotation;
+var
+  PdfPt: TPdfPoint;
+begin
+  if IsPageValid then
+  begin
+    PdfPt := DeviceToPage(X, Y);
+    Result := CurrentPage.GetLinkAtPoint(PdfPt.X, PdfPt.Y);
+  end
+  else
+    Result := nil;
+end;
+
+procedure TPdfControl.WebLinkClick(const Url: string);
+begin
+  if Assigned(FOnWebLinkClick) then
+    FOnWebLinkClick(Self, Url);
+end;
+
+procedure TPdfControl.AnnotationLinkClick(LinkAnnotation: TPdfAnnotation);
+begin
+  if Assigned(FOnAnnotationLinkClick) then
+    FOnAnnotationLinkClick(Self, LinkAnnotation);
 end;
 
 procedure TPdfControl.UpdatePageDrawInfo;

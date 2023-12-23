@@ -10,82 +10,10 @@ object frmMain: TfrmMain
   Font.Height = -11
   Font.Name = 'Tahoma'
   Font.Style = []
+  OldCreateOrder = True
   OnCreate = FormCreate
+  PixelsPerInch = 96
   TextHeight = 13
-  object btnPrev: TButton
-    Left = 0
-    Top = 0
-    Width = 75
-    Height = 25
-    Caption = '<'
-    TabOrder = 0
-    OnClick = btnPrevClick
-  end
-  object btnNext: TButton
-    Left = 72
-    Top = 0
-    Width = 75
-    Height = 25
-    Caption = '>'
-    TabOrder = 1
-    OnClick = btnNextClick
-  end
-  object btnCopy: TButton
-    Left = 153
-    Top = 0
-    Width = 56
-    Height = 25
-    Caption = 'Highlight'
-    TabOrder = 2
-    OnClick = btnCopyClick
-  end
-  object btnScale: TButton
-    Left = 209
-    Top = 0
-    Width = 56
-    Height = 25
-    Caption = 'Scale'
-    TabOrder = 3
-    OnClick = btnScaleClick
-  end
-  object chkLCDOptimize: TCheckBox
-    Left = 378
-    Top = 4
-    Width = 79
-    Height = 17
-    Caption = 'LCDOptimize'
-    TabOrder = 4
-    OnClick = chkLCDOptimizeClick
-  end
-  object chkSmoothScroll: TCheckBox
-    Left = 458
-    Top = 4
-    Width = 87
-    Height = 17
-    Caption = 'SmoothScroll'
-    TabOrder = 5
-    OnClick = chkSmoothScrollClick
-  end
-  object edtZoom: TSpinEdit
-    Left = 544
-    Top = 2
-    Width = 49
-    Height = 22
-    MaxValue = 10000
-    MinValue = 1
-    TabOrder = 6
-    Value = 100
-    OnChange = edtZoomChange
-  end
-  object btnPrint: TButton
-    Left = 265
-    Top = 0
-    Width = 50
-    Height = 25
-    Caption = 'Print'
-    TabOrder = 7
-    OnClick = btnPrintClick
-  end
   object ListViewAttachments: TListView
     Left = 0
     Top = 600
@@ -93,28 +21,113 @@ object frmMain: TfrmMain
     Height = 47
     Align = alBottom
     Columns = <>
-    TabOrder = 8
+    TabOrder = 0
     ViewStyle = vsList
     Visible = False
     OnDblClick = ListViewAttachmentsDblClick
   end
-  object chkChangePageOnMouseScrolling: TCheckBox
-    Left = 599
-    Top = 4
-    Width = 162
-    Height = 17
-    Caption = 'ChangePageOnMouseScrolling'
-    TabOrder = 9
-    OnClick = chkChangePageOnMouseScrollingClick
-  end
-  object btnAddAnnotation: TButton
-    Left = 315
+  object pnlButtons: TPanel
+    Left = 0
     Top = 0
-    Width = 50
+    Width = 780
     Height = 25
-    Caption = 'Annot'
-    TabOrder = 10
-    OnClick = btnAddAnnotationClick
+    Align = alTop
+    BevelOuter = bvNone
+    TabOrder = 1
+    ExplicitLeft = 8
+    ExplicitTop = 144
+    object btnAddAnnotation: TButton
+      Left = 318
+      Top = 0
+      Width = 50
+      Height = 25
+      Caption = 'Annot'
+      TabOrder = 5
+      OnClick = btnAddAnnotationClick
+    end
+    object btnHighlight: TButton
+      Left = 156
+      Top = 0
+      Width = 56
+      Height = 25
+      Caption = 'Highlight'
+      TabOrder = 2
+      OnClick = btnHighlightClick
+    end
+    object btnNext: TButton
+      Left = 75
+      Top = 0
+      Width = 75
+      Height = 25
+      Caption = '>'
+      TabOrder = 0
+      OnClick = btnNextClick
+    end
+    object btnPrev: TButton
+      Left = 0
+      Top = 0
+      Width = 75
+      Height = 25
+      Caption = '<'
+      TabOrder = 1
+      OnClick = btnPrevClick
+    end
+    object btnPrint: TButton
+      Left = 268
+      Top = 0
+      Width = 50
+      Height = 25
+      Caption = 'Print'
+      TabOrder = 4
+      OnClick = btnPrintClick
+    end
+    object btnScale: TButton
+      Left = 212
+      Top = 0
+      Width = 56
+      Height = 25
+      Caption = 'Scale'
+      TabOrder = 3
+      OnClick = btnScaleClick
+    end
+    object chkChangePageOnMouseScrolling: TCheckBox
+      Left = 599
+      Top = 4
+      Width = 162
+      Height = 17
+      Caption = 'ChangePageOnMouseScrolling'
+      TabOrder = 9
+      OnClick = chkChangePageOnMouseScrollingClick
+    end
+    object chkLCDOptimize: TCheckBox
+      Left = 378
+      Top = 4
+      Width = 79
+      Height = 17
+      Caption = 'LCDOptimize'
+      TabOrder = 6
+      OnClick = chkLCDOptimizeClick
+    end
+    object chkSmoothScroll: TCheckBox
+      Left = 458
+      Top = 4
+      Width = 87
+      Height = 17
+      Caption = 'SmoothScroll'
+      TabOrder = 7
+      OnClick = chkSmoothScrollClick
+    end
+    object edtZoom: TSpinEdit
+      Left = 544
+      Top = 2
+      Width = 49
+      Height = 22
+      MaxValue = 10000
+      MinValue = 1
+      TabOrder = 8
+      Value = 100
+      OnChange = edtZoomChange
+    end
   end
   object PrintDialog1: TPrintDialog
     MinPage = 1

@@ -11,7 +11,7 @@ type
   TfrmMain = class(TForm)
     btnPrev: TButton;
     btnNext: TButton;
-    btnCopy: TButton;
+    btnHighlight: TButton;
     btnScale: TButton;
     chkLCDOptimize: TCheckBox;
     chkSmoothScroll: TCheckBox;
@@ -23,10 +23,11 @@ type
     SaveDialog1: TSaveDialog;
     chkChangePageOnMouseScrolling: TCheckBox;
     btnAddAnnotation: TButton;
+    pnlButtons: TPanel;
     procedure FormCreate(Sender: TObject);
     procedure btnPrevClick(Sender: TObject);
     procedure btnNextClick(Sender: TObject);
-    procedure btnCopyClick(Sender: TObject);
+    procedure btnHighlightClick(Sender: TObject);
     procedure btnScaleClick(Sender: TObject);
     procedure chkLCDOptimizeClick(Sender: TObject);
     procedure chkSmoothScrollClick(Sender: TObject);
@@ -38,7 +39,8 @@ type
   private
     { Private-Deklarationen }
     FCtrl: TPdfControl;
-    procedure LinkClick(Sender: TObject; Url: string);
+    procedure WebLinkClick(Sender: TObject; Url: string);
+    procedure AnnotationLinkClick(Sender: TObject; LinkAnnotation: TPdfAnnotation);
     procedure ListAttachments;
   public
     { Public-Deklarationen }
@@ -72,7 +74,8 @@ begin
   //FCtrl.PageShadowColor := clDkGray;
   FCtrl.ScaleMode := smFitWidth;
   //FCtrl.PageColor := RGB(255, 255, 200);
-  FCtrl.OnLinkClick := LinkClick;
+  FCtrl.OnWebLinkClick := WebLinkClick;
+  FCtrl.OnAnnotationLinkClick := AnnotationLinkClick;
 
   edtZoom.Value := FCtrl.ZoomPercentage;
 
@@ -123,7 +126,7 @@ begin
   FCtrl.GotoNextPage;
 end;
 
-procedure TfrmMain.btnCopyClick(Sender: TObject);
+procedure TfrmMain.btnHighlightClick(Sender: TObject);
 begin
   FCtrl.HightlightText('Delphi 2010', False, False);
 end;
@@ -137,9 +140,49 @@ begin
   Caption := GetEnumName(TypeInfo(TPdfControlScaleMode), Ord(FCtrl.ScaleMode));
 end;
 
-procedure TfrmMain.LinkClick(Sender: TObject; Url: string);
+procedure TfrmMain.WebLinkClick(Sender: TObject; Url: string);
 begin
   ShowMessage(Url);
+end;
+
+procedure TfrmMain.AnnotationLinkClick(Sender: TObject; LinkAnnotation: TPdfAnnotation);
+var
+  Dest: TPdfLinkGotoDestination;
+  X, Y{, Zoom}: Double;
+  Pt: TPoint;
+begin
+  case LinkAnnotation.LinkType of
+    altGoto:
+      begin
+        Dest := LinkAnnotation.GetLinkGotoDestination();
+        FCtrl.PageIndex := Dest.PageIndex;
+        X := 0;
+        Y := 0;
+        //Zoom := 0;
+        if Dest.XValid then
+          X := Dest.X;
+        if Dest.YValid then
+          Y := Dest.Y;
+        {if Dest.ZoomValid then
+          Zoom := Dest.Zoom;
+        FCtrl.ZoomPercentage := Int(Zoom);}
+
+        Pt := FCtrl.PageToDevice(X, Y);
+        FCtrl.ScrollContentTo(Pt.X, Pt.Y);
+      end;
+
+    altRemoteGoto:
+      ShowMessage('Remote Goto: ' + LinkAnnotation.LinkFileName);
+
+    altURI:
+      ShowMessage('URL: ' + LinkAnnotation.LinkUri);
+
+    altLaunch:
+      ShowMessage('Launch: ' + LinkAnnotation.LinkFileName);
+
+    altEmbeddedGoto:
+      ShowMessage('EmbeddedGoto: ' + LinkAnnotation.LinkUri);
+  end;
 end;
 
 procedure TfrmMain.chkChangePageOnMouseScrollingClick(Sender: TObject);
