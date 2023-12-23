@@ -33,16 +33,16 @@ object frmMain: TfrmMain
   object btnCopy: TButton
     Left = 153
     Top = 0
-    Width = 75
+    Width = 56
     Height = 25
     Caption = 'Highlight'
     TabOrder = 2
     OnClick = btnCopyClick
   end
   object btnScale: TButton
-    Left = 225
+    Left = 209
     Top = 0
-    Width = 75
+    Width = 56
     Height = 25
     Caption = 'Scale'
     TabOrder = 3
@@ -78,9 +78,9 @@ object frmMain: TfrmMain
     OnChange = edtZoomChange
   end
   object btnPrint: TButton
-    Left = 297
+    Left = 265
     Top = 0
-    Width = 75
+    Width = 50
     Height = 25
     Caption = 'Print'
     TabOrder = 7
@@ -106,6 +106,15 @@ object frmMain: TfrmMain
     Caption = 'ChangePageOnMouseScrolling'
     TabOrder = 9
     OnClick = chkChangePageOnMouseScrollingClick
+  end
+  object btnAddAnnotation: TButton
+    Left = 315
+    Top = 0
+    Width = 50
+    Height = 25
+    Caption = 'Annot'
+    TabOrder = 10
+    OnClick = btnAddAnnotationClick
   end
   object PrintDialog1: TPrintDialog
     MinPage = 1

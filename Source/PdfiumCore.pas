@@ -323,6 +323,11 @@ type
     constructor Create(APage: TPdfPage);
     destructor Destroy; override;
     procedure CloseAnnotations;
+    { NewTextAnnotation creates a new text annotation on the page. After adding one or more
+      annotations you must call Page.ApplyChanges to show them and make the persist before
+      saving the file. R is in page coordinates. }
+    function NewTextAnnotation(const Text: string; const R: TPdfRect): Boolean; {experimental;}
+
     property AnnotationsLoaded: Boolean read GetAnnotationsLoaded;
 
     property Count: Integer read GetCount;
@@ -2210,18 +2215,9 @@ begin
 end;
 
 function TPdfPage.DeviceToPage(X, Y, Width, Height: Integer; const R: TRect; Rotate: TPdfPageRotation): TPdfRect;
-var
-  T: Double;
 begin
   Result.TopLeft := DeviceToPage(X, Y, Width, Height, R.Left, R.Top, Rotate);
   Result.BottomRight := DeviceToPage(X, Y, Width, Height, R.Right, R.Bottom, Rotate);
-{  // Page coordinales are upside down, but device coordinates aren't. So we need to swap Top and Bottom.
-  if Result.Top < Result.Bottom then
-  begin
-    T := Result.Top;
-    Result.Top := Result.Bottom;
-    Result.Bottom := T;
-  end;}
 end;
 
 function TPdfPage.PageToDevice(X, Y, Width, Height: Integer; const R: TPdfRect; Rotate: TPdfPageRotation): TRect;
@@ -2249,7 +2245,20 @@ end;
 procedure TPdfPage.ApplyChanges;
 begin
   if FPage <> nil then
+  begin
     FPDFPage_GenerateContent(FPage);
+
+    // Newly added text annotations will not show the text popup unless the page is notified.
+    FAnnotations.CloseAnnotations;
+    if IsValidForm then
+    begin
+      FORM_DoPageAAction(FPage, FDocument.FForm, FPDFPAGE_AACTION_CLOSE);
+      FORM_OnBeforeClosePage(FPage, FDocument.FForm);
+
+      FORM_OnAfterLoadPage(FPage, FDocument.FForm);
+      FORM_DoPageAAction(FPage, FDocument.FForm, FPDFPAGE_AACTION_OPEN);
+    end;
+  end;
 end;
 
 procedure TPdfPage.Flatten(AFlatPrint: Boolean);
@@ -3293,6 +3302,36 @@ end;
 function TPdfAnnotationList.GetAnnotationsLoaded: Boolean;
 begin
   Result := FItems.Count > 0;
+end;
+
+function TPdfAnnotationList.NewTextAnnotation(const Text: string; const R: TPdfRect): Boolean;
+var
+  Annot: FPDF_ANNOTATION;
+  SingleR: FS_RECTF;
+begin
+  FPage.FDocument.CheckActive;
+  SingleR.left := R.Left;
+  SingleR.right := R.Right;
+  // Page coordinates are upside down
+  if R.Top < R.Bottom then
+  begin
+    SingleR.top := R.Bottom;
+    SingleR.bottom := R.Top;
+  end
+  else
+  begin
+    SingleR.top := R.Top;
+    SingleR.bottom := R.Bottom;
+  end;
+
+
+  Annot := FPDFPage_CreateAnnot(FPage.Handle, FPDF_ANNOT_TEXT);
+  Result := Annot <> nil;
+  if Result then
+  begin
+    FPDFAnnot_SetRect(Annot, @SingleR);
+    FPDFAnnot_SetStringValue(Annot, 'Contents', PWideChar(Text));
+  end;
 end;
 
 { TPdfFormFieldList }

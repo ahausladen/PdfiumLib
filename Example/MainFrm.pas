@@ -22,6 +22,7 @@ type
     ListViewAttachments: TListView;
     SaveDialog1: TSaveDialog;
     chkChangePageOnMouseScrolling: TCheckBox;
+    btnAddAnnotation: TButton;
     procedure FormCreate(Sender: TObject);
     procedure btnPrevClick(Sender: TObject);
     procedure btnNextClick(Sender: TObject);
@@ -33,6 +34,7 @@ type
     procedure btnPrintClick(Sender: TObject);
     procedure ListViewAttachmentsDblClick(Sender: TObject);
     procedure chkChangePageOnMouseScrollingClick(Sender: TObject);
+    procedure btnAddAnnotationClick(Sender: TObject);
   private
     { Private-Deklarationen }
     FCtrl: TPdfControl;
@@ -199,6 +201,17 @@ begin
     if SaveDialog1.Execute(Handle) then
       Att.SaveToFile(SaveDialog1.FileName);
   end;
+end;
+
+procedure TfrmMain.btnAddAnnotationClick(Sender: TObject);
+begin
+  // Add a new annotation and make it persietent so that is can be shown and saved to a file.
+  FCtrl.CurrentPage.Annotations.NewTextAnnotation('My Annotation Text', TPdfRect.New(200, 750, 250, 700));
+  FCtrl.CurrentPage.ApplyChanges;
+//  FCtrl.Document.SaveToFile(ExtractFileDir(ParamStr(0)) + PathDelim + 'Test_annot.pdf');
+
+  // Invalid the buffered image of the page
+  FCtrl.InvalidatePage;
 end;
 
 end.

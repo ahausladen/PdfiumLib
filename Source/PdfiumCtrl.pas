@@ -159,7 +159,6 @@ type
     procedure PageContentChanged(Closing: Boolean);
     procedure PageLayoutChanged;
     function IsPageValid: Boolean;
-    procedure InvalidatePage;
     function GetSelectionRects: TPdfControlRectArray;
     function GetWebLinkIndex(X, Y: Integer): Integer;
     procedure DestroyWnd; override;
@@ -171,6 +170,9 @@ type
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
+
+    { InvalidatePage forces the page to be rendered again and invalidates the control. }
+    procedure InvalidatePage;
 
     procedure LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord; AParam: Pointer; const APassword: UTF8String = '');
     procedure LoadFromActiveStream(Stream: TStream; const APassword: UTF8String = ''); // Stream must not be released until the document is closed
