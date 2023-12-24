@@ -101,6 +101,7 @@ type
   );
 
   TPdfDocumentLoadOption = (
+    dloDefault,  // load the file by using PDFium's file load mechanism (file stays open)
     dloMemory,   // load the whole file into memory
     dloMMF,      // load the file by using a memory mapped file (file stays open)
     dloOnDemand  // load the file using the custom load function (file stays open)
@@ -633,6 +634,8 @@ type
     {$IFDEF MSWINDOWS}
     FFileHandle: THandle;
     FFileMapping: THandle;
+    {$ELSE}
+    FFileStream: TFileStream;
     {$ENDIF MSWINDOWS}
     FBuffer: PByte;
     FBytes: TBytes;
@@ -652,9 +655,10 @@ type
     FOnFormGetCurrentPage: TPdfFormGetCurrentPageEvent;
     FOnFormFieldFocus: TPdfFormFieldFocusEvent;
 
-    procedure InternLoadFromMem(Buffer: PByte; Size: NativeInt; const APassword: UTF8String);
-    procedure InternLoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord;
-      AParam: Pointer; const APassword: UTF8String);
+    procedure InternLoadFromFile(const FileName: string; const Password: UTF8String);
+    procedure InternLoadFromMem(Buffer: PByte; Size: NativeInt; const Password: UTF8String);
+    procedure InternLoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; Size: LongWord;
+      Param: Pointer; const Password: UTF8String);
     function InternImportPages(Source: TPdfDocument; PageIndices: PInteger; PageIndicesCount: Integer;
       const Range: AnsiString; Index: Integer; ImportByRange: Boolean): Boolean;
     function GetPage(Index: Integer): TPdfPage;
@@ -679,13 +683,13 @@ type
     constructor Create;
     destructor Destroy; override;
 
-    procedure LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord; AParam: Pointer; const APassword: UTF8String = '');
-    procedure LoadFromActiveStream(Stream: TStream; const APassword: UTF8String = ''); // Stream must not be released until the document is closed
-    procedure LoadFromActiveBuffer(Buffer: Pointer; Size: NativeInt; const APassword: UTF8String = ''); // Buffer must not be released until the document is closed
-    procedure LoadFromBytes(const ABytes: TBytes; const APassword: UTF8String = ''); overload;
-    procedure LoadFromBytes(const ABytes: TBytes; AIndex: NativeInt; ACount: NativeInt; const APassword: UTF8String = ''); overload;
-    procedure LoadFromStream(AStream: TStream; const APassword: UTF8String = '');
-    procedure LoadFromFile(const AFileName: string; const APassword: UTF8String = ''; ALoadOption: TPdfDocumentLoadOption = dloMMF);
+    procedure LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; Size: LongWord; Param: Pointer; const Password: UTF8String = '');
+    procedure LoadFromActiveStream(Stream: TStream; const Password: UTF8String = ''); // Stream must not be released until the document is closed
+    procedure LoadFromActiveBuffer(Buffer: Pointer; Size: NativeInt; const Password: UTF8String = ''); // Buffer must not be released until the document is closed
+    procedure LoadFromBytes(const Bytes: TBytes; const Password: UTF8String = ''); overload;
+    procedure LoadFromBytes(const Bytes: TBytes; Index: NativeInt; Count: NativeInt; const Password: UTF8String = ''); overload;
+    procedure LoadFromStream(Stream: TStream; const Password: UTF8String = '');
+    procedure LoadFromFile(const FileName: string; const Password: UTF8String = ''; LoadOption: TPdfDocumentLoadOption = dloDefault);
     procedure Close;
 
     procedure SaveToFile(const AFileName: string; Option: TPdfDocumentSaveOption = dsoRemoveSecurity; FileVersion: Integer = -1);
@@ -1408,6 +1412,8 @@ begin
       CloseHandle(FFileHandle);
       FFileHandle := INVALID_HANDLE_VALUE;
     end;
+    {$ELSE}
+    FreeAndNil(FFileStream);
     {$ENDIF MSWINDOWS}
 
     FFileName := '';
@@ -1418,7 +1424,7 @@ begin
 end;
 
 {$IFDEF MSWINDOWS}
-function ReadFromActiveFile(Param: Pointer; Position: LongWord; Buffer: PByte; Size: LongWord): Boolean;
+function ReadFromActiveFileHandle(Param: Pointer; Position: LongWord; Buffer: PByte; Size: LongWord): Boolean;
 var
   NumRead: DWORD;
 begin
@@ -1432,39 +1438,42 @@ begin
 end;
 {$ENDIF MSWINDOWS}
 
-procedure TPdfDocument.LoadFromFile(const AFileName: string; const APassword: UTF8String; ALoadOption: TPdfDocumentLoadOption);
+procedure TPdfDocument.LoadFromFile(const FileName: string; const Password: UTF8String; LoadOption: TPdfDocumentLoadOption);
+{$IFDEF MSWINDOWS}
 var
-  {$IFDEF MSWINDOWS}
   Size: Int64;
   Offset: NativeInt;
   NumRead: DWORD;
   LastError: DWORD;
-  {$ELSE}
-  Stream: TFileStream;
-  {$ENDIF MSWINDOWS}
+{$ENDIF MSWINDOWS}
 begin
   Close;
-  // We don't use FPDF_LoadDocument because it is limited to ANSI file names and dloOnDemand emulates it
+  if LoadOption = dloDefault then
+  begin
+    InternLoadFromFile(FileName, Password);
+    FFileName := FileName;
+    Exit;
+  end;
 
   {$IFDEF MSWINDOWS}
-  FFileHandle := CreateFileW(PWideChar(AFileName), GENERIC_READ, FILE_SHARE_READ, nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+  FFileHandle := CreateFileW(PWideChar(FileName), GENERIC_READ, FILE_SHARE_READ, nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
   if FFileHandle = INVALID_HANDLE_VALUE then
     RaiseLastOSError;
   try
     if not GetFileSizeEx(FFileHandle, Size) then
       RaiseLastOSError;
-    if Size > High(Integer) then // PDFium can only handle PDFs up to 2 GB (FX_FILESIZE in core/fxcrt/fx_system.h)
+    if Size > High(Integer) then // PDFium LoadCustomDocument() can only handle PDFs up to 2 GB (see FPDF_FILEACCESS)
     begin
       {$IFDEF CPUX64}
       // FPDF_LoadCustomDocument wasn't updated to load larger files, so we fall back to MMF.
-      if ALoadOption = dloOnDemand then
-        ALoadOption := dloMMF;
+      if LoadOption = dloOnDemand then
+        LoadOption := dloMMF;
       {$ELSE}
       raise EPdfException.CreateResFmt(@RsFileTooLarge, [ExtractFileName(AFileName)]);
       {$ENDIF CPUX64}
     end;
 
-    case ALoadOption of
+    case LoadOption of
       dloMemory:
         begin
           if Size > 0 then
@@ -1493,7 +1502,7 @@ begin
               FFileHandle := INVALID_HANDLE_VALUE;
             end;
 
-            InternLoadFromMem(FBuffer, Size, APassword);
+            InternLoadFromMem(FBuffer, Size, Password);
           end;
         end;
 
@@ -1506,39 +1515,51 @@ begin
           if FBuffer = nil then
             RaiseLastOSError;
 
-          InternLoadFromMem(FBuffer, Size, APassword);
+          InternLoadFromMem(FBuffer, Size, Password);
         end;
 
       dloOnDemand:
-        InternLoadFromCustom(ReadFromActiveFile, Size, Pointer(FFileHandle), APassword);
+        InternLoadFromCustom(ReadFromActiveFileHandle, Size, Pointer(FFileHandle), Password);
     end;
   except
     Close;
     raise;
   end;
   {$ELSE}
-  Stream := TFileStream.Create(AFileName, fmOpenRead or fmShareDenyWrite);
+  FFileStream := TFileStream.Create(FileName, fmOpenRead or fmShareDenyWrite);
   try
-    LoadFromStream(Stream, APassword);
-  finally
-    Stream.Free;
+    case LoadOption of
+      dloMemory, dloMMF:
+        begin
+          try
+            LoadFromStream(FFileStream, Password);
+          finally
+            FreeAndNil(FFileStream);
+          end;
+        end
+      dloOnDemand:
+        LoadFromActiveStream(FFileStream, Password);
+    end;
+  except
+    FreeAndNil(FFileStream);
+    raise;
   end;
   {$ENDIF MSWINDOWS}
-  FFileName := AFileName;
+  FFileName := FileName;
 end;
 
-procedure TPdfDocument.LoadFromStream(AStream: TStream; const APassword: UTF8String);
+procedure TPdfDocument.LoadFromStream(Stream: TStream; const Password: UTF8String);
 var
   Size: NativeInt;
 begin
   Close;
-  Size := AStream.Size;
+  Size := Stream.Size;
   if Size > 0 then
   begin
     GetMem(FBuffer, Size);
     try
-      AStream.ReadBuffer(FBuffer^, Size);
-      InternLoadFromMem(FBuffer, Size, APassword);
+      Stream.ReadBuffer(FBuffer^, Size);
+      InternLoadFromMem(FBuffer, Size, Password);
     except
       Close;
       raise;
@@ -1546,32 +1567,32 @@ begin
   end;
 end;
 
-procedure TPdfDocument.LoadFromActiveBuffer(Buffer: Pointer; Size: NativeInt; const APassword: UTF8String);
+procedure TPdfDocument.LoadFromActiveBuffer(Buffer: Pointer; Size: NativeInt; const Password: UTF8String);
 begin
   Close;
-  InternLoadFromMem(Buffer, Size, APassword);
+  InternLoadFromMem(Buffer, Size, Password);
 end;
 
-procedure TPdfDocument.LoadFromBytes(const ABytes: TBytes; const APassword: UTF8String);
+procedure TPdfDocument.LoadFromBytes(const Bytes: TBytes; const Password: UTF8String);
 begin
-  LoadFromBytes(ABytes, 0, Length(ABytes), APassword);
+  LoadFromBytes(Bytes, 0, Length(Bytes), Password);
 end;
 
-procedure TPdfDocument.LoadFromBytes(const ABytes: TBytes; AIndex, ACount: NativeInt;
-  const APassword: UTF8String);
+procedure TPdfDocument.LoadFromBytes(const Bytes: TBytes; Index, Count: NativeInt;
+  const Password: UTF8String);
 var
   Len: NativeInt;
 begin
   Close;
 
-  Len := Length(ABytes);
-  if AIndex >= Len then
-    raise EPdfArgumentOutOfRange.CreateResFmt(@RsArgumentsOutOfRange, ['Index', AIndex]);
-  if AIndex + ACount > Len then
-    raise EPdfArgumentOutOfRange.CreateResFmt(@RsArgumentsOutOfRange, ['Count', ACount]);
+  Len := Length(Bytes);
+  if Index >= Len then
+    raise EPdfArgumentOutOfRange.CreateResFmt(@RsArgumentsOutOfRange, ['Index', Index]);
+  if Index + Count > Len then
+    raise EPdfArgumentOutOfRange.CreateResFmt(@RsArgumentsOutOfRange, ['Count', Count]);
 
-  FBytes := ABytes; // keep alive after return
-  InternLoadFromMem(@ABytes[AIndex], ACount, APassword);
+  FBytes := Bytes; // keep alive after return
+  InternLoadFromMem(@Bytes[Index], Count, Password);
 end;
 
 function ReadFromActiveStream(Param: Pointer; Position: LongWord; Buffer: PByte; Size: LongWord): Boolean;
@@ -1585,19 +1606,19 @@ begin
     Result := Size = 0;
 end;
 
-procedure TPdfDocument.LoadFromActiveStream(Stream: TStream; const APassword: UTF8String);
+procedure TPdfDocument.LoadFromActiveStream(Stream: TStream; const Password: UTF8String);
 begin
   if Stream = nil then
     Close
   else
-    LoadFromCustom(ReadFromActiveStream, Stream.Size, Stream, APassword);
+    LoadFromCustom(ReadFromActiveStream, Stream.Size, Stream, Password);
 end;
 
-procedure TPdfDocument.LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord;
-  AParam: Pointer; const APassword: UTF8String);
+procedure TPdfDocument.LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; Size: LongWord;
+  Param: Pointer; const Password: UTF8String);
 begin
   Close;
-  InternLoadFromCustom(ReadFunc, ASize, AParam, APassword);
+  InternLoadFromCustom(ReadFunc, Size, Param, Password);
 end;
 
 function GetLoadFromCustomBlock(Param: Pointer; Position: LongWord; Buffer: PByte; Size: LongWord): Integer; cdecl;
@@ -1608,32 +1629,32 @@ begin
   Result := Ord(Data.GetBlock(Data.Param, Position, Buffer, Size));
 end;
 
-procedure TPdfDocument.InternLoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord;
-  AParam: Pointer; const APassword: UTF8String);
+procedure TPdfDocument.InternLoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; Size: LongWord;
+  Param: Pointer; const Password: UTF8String);
 var
   OldCurDoc: TPdfDocument;
 begin
   if Assigned(ReadFunc) then
   begin
     New(FCustomLoadData);
-    FCustomLoadData.Param := AParam;
+    FCustomLoadData.Param := Param;
     FCustomLoadData.GetBlock := ReadFunc;
-    FCustomLoadData.FileAccess.m_FileLen := ASize;
+    FCustomLoadData.FileAccess.m_FileLen := Size;
     FCustomLoadData.FileAccess.m_GetBlock := GetLoadFromCustomBlock;
     FCustomLoadData.FileAccess.m_Param := Self;
 
     OldCurDoc := UnsupportedFeatureCurrentDocument;
     try
       UnsupportedFeatureCurrentDocument := Self;
-      FDocument := FPDF_LoadCustomDocument(@FCustomLoadData.FileAccess, PAnsiChar(Pointer(APassword)));
-      DocumentLoaded;
+      FDocument := FPDF_LoadCustomDocument(@FCustomLoadData.FileAccess, PAnsiChar(Pointer(Password)));
     finally
       UnsupportedFeatureCurrentDocument := OldCurDoc;
     end;
+    DocumentLoaded;
   end;
 end;
 
-procedure TPdfDocument.InternLoadFromMem(Buffer: PByte; Size: NativeInt; const APassword: UTF8String);
+procedure TPdfDocument.InternLoadFromMem(Buffer: PByte; Size: NativeInt; const Password: UTF8String);
 var
   OldCurDoc: TPdfDocument;
 begin
@@ -1642,12 +1663,30 @@ begin
     OldCurDoc := UnsupportedFeatureCurrentDocument;
     try
       UnsupportedFeatureCurrentDocument := Self;
-      FDocument := FPDF_LoadMemDocument64(Buffer, Size, PAnsiChar(Pointer(APassword)));
+      FDocument := FPDF_LoadMemDocument64(Buffer, Size, PAnsiChar(Pointer(Password)));
     finally
       UnsupportedFeatureCurrentDocument := OldCurDoc;
     end;
     DocumentLoaded;
   end;
+end;
+
+procedure TPdfDocument.InternLoadFromFile(const FileName: string; const Password: UTF8String);
+var
+  OldCurDoc: TPdfDocument;
+  Utf8FileName: UTF8String;
+begin
+  Utf8FileName := UTF8Encode(FileName);
+  OldCurDoc := UnsupportedFeatureCurrentDocument;
+  try
+    UnsupportedFeatureCurrentDocument := Self;
+    // UTF8 now works with LoadDocument and it can handle large PDF files (2 GB+) what
+    // FPDF_LoadCustomDocument can't because of the data types in FPDF_FILEACCESS.
+    FDocument := FPDF_LoadDocument(PAnsiChar(Utf8FileName), PAnsiChar(Pointer(Password)));
+  finally
+    UnsupportedFeatureCurrentDocument := OldCurDoc;
+  end;
+  DocumentLoaded;
 end;
 
 procedure TPdfDocument.DocumentLoaded;
@@ -1776,6 +1815,8 @@ end;
 
 class function TPdfDocument.CreateNPagesOnOnePageDocument(Source: TPdfDocument;
   NewPageWidth, NewPageHeight: Double; NumPagesXAxis, NumPagesYAxis: Integer): TPdfDocument;
+var
+  OldCurDoc: TPdfDocument;
 begin
   Result := TPdfDocument.Create;
   try
@@ -1783,7 +1824,13 @@ begin
       Result.NewDocument
     else
     begin
-      Result.FDocument := FPDF_ImportNPagesToOne(Source.FDocument, NewPageWidth, NewPageHeight, NumPagesXAxis, NumPagesYAxis);
+      OldCurDoc := UnsupportedFeatureCurrentDocument;
+      try
+        UnsupportedFeatureCurrentDocument := Result;
+        Result.FDocument := FPDF_ImportNPagesToOne(Source.FDocument, NewPageWidth, NewPageHeight, NumPagesXAxis, NumPagesYAxis);
+      finally
+        UnsupportedFeatureCurrentDocument := OldCurDoc;
+      end;
       if Result.FDocument <> nil then
         Result.DocumentLoaded
       else

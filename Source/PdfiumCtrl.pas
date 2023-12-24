@@ -177,13 +177,13 @@ type
     { InvalidatePage forces the page to be rendered again and invalidates the control. }
     procedure InvalidatePage;
 
-    procedure LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord; AParam: Pointer; const APassword: UTF8String = '');
-    procedure LoadFromActiveStream(Stream: TStream; const APassword: UTF8String = ''); // Stream must not be released until the document is closed
-    procedure LoadFromActiveBuffer(Buffer: Pointer; Size: Int64; const APassword: UTF8String = ''); // Buffer must not be released until the document is closed
-    procedure LoadFromBytes(const ABytes: TBytes; const APassword: UTF8String = ''); overload; // The content of the Bytes array must not be changed until the document is closed
-    procedure LoadFromBytes(const ABytes: TBytes; AIndex: Integer; ACount: Integer; const APassword: UTF8String = ''); overload; // The content of the Bytes array must not be changed until the document is closed
-    procedure LoadFromStream(AStream: TStream; const APassword: UTF8String = '');
-    procedure LoadFromFile(const AFileName: string; const APassword: UTF8String = ''; ALoadOption: TPdfDocumentLoadOption = dloMMF);
+    procedure LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; Size: LongWord; Param: Pointer; const Password: UTF8String = '');
+    procedure LoadFromActiveStream(Stream: TStream; const Password: UTF8String = ''); // Stream must not be released until the document is closed
+    procedure LoadFromActiveBuffer(Buffer: Pointer; Size: Int64; const Password: UTF8String = ''); // Buffer must not be released until the document is closed
+    procedure LoadFromBytes(const Bytes: TBytes; const Password: UTF8String = ''); overload; // The content of the Bytes array must not be changed until the document is closed
+    procedure LoadFromBytes(const Bytes: TBytes; Index: Integer; Count: Integer; const Password: UTF8String = ''); overload; // The content of the Bytes array must not be changed until the document is closed
+    procedure LoadFromStream(Stream: TStream; const Password: UTF8String = '');
+    procedure LoadFromFile(const FileName: string; const Password: UTF8String = ''; LoadOption: TPdfDocumentLoadOption = dloDefault);
     procedure Close;
 
     function DeviceToPage(DeviceX, DeviceY: Integer): TPdfPoint; overload;
@@ -324,7 +324,7 @@ type
 implementation
 
 uses
-  Math, Clipbrd, Character, Printers, PdfiumLib;
+  Math, Clipbrd, Character, Printers;
 
 const
   cScrollTimerId = 1;
@@ -1024,67 +1024,67 @@ begin
   PageContentChanged(False);
 end;
 
-procedure TPdfControl.LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; ASize: LongWord;
-  AParam: Pointer; const APassword: UTF8String);
+procedure TPdfControl.LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; Size: LongWord;
+  Param: Pointer; const Password: UTF8String);
 begin
   try
-    FDocument.LoadFromCustom(ReadFunc, ASize, AParam, APassword);
+    FDocument.LoadFromCustom(ReadFunc, Size, Param, Password);
   finally
     DocumentLoaded;
   end;
 end;
 
-procedure TPdfControl.LoadFromActiveStream(Stream: TStream; const APassword: UTF8String);
+procedure TPdfControl.LoadFromActiveStream(Stream: TStream; const Password: UTF8String);
 begin
   try
-    FDocument.LoadFromActiveStream(Stream, APassword);
+    FDocument.LoadFromActiveStream(Stream, Password);
   finally
     DocumentLoaded;
   end;
 end;
 
-procedure TPdfControl.LoadFromActiveBuffer(Buffer: Pointer; Size: Int64; const APassword: UTF8String);
+procedure TPdfControl.LoadFromActiveBuffer(Buffer: Pointer; Size: Int64; const Password: UTF8String);
 begin
   try
-    FDocument.LoadFromActiveBuffer(Buffer, Size, APassword);
+    FDocument.LoadFromActiveBuffer(Buffer, Size, Password);
   finally
     DocumentLoaded;
   end;
 end;
 
-procedure TPdfControl.LoadFromBytes(const ABytes: TBytes; AIndex, ACount: Integer;
-  const APassword: UTF8String);
+procedure TPdfControl.LoadFromBytes(const Bytes: TBytes; Index, Count: Integer;
+  const Password: UTF8String);
 begin
   try
-    FDocument.LoadFromBytes(ABytes, AIndex, ACount, APassword);
+    FDocument.LoadFromBytes(Bytes, Index, Count, Password);
   finally
     DocumentLoaded;
   end;
 end;
 
-procedure TPdfControl.LoadFromBytes(const ABytes: TBytes; const APassword: UTF8String);
+procedure TPdfControl.LoadFromBytes(const Bytes: TBytes; const Password: UTF8String);
 begin
   try
-    FDocument.LoadFromBytes(ABytes, APassword);
+    FDocument.LoadFromBytes(Bytes, Password);
   finally
     DocumentLoaded;
   end;
 end;
 
-procedure TPdfControl.LoadFromStream(AStream: TStream; const APassword: UTF8String);
+procedure TPdfControl.LoadFromStream(Stream: TStream; const Password: UTF8String);
 begin
   try
-    FDocument.LoadFromStream(AStream, APassword);
+    FDocument.LoadFromStream(Stream, Password);
   finally
     DocumentLoaded;
   end;
 end;
 
-procedure TPdfControl.LoadFromFile(const AFileName: string; const APassword: UTF8String;
-  ALoadOption: TPdfDocumentLoadOption);
+procedure TPdfControl.LoadFromFile(const FileName: string; const Password: UTF8String;
+  LoadOption: TPdfDocumentLoadOption);
 begin
   try
-    FDocument.LoadFromFile(AFileName, APassword, ALoadOption);
+    FDocument.LoadFromFile(FileName, Password, LoadOption);
   finally
     DocumentLoaded;
   end;
