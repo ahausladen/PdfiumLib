@@ -1530,7 +1530,7 @@ begin
       if LoadOption = dloOnDemand then
         LoadOption := dloMMF;
       {$ELSE}
-      raise EPdfException.CreateResFmt(@RsFileTooLarge, [ExtractFileName(AFileName)]);
+      raise EPdfException.CreateResFmt(@RsFileTooLarge, [ExtractFileName(FileName)]);
       {$ENDIF CPUX64}
     end;
 
