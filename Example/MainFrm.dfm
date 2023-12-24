@@ -34,8 +34,6 @@ object frmMain: TfrmMain
     Align = alTop
     BevelOuter = bvNone
     TabOrder = 1
-    ExplicitLeft = 8
-    ExplicitTop = 144
     object btnAddAnnotation: TButton
       Left = 318
       Top = 0

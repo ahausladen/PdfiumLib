@@ -75,6 +75,14 @@ type
 
   TPdfDocumentCustomReadProc = function(Param: Pointer; Position: LongWord; Buffer: PByte; Size: LongWord): Boolean;
 
+  TPdfNamedActionType = (
+    naPrint,
+    naNextPage,
+    naPrevPage,
+    naFirstPage,
+    naLastPage
+  );
+
   TPdfPageRenderOptionType = (
     proAnnotations,            // Set if annotations are to be rendered.
     proLCDOptimized,           // Set if using text rendering optimized for LCD display.
@@ -558,6 +566,7 @@ type
   TPdfFormOutputSelectedRectEvent = procedure(Document: TPdfDocument; Page: TPdfPage; const PageRect: TPdfRect) of object;
   TPdfFormGetCurrentPageEvent = procedure(Document: TPdfDocument; var CurrentPage: TPdfPage) of object;
   TPdfFormFieldFocusEvent = procedure(Document: TPdfDocument; Value: PWideChar; ValueLen: Integer; FieldFocused: Boolean) of object;
+  TPdfExecuteNamedActionEvent = procedure(Document: TPdfDocument; NamedAction: TPdfNamedActionType) of object;
 
   TPdfAttachment = record
   private
@@ -650,10 +659,12 @@ type
     FFormFieldHighlightAlpha: Integer;
     FPrintHidesFormFieldHighlight: Boolean;
     FFormModified: Boolean;
+
     FOnFormInvalidate: TPdfFormInvalidateEvent;
     FOnFormOutputSelectedRect: TPdfFormOutputSelectedRectEvent;
     FOnFormGetCurrentPage: TPdfFormGetCurrentPageEvent;
     FOnFormFieldFocus: TPdfFormFieldFocusEvent;
+    FOnExecuteNamedAction: TPdfExecuteNamedActionEvent;
 
     procedure InternLoadFromFile(const FileName: string; const Password: UTF8String);
     procedure InternLoadFromMem(Buffer: PByte; Size: NativeInt; const Password: UTF8String);
@@ -744,6 +755,7 @@ type
     property OnFormOutputSelectedRect: TPdfFormOutputSelectedRectEvent read FOnFormOutputSelectedRect write FOnFormOutputSelectedRect;
     property OnFormGetCurrentPage: TPdfFormGetCurrentPageEvent read FOnFormGetCurrentPage write FOnFormGetCurrentPage;
     property OnFormFieldFocus: TPdfFormFieldFocusEvent read FOnFormFieldFocus write FOnFormFieldFocus;
+    property OnExecuteNamedAction: TPdfExecuteNamedActionEvent read FOnExecuteNamedAction write FOnExecuteNamedAction;
   end;
 
   TPdfDocumentPrinterStatusEvent = procedure(Sender: TObject; CurrentPageNum, PageCount: Integer) of object;
@@ -1157,21 +1169,21 @@ var
   Timer: TFFITimer;
 begin
   // Find highest Id
-  Id := 0;
-  for I := 0 to Length(FFITimers) - 1 do
-    if (FFITimers[I] <> nil) and (FFITimers[I].FId > Id) then
-      Id := FFITimers[I].FId;
-  Inc(Id);
-
-  Timer := TFFITimer.Create(nil);
-  Timer.FId := Id;
-  Timer.FTimerFunc:= lpTimerFunc;
-  Timer.OnTimer := Timer.DoTimerEvent;
-  Timer.Interval := uElapse;
-
-  Result := Id;
   EnterCriticalSection(FFITimersCritSect);
   try
+    Id := 0;
+    for I := 0 to Length(FFITimers) - 1 do
+      if (FFITimers[I] <> nil) and (FFITimers[I].FId > Id) then
+        Id := FFITimers[I].FId;
+    Inc(Id);
+
+    Timer := TFFITimer.Create(nil);
+    Timer.FId := Id;
+    Timer.FTimerFunc:= lpTimerFunc;
+    Timer.OnTimer := Timer.DoTimerEvent;
+    Timer.Interval := uElapse;
+
+    Result := Id;
     for I := 0 to Length(FFITimers) - 1 do
     begin
       if FFITimers[I] = nil then
@@ -1256,10 +1268,38 @@ begin
   Result := 0;
 end;
 
+procedure FFI_ExecuteNamedAction(pThis: PFPDF_FORMFILLINFO; namedAction: FPDF_BYTESTRING); cdecl;
+var
+  Handler: PPdfFormFillHandler;
+  NamedActionType: TPdfNamedActionType;
+  S: UTF8String;
+begin
+  Handler := PPdfFormFillHandler(pThis);
+  if Assigned(Handler.Document.OnExecuteNamedAction) then
+  begin
+    S := namedAction;
+
+    if S = 'Print' then
+      NamedActionType := naPrint
+    else if S = 'NextPage' then
+      NamedActionType := naNextPage
+    else if S = 'PrevPage' then
+      NamedActionType := naPrevPage
+    else if S = 'FirstPage' then
+      NamedActionType := naFirstPage
+    else if S = 'LastPage' then
+      NamedActionType := naLastPage
+    else
+      Exit;
+
+    Handler.Document.OnExecuteNamedAction(Handler.Document, NamedActionType);
+  end;
+end;
+
 procedure FFI_SetCursor(pThis: PFPDF_FORMFILLINFO; nCursorType: Integer); cdecl;
 begin
-  // A better solution is to use check what form field type is under the mouse cursor in the
-  // MoveMove event. Chrome/Edge don't rely on SetCursor either.
+  // A better solution is to check what form field type is under the mouse cursor in the
+  // MoveMove event. Chrome/Edge doesn't rely on SetCursor either.
 end;
 
 procedure FFI_SetTextFieldFocus(pThis: PFPDF_FORMFILLINFO; value: FPDF_WIDESTRING; valueLen: FPDF_DWORD; is_focus: FPDF_BOOL); cdecl;
@@ -1709,9 +1749,12 @@ begin
   FFormFillHandler.FormFillInfo.FFI_GetPage := FFI_GetPage;
   FFormFillHandler.FormFillInfo.FFI_GetCurrentPage := FFI_GetCurrentPage;
   FFormFillHandler.FormFillInfo.FFI_GetRotation := FFI_GetRotation;
+  FFormFillHandler.FormFillInfo.FFI_ExecuteNamedAction := FFI_ExecuteNamedAction;
   FFormFillHandler.FormFillInfo.FFI_SetCursor := FFI_SetCursor;
   FFormFillHandler.FormFillInfo.FFI_SetTextFieldFocus := FFI_SetTextFieldFocus;
   FFormFillHandler.FormFillInfo.FFI_OnFocusChange := FFI_FocusChange;
+//  FFormFillHandler.FormFillInfo.FFI_DoURIAction := FFI_DoURIAction;
+//  FFormFillHandler.FormFillInfo.FFI_DoGoToAction := FFI_DoGoToAction;
 
   if PDF_USE_XFA then
   begin

@@ -83,16 +83,18 @@ type
     FHighlightText: string;
     FHighlightMatchCase: Boolean;
     FHighlightMatchWholeWord: Boolean;
-    FOnWebLinkClick: TPdfControlWebLinkClickEvent;
-    FOnAnnotationLinkClick: TPdfControlAnnotationLinkClickEvent;
-    FOnPageChange: TNotifyEvent;
-    FOnPaint: TNotifyEvent;
     FFormOutputSelectedRects: TPdfRectArray;
     FFormFieldFocused: Boolean;
     FPageShadowSize: Integer;
     FPageShadowColor: TColor;
     FPageShadowPadding: Integer;
     FPageBorderColor: TColor;
+
+    FOnWebLinkClick: TPdfControlWebLinkClickEvent;
+    FOnAnnotationLinkClick: TPdfControlAnnotationLinkClickEvent;
+    FOnPageChange: TNotifyEvent;
+    FOnPaint: TNotifyEvent;
+    FOnPrintDocument: TNotifyEvent;
 
     procedure WMTimer(var Message: TWMTimer); message WM_TIMER;
     procedure WMVScroll(var Message: TWMVScroll); message WM_VSCROLL;
@@ -141,6 +143,8 @@ type
     procedure FormOutputSelectedRect(Document: TPdfDocument; Page: TPdfPage; const PageRect: TPdfRect);
     procedure FormGetCurrentPage(Document: TPdfDocument; var Page: TPdfPage);
     procedure FormFieldFocus(Document: TPdfDocument; Value: PWideChar; ValueLen: Integer; FieldFocused: Boolean);
+    procedure ExecuteNamedAction(Document: TPdfDocument; NamedAction: TPdfNamedActionType);
+
     procedure DrawAlphaSelection(DC: HDC; Page: TPdfPage; const ARects: TPdfRectArray);
     procedure DrawFormOutputSelectedRects(DC: HDC; Page: TPdfPage);
   protected
@@ -176,6 +180,8 @@ type
 
     { InvalidatePage forces the page to be rendered again and invalidates the control. }
     procedure InvalidatePage;
+    { PrintDocument uses OnPrintDocument to print. If OnPrintDocument is not assigned it does nothing. }
+    procedure PrintDocument;
 
     procedure LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; Size: LongWord; Param: Pointer; const Password: UTF8String = '');
     procedure LoadFromActiveStream(Stream: TStream; const Password: UTF8String = ''); // Stream must not be released until the document is closed
@@ -255,6 +261,8 @@ type
     property OnAnnotationLinkClick: TPdfControlAnnotationLinkClickEvent read FOnAnnotationLinkClick write FOnAnnotationLinkClick;
     { OnPageChange is called if the current page is switched. }
     property OnPageChange: TNotifyEvent read FOnPageChange write FOnPageChange;
+    { OnPrintDocument is called from PrintDocument }
+    property OnPrintDocument: TNotifyEvent read FOnPrintDocument write FOnPrintDocument;
 
     property Align;
     property Anchors;
@@ -370,7 +378,7 @@ begin
     FBeginDocCalled := Printer.Printing;
     Result := FBeginDocCalled;
   end;
-  if Result then
+  if Result and Printer.Printing then
   begin
     // The Printers.AbortProc function calls ProcessMessages. That not only slows down the performance
     // but it also allows the user to do things in the UI.
@@ -382,10 +390,10 @@ procedure TPdfDocumentVclPrinter.PrinterEndDoc;
 begin
   if Printer.Printing then
   begin
+    SetAbortProc(GetPrinterDC, @VclAbortProc); // restore default behavior
     if FBeginDocCalled then
       Printer.EndDoc;
   end;
-  SetAbortProc(GetPrinterDC, @VclAbortProc); // restore default behavior
 end;
 
 procedure TPdfDocumentVclPrinter.PrinterStartPage;
@@ -500,6 +508,7 @@ begin
   FDocument.OnFormOutputSelectedRect := FormOutputSelectedRect;
   FDocument.OnFormGetCurrentPage := FormGetCurrentPage;
   FDocument.OnFormFieldFocus := FormFieldFocus;
+  FDocument.OnExecuteNamedAction := ExecuteNamedAction;
 
   ParentDoubleBuffered := False;
   ParentBackground := False;
@@ -905,6 +914,17 @@ begin
   begin
     R := GetPageRect;
     InvalidateRect(Handle, @R, True);
+  end;
+end;
+
+procedure TPdfControl.PrintDocument;
+begin
+  if Document.Active then
+  begin
+    if Assigned(FOnPrintDocument) then
+      FOnPrintDocument(Self)
+    else
+      TPdfDocumentVclPrinter.PrintDocument(Document, ExtractFileName(Document.FileName));
   end;
 end;
 
@@ -2531,6 +2551,22 @@ procedure TPdfControl.FormFieldFocus(Document: TPdfDocument; Value: PWideChar;
 begin
   ClearSelection;
   FFormFieldFocused := FieldFocused;
+end;
+
+procedure TPdfControl.ExecuteNamedAction(Document: TPdfDocument; NamedAction: TPdfNamedActionType);
+begin
+  case NamedAction of
+    naPrint:
+      PrintDocument;
+    naNextPage:
+      PageIndex := PageIndex + 1;
+    naPrevPage:
+      PageIndex := PageIndex - 1;
+    naFirstPage:
+      PageIndex := 0;
+    naLastPage:
+      PageIndex := Document.PageCount - 1;
+  end;
 end;
 
 end.

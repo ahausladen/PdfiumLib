@@ -41,6 +41,7 @@ type
     FCtrl: TPdfControl;
     procedure WebLinkClick(Sender: TObject; Url: string);
     procedure AnnotationLinkClick(Sender: TObject; LinkAnnotation: TPdfAnnotation);
+    procedure PrintDocument(Sender: TObject);
     procedure ListAttachments;
   public
     { Public-Deklarationen }
@@ -59,6 +60,7 @@ uses
 procedure TfrmMain.FormCreate(Sender: TObject);
 begin
   {$IFDEF CPUX64}
+  //PDFiumDllDir := ExtractFilePath(ParamStr(0)) + 'x64\V8XFA';
   PDFiumDllDir := ExtractFilePath(ParamStr(0)) + 'x64';
   {$ELSE}
   PDFiumDllDir := ExtractFilePath(ParamStr(0)) + 'x86';
@@ -76,6 +78,7 @@ begin
   //FCtrl.PageColor := RGB(255, 255, 200);
   FCtrl.OnWebLinkClick := WebLinkClick;
   FCtrl.OnAnnotationLinkClick := AnnotationLinkClick;
+  FCtrl.OnPrintDocument := PrintDocument;
 
   edtZoom.Value := FCtrl.ZoomPercentage;
 
@@ -128,7 +131,7 @@ end;
 
 procedure TfrmMain.btnHighlightClick(Sender: TObject);
 begin
-  FCtrl.HightlightText('Delphi 2010', False, False);
+  FCtrl.HightlightText('the', False, False);
 end;
 
 procedure TfrmMain.btnScaleClick(Sender: TObject);
@@ -185,6 +188,11 @@ begin
   end;
 end;
 
+procedure TfrmMain.PrintDocument(Sender: TObject);
+begin
+  TPdfDocumentVclPrinter.PrintDocument(FCtrl.Document, ExtractFileName(FCtrl.Document.FileName));
+end;
+
 procedure TfrmMain.chkChangePageOnMouseScrollingClick(Sender: TObject);
 begin
   FCtrl.ChangePageOnMouseScrolling := chkChangePageOnMouseScrolling.Checked;
@@ -212,7 +220,8 @@ procedure TfrmMain.btnPrintClick(Sender: TObject);
 {var
   PdfPrinter: TPdfDocumentPrinter;}
 begin
-  TPdfDocumentVclPrinter.PrintDocument(FCtrl.Document, 'PDF Example Print Job');
+  FCtrl.PrintDocument; // calls OnPrintDocument->PrintDocument
+  //TPdfDocumentVclPrinter.PrintDocument(FCtrl.Document, 'PDF Example Print Job');
 
 {  PrintDialog1.MinPage := 1;
   PrintDialog1.MaxPage := FCtrl.Document.PageCount;
