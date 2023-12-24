@@ -359,7 +359,6 @@ type
     FSubType: FPDF_ANNOTATION_SUBTYPE;
     FLinkDest: FPDF_DEST;
     FLinkType: TPdfAnnotationLinkType;
-    FLinkGotoDest: TPdfLinkGotoDestination;
 
     function GetPdfLinkAction: FPDF_ACTION;
     function GetFormField: TPdfFormField;
@@ -374,13 +373,14 @@ type
     function IsFormField: Boolean;
     function IsLink: Boolean;
 
+    function GetLinkGotoDestination(var LinkGotoDestination: TPdfLinkGotoDestination; ARemoteDocument: TPdfDocument = nil): Boolean;
+
     // IsFormField:
     property FormField: TPdfFormField read GetFormField;
     // IsLink:
     property LinkType: TPdfAnnotationLinkType read FLinkType;
     property LinkUri: string read GetLinkUri;
     property LinkFileName: string read GetLinkFileName;
-    function GetLinkGotoDestination(ARemoteDocument: TPdfDocument = nil): TPdfLinkGotoDestination;
 
     property AnnotationRect: TPdfRect read GetAnnotationRect;
     property Handle: FPDF_ANNOTATION read FHandle;
@@ -417,9 +417,30 @@ type
     property FormFields: TPdfFormFieldList read GetFormFields;
   end;
 
-  { TPdfPageWebLinkInfo caches all the WebLinks for one page. This makes the IsWebLinkAt() methods
+  TPdfLinkInfo = class(TObject)
+  private
+    FLinkAnnotation: TPdfAnnotation;
+    FWebLinkUrl: string;
+    function GetLinkFileName: string;
+    function GetLinkType: TPdfAnnotationLinkType;
+    function GetLinkUri: string;
+  public
+    constructor Create(ALinkAnnotation: TPdfAnnotation; const AWebLinkUrl: string);
+    function GetLinkGotoDestination(var LinkGotoDestination: TPdfLinkGotoDestination; ARemoteDocument: TPdfDocument = nil): Boolean;
+
+    function IsAnnontation: Boolean;
+    function IsWebLink: Boolean;
+
+    property LinkType: TPdfAnnotationLinkType read GetLinkType;
+    property LinkUri: string read GetLinkUri;
+    property LinkFileName: string read GetLinkFileName;
+
+    property LinkAnnotation: TPdfAnnotation read FLinkAnnotation;
+  end;
+
+  { TPdfPageWebLinksInfo caches all the WebLinks for one page. This makes the IsWebLinkAt() methods
     much faster than always calling into the PDFium library. The URLs are not cached. }
-  TPdfPageWebLinkInfo = class(TObject)
+  TPdfPageWebLinksInfo = class(TObject)
   private
     FPage: TPdfPage;
     FWebLinksRects: array of TPdfRectArray;
@@ -3656,83 +3677,6 @@ begin
 end;
 
 
-{ TPdfPageWebLinkInfo }
-
-constructor TPdfPageWebLinkInfo.Create(APage: TPdfPage);
-begin
-  inherited Create;
-  FPage := APage;
-  GetPageWebLinks;
-end;
-
-procedure TPdfPageWebLinkInfo.GetPageWebLinks;
-var
-  LinkIndex, LinkCount: Integer;
-  RectIndex, RectCount: Integer;
-begin
-  if FPage <> nil then
-  begin
-    LinkCount := FPage.GetWebLinkCount;
-    SetLength(FWebLinksRects, LinkCount);
-    for LinkIndex := 0 to LinkCount - 1 do
-    begin
-      RectCount := FPage.GetWebLinkRectCount(LinkIndex);
-      SetLength(FWebLinksRects[LinkIndex], RectCount);
-      for RectIndex := 0 to RectCount - 1 do
-        FWebLinksRects[LinkIndex][RectIndex] := FPage.GetWebLinkRect(LinkIndex, RectIndex);
-    end;
-  end;
-end;
-
-function TPdfPageWebLinkInfo.GetWebLinkIndex(X, Y: Double): Integer;
-var
-  RectIndex: Integer;
-  Pt: TPdfPoint;
-begin
-  if FPage <> nil then
-  begin
-    Pt.X := X;
-    Pt.Y := Y;
-    for Result := 0 to Length(FWebLinksRects) - 1 do
-      for RectIndex := 0 to Length(FWebLinksRects[Result]) - 1 do
-        if FWebLinksRects[Result][RectIndex].PtIn(Pt) then
-          Exit;
-  end;
-  Result := -1;
-end;
-
-function TPdfPageWebLinkInfo.GetCount: Integer;
-begin
-  Result := Length(FWebLinksRects);
-end;
-
-function TPdfPageWebLinkInfo.GetRect(Index: Integer): TPdfRectArray;
-begin
-  Result := FWebLinksRects[Index];
-end;
-
-function TPdfPageWebLinkInfo.GetURL(Index: Integer): string;
-begin
-  Result := FPage.GetWebLinkURL(Index);
-end;
-
-function TPdfPageWebLinkInfo.IsWebLinkAt(X, Y: Double): Boolean;
-begin
-  Result := GetWebLinkIndex(X, Y) <> -1;
-end;
-
-function TPdfPageWebLinkInfo.IsWebLinkAt(X, Y: Double; var Url: string): Boolean;
-var
-  Index: Integer;
-begin
-  Index := GetWebLinkIndex(X, Y);
-  Result := Index <> -1;
-  if Result then
-    Url := FPage.GetWebLinkURL(Index)
-  else
-    Url := '';
-end;
-
 { TPdfFormFieldList }
 
 constructor TPdfFormFieldList.Create(AAnnotations: TPdfAnnotationList);
@@ -3767,27 +3711,6 @@ procedure TPdfFormFieldList.DestroyingItem(Item: TPdfFormField);
 begin
   if (Item <> nil) and (FItems <> nil) then
     FItems.Extract(Item);
-end;
-
-
-{ TPdfLinkGotoDestination }
-
-constructor TPdfLinkGotoDestination.Create(APageIndex: Integer; AXValid, AYValid, AZoomValid: Boolean;
-  AX, AY, AZoom: Single; AViewKind: TPdfLinkGotoDestinationViewKind; const AViewParams: TPdfFloatArray);
-begin
-  inherited Create;
-  FPageIndex := APageIndex;
-
-  FXValid := AXValid;
-  FYValid := AYValid;
-  FZoomValid := AZoomValid;
-
-  FX := AX;
-  FY := AY;
-  FZoom := AZoom;
-
-  FViewKind := AViewKind;
-  FViewParams := AViewParams;
 end;
 
 
@@ -3826,7 +3749,6 @@ end;
 
 destructor TPdfAnnotation.Destroy;
 begin
-  FreeAndNil(FLinkGotoDest);
   FreeAndNil(FFormField);
   if FHandle <> nil then
   begin
@@ -3888,13 +3810,13 @@ end;
 
 function TPdfAnnotation.GetLinkFileName: string;
 begin
-  if LinkType in [altRemoteGoto, altLaunch, altEmbeddedGoto] then
+  if LinkType in [altRemoteGoto, altLaunch, altEmbeddedGoto] then // PDFium documentation is missing the PDFACTION_EMBEDDEDGOTO part.
     Result := FPage.GetPdfActionFilePath(GetPdfLinkAction)
   else
     Result := '';
 end;
 
-function TPdfAnnotation.GetLinkGotoDestination(ARemoteDocument: TPdfDocument = nil): TPdfLinkGotoDestination;
+function TPdfAnnotation.GetLinkGotoDestination(var LinkGotoDestination: TPdfLinkGotoDestination; ARemoteDocument: TPdfDocument): Boolean;
 var
   Action: FPDF_ACTION;
   Dest: FPDF_DEST;
@@ -3906,55 +3828,54 @@ var
   NumViewParams: LongWord;
   ViewParams: TPdfFloatArray;
 begin
-  if FLinkGotoDest = nil then
+  Result := False;
+
+  Action := GetPdfLinkAction;
+  if ((Action <> nil) or (FLinkDest <> nil)) and (LinkType in [altGoto, altRemoteGoto, altEmbeddedGoto]) then
   begin
-    Action := GetPdfLinkAction;
-    if ((Action <> nil) or (FLinkDest <> nil)) and (LinkType in [altGoto, altRemoteGoto, altEmbeddedGoto]) then
+    Doc := FPage.FDocument;
+    if LinkType = altRemoteGoto then
     begin
-      Doc := FPage.FDocument;
-      if LinkType = altRemoteGoto then
+      // For RemoteGoto the FPDFAction_GetDest function must be called with the remote document
+      if ARemoteDocument <> nil then
+        raise EPdfException.CreateRes(@RsPdfAnnotationLinkRemoteGotoRequiresRemoteDocument);
+      ARemoteDocument.CheckActive;
+
+      Doc := ARemoteDocument;
+    end;
+
+    // If we have a Dest-Link instead of a Goto Action-Link we treat it as if it was a Goto Action-Link
+    if FLinkDest <> nil then
+      Dest := FLinkDest
+    else
+      Dest := FPDFAction_GetDest(Doc.Handle, Action);
+
+    // Extract the information
+    if Dest <> nil then
+    begin
+      PageIndex := FPDFDest_GetDestPageIndex(Doc.Handle, Dest);
+      if PageIndex <> -1 then
       begin
-        // For RemoteGoto the FPDFAction_GetDest function must be called with the remote document
-        if ARemoteDocument <> nil then
-          raise EPdfException.CreateRes(@RsPdfAnnotationLinkRemoteGotoRequiresRemoteDocument);
-        ARemoteDocument.CheckActive;
-
-        Doc := ARemoteDocument;
-      end;
-
-      // If we have a Dest-Link instead of a Goto Action-Link we treat it as if it was a Goto Action-Link
-      if FLinkDest <> nil then
-        Dest := FLinkDest
-      else
-        Dest := FPDFAction_GetDest(Doc.Handle, Action);
-
-      // Extract the information
-      if Dest <> nil then
-      begin
-        PageIndex := FPDFDest_GetDestPageIndex(Doc.Handle, Dest);
-        if PageIndex <> -1 then
+        if FPDFDest_GetLocationInPage(Dest, HasXVal, HasYVal, HasZoomVal, X, Y, Zoom) <> 0 then
         begin
-          if FPDFDest_GetLocationInPage(Dest, HasXVal, HasYVal, HasZoomVal, X, Y, Zoom) <> 0 then
-          begin
-            SetLength(ViewParams, 4); // max. 4 params
+          SetLength(ViewParams, 4); // max. 4 params
+          NumViewParams := 4;
+          ViewKind := TPdfLinkGotoDestinationViewKind(FPDFDest_GetView(Dest, @NumViewParams, @ViewParams[0]));
+          if NumViewParams > 4 then // range check
             NumViewParams := 4;
-            ViewKind := TPdfLinkGotoDestinationViewKind(FPDFDest_GetView(Dest, @NumViewParams, @ViewParams[0]));
-            if NumViewParams > 4 then // range check
-              NumViewParams := 4;
-            SetLength(ViewParams, NumViewParams);
+          SetLength(ViewParams, NumViewParams);
 
-            FLinkGotoDest := TPdfLinkGotoDestination.Create(
-              PageIndex,
-              HasXVal <> 0, HasYVal <> 0, HasZoomVal <> 0,
-              X, Y, Zoom,
-              ViewKind, ViewParams
-            );
-          end;
+          LinkGotoDestination := TPdfLinkGotoDestination.Create(
+            PageIndex,
+            HasXVal <> 0, HasYVal <> 0, HasZoomVal <> 0,
+            X, Y, Zoom,
+            ViewKind, ViewParams
+          );
+          Result := True;
         end;
       end;
     end;
   end;
-  Result := FLinkGotoDest;
 end;
 
 { TPdfFormField }
@@ -4214,6 +4135,158 @@ begin
     end;
   end;
 end;
+
+
+{ TPdfLinkGotoDestination }
+
+constructor TPdfLinkGotoDestination.Create(APageIndex: Integer; AXValid, AYValid, AZoomValid: Boolean;
+  AX, AY, AZoom: Single; AViewKind: TPdfLinkGotoDestinationViewKind; const AViewParams: TPdfFloatArray);
+begin
+  inherited Create;
+  FPageIndex := APageIndex;
+
+  FXValid := AXValid;
+  FYValid := AYValid;
+  FZoomValid := AZoomValid;
+
+  FX := AX;
+  FY := AY;
+  FZoom := AZoom;
+
+  FViewKind := AViewKind;
+  FViewParams := AViewParams;
+end;
+
+
+{ TPdfLinkInfo }
+
+constructor TPdfLinkInfo.Create(ALinkAnnotation: TPdfAnnotation; const AWebLinkUrl: string);
+begin
+  inherited Create;
+  FLinkAnnotation := ALinkAnnotation;
+  FWebLinkUrl := AWebLinkUrl;
+end;
+
+function TPdfLinkInfo.IsAnnontation: Boolean;
+begin
+  Result := FLinkAnnotation <> nil;
+end;
+
+function TPdfLinkInfo.IsWebLink: Boolean;
+begin
+  Result := FLinkAnnotation = nil;
+end;
+
+function TPdfLinkInfo.GetLinkFileName: string;
+begin
+  if FLinkAnnotation <> nil then
+    Result := FLinkAnnotation.LinkFileName;
+end;
+
+function TPdfLinkInfo.GetLinkType: TPdfAnnotationLinkType;
+begin
+  if FLinkAnnotation <> nil then
+    Result := FLinkAnnotation.LinkType
+  else if FWebLinkUrl <> '' then
+    Result := altURI
+  else
+    Result := altUnsupported;
+end;
+
+function TPdfLinkInfo.GetLinkUri: string;
+begin
+  if FLinkAnnotation <> nil then
+    Result := FLinkAnnotation.LinkUri
+  else
+    Result := FWebLinkUrl;
+end;
+
+function TPdfLinkInfo.GetLinkGotoDestination(var LinkGotoDestination: TPdfLinkGotoDestination;
+  ARemoteDocument: TPdfDocument): Boolean;
+begin
+  if FLinkAnnotation <> nil then
+    Result := FLinkAnnotation.GetLinkGotoDestination(LinkGotoDestination, ARemoteDocument)
+  else
+    Result := False;
+end;
+
+{ TPdfPageWebLinksInfo }
+
+constructor TPdfPageWebLinksInfo.Create(APage: TPdfPage);
+begin
+  inherited Create;
+  FPage := APage;
+  GetPageWebLinks;
+end;
+
+procedure TPdfPageWebLinksInfo.GetPageWebLinks;
+var
+  LinkIndex, LinkCount: Integer;
+  RectIndex, RectCount: Integer;
+begin
+  if FPage <> nil then
+  begin
+    LinkCount := FPage.GetWebLinkCount;
+    SetLength(FWebLinksRects, LinkCount);
+    for LinkIndex := 0 to LinkCount - 1 do
+    begin
+      RectCount := FPage.GetWebLinkRectCount(LinkIndex);
+      SetLength(FWebLinksRects[LinkIndex], RectCount);
+      for RectIndex := 0 to RectCount - 1 do
+        FWebLinksRects[LinkIndex][RectIndex] := FPage.GetWebLinkRect(LinkIndex, RectIndex);
+    end;
+  end;
+end;
+
+function TPdfPageWebLinksInfo.GetWebLinkIndex(X, Y: Double): Integer;
+var
+  RectIndex: Integer;
+  Pt: TPdfPoint;
+begin
+  if FPage <> nil then
+  begin
+    Pt.X := X;
+    Pt.Y := Y;
+    for Result := 0 to Length(FWebLinksRects) - 1 do
+      for RectIndex := 0 to Length(FWebLinksRects[Result]) - 1 do
+        if FWebLinksRects[Result][RectIndex].PtIn(Pt) then
+          Exit;
+  end;
+  Result := -1;
+end;
+
+function TPdfPageWebLinksInfo.GetCount: Integer;
+begin
+  Result := Length(FWebLinksRects);
+end;
+
+function TPdfPageWebLinksInfo.GetRect(Index: Integer): TPdfRectArray;
+begin
+  Result := FWebLinksRects[Index];
+end;
+
+function TPdfPageWebLinksInfo.GetURL(Index: Integer): string;
+begin
+  Result := FPage.GetWebLinkURL(Index);
+end;
+
+function TPdfPageWebLinksInfo.IsWebLinkAt(X, Y: Double): Boolean;
+begin
+  Result := GetWebLinkIndex(X, Y) <> -1;
+end;
+
+function TPdfPageWebLinksInfo.IsWebLinkAt(X, Y: Double; var Url: string): Boolean;
+var
+  Index: Integer;
+begin
+  Index := GetWebLinkIndex(X, Y);
+  Result := Index <> -1;
+  if Result then
+    Url := FPage.GetWebLinkURL(Index)
+  else
+    Url := '';
+end;
+
 
 { TPdfDocumentPrinter }
 

@@ -40,7 +40,7 @@ type
     { Private-Deklarationen }
     FCtrl: TPdfControl;
     procedure WebLinkClick(Sender: TObject; Url: string);
-    procedure AnnotationLinkClick(Sender: TObject; LinkAnnotation: TPdfAnnotation);
+    procedure AnnotationLinkClick(Sender: TObject; LinkInfo: TPdfLinkInfo; var Handled: Boolean);
     procedure PrintDocument(Sender: TObject);
     procedure ListAttachments;
   public
@@ -76,8 +76,9 @@ begin
   //FCtrl.PageShadowColor := clDkGray;
   FCtrl.ScaleMode := smFitWidth;
   //FCtrl.PageColor := RGB(255, 255, 200);
-  FCtrl.OnWebLinkClick := WebLinkClick;
+  FCtrl.OnWebLinkClick := WebLinkClick; // disabled due to loTreatWebLinkAsUriAnnotationLink + loAutoOpenURI
   FCtrl.OnAnnotationLinkClick := AnnotationLinkClick;
+  FCtrl.LinkOptions := FCtrl.LinkOptions - [loAutoOpenURI] {+ cPdfControlAllAutoLinkOptions};
   FCtrl.OnPrintDocument := PrintDocument;
 
   edtZoom.Value := FCtrl.ZoomPercentage;
@@ -148,43 +149,20 @@ begin
   ShowMessage(Url);
 end;
 
-procedure TfrmMain.AnnotationLinkClick(Sender: TObject; LinkAnnotation: TPdfAnnotation);
-var
-  Dest: TPdfLinkGotoDestination;
-  X, Y{, Zoom}: Double;
-  Pt: TPoint;
+procedure TfrmMain.AnnotationLinkClick(Sender: TObject; LinkInfo: TPdfLinkInfo; var Handled: Boolean);
 begin
-  case LinkAnnotation.LinkType of
-    altGoto:
-      begin
-        Dest := LinkAnnotation.GetLinkGotoDestination();
-        FCtrl.PageIndex := Dest.PageIndex;
-        X := 0;
-        Y := 0;
-        //Zoom := 0;
-        if Dest.XValid then
-          X := Dest.X;
-        if Dest.YValid then
-          Y := Dest.Y;
-        {if Dest.ZoomValid then
-          Zoom := Dest.Zoom;
-        FCtrl.ZoomPercentage := Int(Zoom);}
+  Handled := True;
+  case LinkInfo.LinkType of
+    //altURI:
+    //  ShowMessage('URL: ' + LinkAnnotation.LinkUri);
 
-        Pt := FCtrl.PageToDevice(X, Y);
-        FCtrl.ScrollContentTo(Pt.X, Pt.Y);
-      end;
-
-    altRemoteGoto:
-      ShowMessage('Remote Goto: ' + LinkAnnotation.LinkFileName);
-
-    altURI:
-      ShowMessage('URL: ' + LinkAnnotation.LinkUri);
-
-    altLaunch:
-      ShowMessage('Launch: ' + LinkAnnotation.LinkFileName);
+    //altLaunch:
+    //  ShowMessage('Launch: ' + LinkAnnotation.LinkFileName);
 
     altEmbeddedGoto:
-      ShowMessage('EmbeddedGoto: ' + LinkAnnotation.LinkUri);
+      ShowMessage('EmbeddedGoto: ' + LinkInfo.LinkUri);
+  else
+    Handled := False;
   end;
 end;
 

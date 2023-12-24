@@ -27,10 +27,27 @@ uses
   {$IFDEF FPC}
   LCLType, PrintersDlgs, Win32Extra,
   {$ENDIF FPC}
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, Dialogs, PdfiumCore;
+  Windows, Messages, ShellAPI, Types, SysUtils, Classes, Graphics, Controls, Forms,
+  Dialogs, PdfiumCore;
+
+type
+  TPdfControlLinkOptionType = (
+    loAutoGoto,                        // Jumps in the document are allowed and automatically handled
+    loAutoRemoteGotoReplaceDocument,   // Jumps to a remote document are allowed and automatically handled by replacing the loaded document
+    loAutoOpenURI,                     // Jumps to URI are allowed and automatically handled by using ShellExecuteEx. Disables OnWebLinkClick if loTreatWebLinkAsUriAnnotationLink is set
+    loAutoLaunch,                      // Allow executing/opening a program/file automatically by using ShellExecuteEx
+    loAutoEmbeddedGotoReplaceDocument, // Jumps to an attached PDF document are allowed and automatically handled by replacing the loaded document
+
+    loTreatWebLinkAsUriAnnotationLink, // OnAnnotationLinkClick also handles WebLinks
+    loAlwaysDetectWebAndUriLink        // If if OnWebLinkClick and OnAnnotationLinkClick aren't assigned, URI and WebLinks are detected
+  );
+  TPdfControlLinkOptions = set of TPdfControlLinkOptionType;
 
 const
   cPdfControlDefaultDrawOptions = [proAnnotations];
+  cPdfControlDefaultLinkOptions = [loAutoGoto, loTreatWebLinkAsUriAnnotationLink, loAlwaysDetectWebAndUriLink];
+  cPdfControlAllAutoLinkOptions = [loAutoGoto, loAutoRemoteGotoReplaceDocument, loAutoOpenURI,
+                                   loAutoLaunch, loAutoEmbeddedGotoReplaceDocument];
 
 type
   TPdfControlScaleMode = (
@@ -41,7 +58,7 @@ type
   );
 
   TPdfControlWebLinkClickEvent = procedure(Sender: TObject; Url: string) of object;
-  TPdfControlAnnotationLinkClickEvent = procedure(Sender: TObject; Link: TPdfAnnotation) of object;
+  TPdfControlAnnotationLinkClickEvent = procedure(Sender: TObject; LinkInfo: TPdfLinkInfo; var Handled: Boolean) of object;
   TPdfControlRectArray = array of TRect;
   TPdfControlPdfRectArray = array of TPdfRect;
 
@@ -73,12 +90,13 @@ type
     FSelStopCharIndex: Integer;
     FMouseDownPt: TPoint;
     FCheckForTrippleClick: Boolean;
-    FWebLinkInfo: TPdfPageWebLinkInfo;
+    FWebLinkInfo: TPdfPageWebLinksInfo;
     FDrawOptions: TPdfPageRenderOptions;
     FScaleMode: TPdfControlScaleMode;
     FZoomPercentage: Integer;
     FPageColor: TColor;
     FScrollMousePos: TPoint;
+    FLinkOptions: TPdfControlLinkOptions;
     FHighlightTextRects: TPdfControlPdfRectArray;
     FHighlightText: string;
     FHighlightMatchCase: Boolean;
@@ -138,6 +156,8 @@ type
     procedure SetZoomPercentage(Value: Integer);
     procedure DrawPage(DC: HDC; Page: TPdfPage; DirectDrawPage: Boolean);
     procedure CalcHighlightTextRects;
+    procedure InitDocument;
+    function ShellOpenFileName(const FileName: string; Launch: Boolean): Boolean;
 
     procedure FormInvalidate(Document: TPdfDocument; Page: TPdfPage; const PageRect: TPdfRect);
     procedure FormOutputSelectedRect(Document: TPdfDocument; Page: TPdfPage; const PageRect: TPdfRect);
@@ -160,9 +180,10 @@ type
     procedure WMChar(var Message: TWMChar); message WM_CHAR;
     procedure WMKillFocus(var Message: TWMKillFocus); message WM_KILLFOCUS;
 
+    function LinkHandlingNeeded: Boolean;
     function IsClickableLinkAt(X, Y: Integer): Boolean;
     procedure WebLinkClick(const Url: string); virtual;
-    procedure AnnotationLinkClick(LinkAnnotation: TPdfAnnotation); virtual;
+    procedure AnnotationLinkClick(LinkInfo: TPdfLinkInfo); virtual;
     procedure PageChange; virtual;
     procedure PageContentChanged(Closing: Boolean);
     procedure PageLayoutChanged;
@@ -183,6 +204,7 @@ type
     { PrintDocument uses OnPrintDocument to print. If OnPrintDocument is not assigned it does nothing. }
     procedure PrintDocument;
 
+    procedure OpenWithDocument(Document: TPdfDocument); // takes ownership
     procedure LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; Size: LongWord; Param: Pointer; const Password: UTF8String = '');
     procedure LoadFromActiveStream(Stream: TStream; const Password: UTF8String = ''); // Stream must not be released until the document is closed
     procedure LoadFromActiveBuffer(Buffer: Pointer; Size: Int64; const Password: UTF8String = ''); // Buffer must not be released until the document is closed
@@ -224,6 +246,7 @@ type
     function GotoPrevPage(ScrollTransition: Boolean = False): Boolean;
     function ScrollContent(XOffset, YOffset: Integer; Smooth: Boolean = False): Boolean; virtual;
     function ScrollContentTo(X, Y: Integer; Smooth: Boolean = False): Boolean;
+    function GotoDestination(const LinkGotoDestination: TPdfLinkGotoDestination): Boolean;
 
     property Document: TPdfDocument read FDocument;
     property CurrentPage: TPdfPage read GetCurrentPage;
@@ -248,6 +271,7 @@ type
     property SmoothScroll: Boolean read FSmoothScroll write FSmoothScroll default False;
     property ScrollTimer: Boolean read FScrollTimer write FScrollTimer default True;
     property ChangePageOnMouseScrolling: Boolean read FChangePageOnMouseScrolling write FChangePageOnMouseScrolling default False;
+    property LinkOptions: TPdfControlLinkOptions read FLinkOptions write FLinkOptions default cPdfControlDefaultLinkOptions;
 
     property PageBorderColor: TColor read FPageBorderColor write SetPageBorderColor default clNone;
     property PageShadowColor: TColor read FPageShadowColor write SetPageShadowColor default clNone;
@@ -332,7 +356,7 @@ type
 implementation
 
 uses
-  Math, Clipbrd, Character, Printers;
+  Math, Clipbrd, Character, Printers, StrUtils;
 
 const
   cScrollTimerId = 1;
@@ -497,6 +521,7 @@ begin
   FDrawOptions := cPdfControlDefaultDrawOptions;
   FScrollTimer := True;
   FBufferedPageDraw := True;
+  FLinkOptions := cPdfControlDefaultLinkOptions;
 
   FPageBorderColor := clNone;
   FPageShadowColor := clNone;
@@ -504,11 +529,7 @@ begin
   FPageShadowPadding := 44;
 
   FDocument := TPdfDocument.Create;
-  FDocument.OnFormInvalidate := FormInvalidate;
-  FDocument.OnFormOutputSelectedRect := FormOutputSelectedRect;
-  FDocument.OnFormGetCurrentPage := FormGetCurrentPage;
-  FDocument.OnFormFieldFocus := FormFieldFocus;
-  FDocument.OnExecuteNamedAction := ExecuteNamedAction;
+  InitDocument;
 
   ParentDoubleBuffered := False;
   ParentBackground := False;
@@ -525,6 +546,15 @@ begin
     DeleteObject(FPageBitmap);
   FDocument.Free;
   inherited Destroy;
+end;
+
+procedure TPdfControl.InitDocument;
+begin
+  FDocument.OnFormInvalidate := FormInvalidate;
+  FDocument.OnFormOutputSelectedRect := FormOutputSelectedRect;
+  FDocument.OnFormGetCurrentPage := FormGetCurrentPage;
+  FDocument.OnFormFieldFocus := FormFieldFocus;
+  FDocument.OnExecuteNamedAction := ExecuteNamedAction;
 end;
 
 procedure TPdfControl.DestroyWnd;
@@ -1044,6 +1074,17 @@ begin
   PageContentChanged(False);
 end;
 
+procedure TPdfControl.OpenWithDocument(Document: TPdfDocument);
+begin
+  Close;
+  if Document = nil then
+    Exit;
+
+  FreeAndNil(FDocument);
+  FDocument := Document;
+  InitDocument;
+end;
+
 procedure TPdfControl.LoadFromCustom(ReadFunc: TPdfDocumentCustomReadProc; Size: LongWord;
   Param: Pointer; const Password: UTF8String);
 begin
@@ -1374,6 +1415,7 @@ var
   Url: string;
   Page: TPdfPage;
   LinkAnnotation: TPdfAnnotation;
+  LinkInfo: TPdfLinkInfo;
 begin
   inherited MouseUp(Button, Shift, X, Y);
 
@@ -1404,19 +1446,27 @@ begin
         SetSelStopCharIndex(X, Y);
       if not FSelectionActive then
       begin
-        if Assigned(FOnAnnotationLinkClick) or Assigned(FOnWebLinkClick) then
+        if LinkHandlingNeeded then
         begin
           LinkAnnotation := GetAnnotationLinkAt(X, Y);
+          LinkInfo := nil;
           if LinkAnnotation <> nil then
+            LinkInfo := TPdfLinkInfo.Create(LinkAnnotation, '')
+          else if IsWebLinkAt(X, Y, Url) then // If we have a Link Annotation and a WebLink, then the link annotation is prefered
           begin
-            if Assigned(FonAnnotationLinkClick) then
-              AnnotationLinkClick(LinkAnnotation)
-            else if LinkAnnotation.LinkType = altURI then
-              WebLinkClick(LinkAnnotation.LinkUri);
-          end
-          // If we have a Link Annotation and a WebLink, then the link annotation is prefered
-          else if Assigned(FOnWebLinkClick) and IsWebLinkAt(X, Y, Url) then
-            WebLinkClick(Url);
+            if loTreatWebLinkAsUriAnnotationLink in LinkOptions then
+              LinkInfo := TPdfLinkInfo.Create(nil, Url)
+            else
+              WebLinkClick(Url);
+          end;
+          if LinkInfo <> nil then
+          begin
+            try
+              AnnotationLinkClick(LinkInfo);
+            finally
+              LinkInfo.Free;
+            end;
+          end;
         end;
       end;
     end;
@@ -1511,7 +1561,7 @@ procedure TPdfControl.CMMouseleave(var Message: TMessage);
 begin
   if (Cursor = crIBeam) or (Cursor = crHandPoint) then
   begin
-    if AllowUserTextSelection or Assigned(FOnWebLinkClick) or Assigned(FOnAnnotationLinkClick) then
+    if AllowUserTextSelection or Assigned(FOnWebLinkClick) or Assigned(FOnAnnotationLinkClick) or (LinkOptions <> []) then
       Cursor := crDefault;
   end;
   inherited;
@@ -1992,21 +2042,60 @@ begin
   FreeAndNil(FWebLinkInfo);
   Page := CurrentPage;
   if Page <> nil then
-    FWebLinkInfo := TPdfPageWebLinkInfo.Create(Page);
+    FWebLinkInfo := TPdfPageWebLinksInfo.Create(Page);
+end;
+
+function TPdfControl.LinkHandlingNeeded: Boolean;
+begin
+  // If an event handler is assigned, we need link handling
+  Result := Assigned(FOnAnnotationLinkClick) or Assigned(FOnWebLinkClick);
+  if not Result then
+  begin
+    // If no event handler is assigned, we may need link handling depending on the loAutoXXX options.
+    Result := LinkOptions * cPdfControlAllAutoLinkOptions <> [];
+  end;
 end;
 
 function TPdfControl.IsClickableLinkAt(X, Y: Integer): Boolean;
+var
+  LinkAnnotation: TPdfAnnotation;
 begin
-  if Assigned(FOnWebLinkClick) and IsWebLinkAt(X, Y) then
-    Result := True
-  else if Assigned(FOnAnnotationLinkClick) and IsAnnotationLinkAt(X, Y) then
-    Result := True
-  // Fallback in case OnAnnotationLinkClick is not assigend but OnWebLinkClick is, then we use
-  // WebLinkClick for the URI-Action Links.
-  else if not Assigned(FOnAnnotationLinkClick) and Assigned(FOnWebLinkClick) and IsUriAnnotationLinkAt(X, Y) then
-    Result := True
-  else
-    Result := False;
+  Result := False;
+  if LinkHandlingNeeded then
+  begin
+    LinkAnnotation := GetAnnotationLinkAt(X, Y);
+    if LinkAnnotation <> nil then
+    begin
+      if Assigned(FOnAnnotationLinkClick) then
+        Result := True
+      else
+      begin
+        case LinkAnnotation.LinkType of
+          altGoto:
+            Result := loAutoGoto in LinkOptions;
+          altRemoteGoto:
+            Result := loAutoRemoteGotoReplaceDocument in LinkOptions;
+          altURI:
+            Result := (loAutoOpenURI in LinkOptions) or (loAlwaysDetectWebAndUriLink in LinkOptions) or Assigned(FOnWebLinkClick); // Fallback to OnWebLinkClick for URIs
+          altLaunch:
+            Result := loAutoLaunch in LinkOptions;
+          altEmbeddedGoto:
+            Result := loAutoEmbeddedGotoReplaceDocument in LinkOptions;
+        else
+          Result := False;
+        end;
+      end;
+    end
+    else if IsWebLinkAt(X, Y) then
+    begin
+      if Assigned(FOnWebLinkClick) or (loAlwaysDetectWebAndUriLink in LinkOptions) then
+        Result := True
+      else if Assigned(FOnAnnotationLinkClick) and (loTreatWebLinkAsUriAnnotationLink in LinkOptions) then
+        Result := True
+      else if not Assigned(FOnAnnotationLinkClick) and (loTreatWebLinkAsUriAnnotationLink in LinkOptions) and (loAutoOpenURI in LinkOptions) then
+        Result := True;
+    end;
+  end;
 end;
 
 function TPdfControl.IsWebLinkAt(X, Y: Integer): Boolean;
@@ -2067,16 +2156,151 @@ begin
     Result := nil;
 end;
 
+function TPdfControl.ShellOpenFileName(const FileName: string; Launch: Boolean): Boolean;
+var
+  Info: TShellExecuteInfo;
+begin
+  FillChar(Info, SizeOf(Info), 0);
+  Info.cbSize := SizeOf(Info);
+  if HandleAllocated then
+    Info.Wnd := Handle;
+  if Launch then
+    Info.lpVerb := nil
+  else
+    Info.lpVerb := 'open';
+  Info.lpFile := PChar(FileName);
+  Info.lpDirectory := PChar(ExtractFileDir(Document.FileName));
+  Info.nShow := SW_NORMAL;
+  Result := ShellExecuteEx(@Info);
+end;
+
 procedure TPdfControl.WebLinkClick(const Url: string);
 begin
   if Assigned(FOnWebLinkClick) then
     FOnWebLinkClick(Self, Url);
 end;
 
-procedure TPdfControl.AnnotationLinkClick(LinkAnnotation: TPdfAnnotation);
+function TPdfControl.GotoDestination(const LinkGotoDestination: TPdfLinkGotoDestination): Boolean;
+var
+  X, Y: Double;
+  //Zoom: Integer;
+  Pt: TPoint;
 begin
+  Result := False;
+  if Document.Active then
+  begin
+    X := 0;
+    Y := 0;
+    //Zoom := 100;
+    if LinkGotoDestination.XValid then
+      X := LinkGotoDestination.X;
+    if LinkGotoDestination.YValid then
+      Y := LinkGotoDestination.Y;
+    //if Dest.ZoomValid then
+    //  Zoom := Int(Dest.Zoom);
+
+    if (LinkGotoDestination.PageIndex >= 0) and (LinkGotoDestination.PageIndex < Document.PageCount) then
+    begin
+      Pt := PageToDevice(X, Y);
+
+      PageIndex := LinkGotoDestination.PageIndex;
+      //ZoomPercentage := Zoom;
+      ScrollContentTo(Pt.X, Pt.Y);
+      Result := True;
+    end;
+  end;
+end;
+
+procedure TPdfControl.AnnotationLinkClick(LinkInfo: TPdfLinkInfo);
+var
+  Handled: Boolean;
+  Dest: TPdfLinkGotoDestination;
+  FileName: string;
+  RemoteDoc: TPdfDocument;
+  DestValid: Boolean;
+  AttachmentIndex: Integer;
+begin
+  Handled := False;
+  if not Document.Active then
+    Exit;
+
   if Assigned(FOnAnnotationLinkClick) then
-    FOnAnnotationLinkClick(Self, LinkAnnotation);
+    FOnAnnotationLinkClick(Self, LinkInfo, Handled)
+  else if Assigned(FOnWebLinkClick) and (LinkInfo.LinkType = altURI) and not (loAutoOpenURI in LinkOptions) then
+  begin
+    WebLinkClick(LinkInfo.LinkUri);
+    Exit;
+  end;
+
+  if not Handled and Document.Active then
+  begin
+    case LinkInfo.LinkType of
+      altGoto:
+        if loAutoGoto in LinkOptions then
+        begin
+          if LinkInfo.GetLinkGotoDestination(Dest) then
+            GotoDestination(Dest);
+        end;
+
+      altRemoteGoto:
+        if loAutoRemoteGotoReplaceDocument in LinkOptions then
+        begin
+          Dest := nil;
+          RemoteDoc := TPdfDocument.Create;
+          try
+            // Open the remote document
+            RemoteDoc.LoadFromFile(LinkInfo.LinkFileName);
+            // Get the link destination from the remote document
+            DestValid := LinkInfo.GetLinkGotoDestination(Dest, RemoteDoc);
+          except
+            RemoteDoc.Free;
+            raise;
+          end;
+          if DestValid then
+          begin
+            // Replace the current document with the remote document
+            OpenWithDocument(RemoteDoc);
+            GotoDestination(Dest);
+          end;
+        end;
+
+      altURI:
+        if loAutoOpenURI in LinkOptions then
+          ShellOpenFileName(LinkInfo.LinkUri, False);
+
+      altLaunch:
+        if loAutoLaunch in LinkOptions then
+          ShellOpenFileName(LinkInfo.LinkFileName, True);
+
+      altEmbeddedGoto:
+        if loAutoEmbeddedGotoReplaceDocument in LinkOptions then
+        begin
+          FileName := LinkInfo.LinkFileName;
+          AttachmentIndex := Document.Attachments.IndexOf(FileName);
+          if AttachmentIndex <> -1 then
+          begin
+            // Same as RemoteGoto but with a byte array
+            Dest := nil;
+            RemoteDoc := TPdfDocument.Create;
+            try
+              // Open the embedded document
+              RemoteDoc.LoadFromBytes(Document.Attachments[AttachmentIndex].GetContentAsBytes);
+              // Get the link destination from the remote document
+              DestValid := LinkInfo.GetLinkGotoDestination(Dest, RemoteDoc);
+            except
+              RemoteDoc.Free;
+              raise;
+            end;
+            if DestValid then
+            begin
+              // Replace the current document with the remote document
+              OpenWithDocument(RemoteDoc);
+              GotoDestination(Dest);
+            end;
+          end;
+        end;
+    end;
+  end;
 end;
 
 procedure TPdfControl.UpdatePageDrawInfo;
