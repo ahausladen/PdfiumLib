@@ -3729,7 +3729,7 @@ begin
   case FSubType of
     FPDF_ANNOT_WIDGET,
     FPDF_ANNOT_XFAWIDGET:
-      FFormField := TPdfFormField.Create(FHandle);
+      FFormField := TPdfFormField.Create(Self);
 
     FPDF_ANNOT_LINK:
       begin
