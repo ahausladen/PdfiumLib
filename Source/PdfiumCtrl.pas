@@ -60,7 +60,6 @@ type
   TPdfControlWebLinkClickEvent = procedure(Sender: TObject; Url: string) of object;
   TPdfControlAnnotationLinkClickEvent = procedure(Sender: TObject; LinkInfo: TPdfLinkInfo; var Handled: Boolean) of object;
   TPdfControlRectArray = array of TRect;
-  TPdfControlPdfRectArray = array of TPdfRect;
 
   TPdfControl = class(TCustomControl)
   private
@@ -97,7 +96,7 @@ type
     FPageColor: TColor;
     FScrollMousePos: TPoint;
     FLinkOptions: TPdfControlLinkOptions;
-    FHighlightTextRects: TPdfControlPdfRectArray;
+    FHighlightTextRects: TPdfRectArray;
     FHighlightText: string;
     FHighlightMatchCase: Boolean;
     FHighlightMatchWholeWord: Boolean;
@@ -146,7 +145,7 @@ type
     procedure SetPageColor(const Value: TColor);
     procedure SetDrawOptions(const Value: TPdfPageRenderOptions);
     procedure InvalidateRectDiffs(const OldRects, NewRects: TPdfControlRectArray);
-    procedure InvalidatePdfRectDiffs(const OldRects, NewRects: TPdfControlPdfRectArray);
+    procedure InvalidatePdfRectDiffs(const OldRects, NewRects: TPdfRectArray);
     procedure StopScrollTimer;
     procedure DocumentLoaded;
     procedure DrawSelection(DC: HDC; Page: TPdfPage);
@@ -165,7 +164,8 @@ type
     procedure FormFieldFocus(Document: TPdfDocument; Value: PWideChar; ValueLen: Integer; FieldFocused: Boolean);
     procedure ExecuteNamedAction(Document: TPdfDocument; NamedAction: TPdfNamedActionType);
 
-    procedure DrawAlphaSelection(DC: HDC; Page: TPdfPage; const ARects: TPdfRectArray);
+    procedure DrawAlphaRects(DC: HDC; Page: TPdfPage; const Rects: TPdfRectArray; Color: TColor);
+    procedure DrawAlphaSelection(DC: HDC; Page: TPdfPage; const Rects: TPdfRectArray);
     procedure DrawFormOutputSelectedRects(DC: HDC; Page: TPdfPage);
   protected
     procedure Paint; override;
@@ -356,7 +356,7 @@ type
 implementation
 
 uses
-  Math, Clipbrd, Character, Printers, StrUtils;
+  Math, Clipbrd, Character, Printers;
 
 const
   cScrollTimerId = 1;
@@ -586,7 +586,12 @@ begin
   Message.Result := 1;
 end;
 
-procedure TPdfControl.DrawAlphaSelection(DC: HDC; Page: TPdfPage; const ARects: TPdfRectArray);
+procedure TPdfControl.DrawAlphaSelection(DC: HDC; Page: TPdfPage; const Rects: TPdfRectArray);
+begin
+  DrawAlphaRects(DC, Page, Rects, RGB(50, 142, 254));
+end;
+
+procedure TPdfControl.DrawAlphaRects(DC: HDC; Page: TPdfPage; const Rects: TPdfRectArray; Color: TColor);
 var
   Count: Integer;
   I: Integer;
@@ -595,13 +600,17 @@ var
   SelBmp: TBitmap;
   BlendFunc: TBlendFunction;
 begin
-  Count := Length(ARects);
+  Count := Length(Rects);
   if Count > 0 then
   begin
     SelBmp := TBitmap.Create;
     try
-      SelBmp.Canvas.Brush.Color := RGB(50, 142, 254);
+      SelBmp.Canvas.Brush.Color := Color;
       SelBmp.SetSize(100, 50);
+      {$IFDEF FPC}
+      // Delphi fills the bitmap with the brush if it is resized, FPC doesn't
+      SelBmp.Canvas.FillRect(0, 0, SelBmp.Width, SelBmp.Height);
+      {$ENDIF FPC}
       BlendFunc.BlendOp := AC_SRC_OVER;
       BlendFunc.BlendFlags := 0;
       BlendFunc.SourceConstantAlpha := 127;
@@ -609,7 +618,7 @@ begin
       BmpDC := SelBmp.Canvas.Handle;
       for I := 0 to Count - 1 do
       begin
-        R := InternPageToDevice(Page, ARects[I]);
+        R := InternPageToDevice(Page, Rects[I]);
         if RectVisible(DC, R) then
           AlphaBlend(DC, R.Left, R.Top, R.Right - R.Left, R.Bottom - R.Top,
                      BmpDC, 0, 0, SelBmp.Width, SelBmp.Height,
@@ -643,37 +652,8 @@ begin
 end;
 
 procedure TPdfControl.DrawHighlightText(DC: HDC; Page: TPdfPage);
-var
-  I: Integer;
-  R: TRect;
-  BmpDC: HDC;
-  SelBmp: TBitmap;
-  BlendFunc: TBlendFunction;
 begin
-  if FHighlightTextRects <> nil then
-  begin
-    SelBmp := TBitmap.Create;
-    try
-      SelBmp.Canvas.Brush.Color := RGB(254, 142, 50);
-      SelBmp.SetSize(100, 50);
-      BlendFunc.BlendOp := AC_SRC_OVER;
-      BlendFunc.BlendFlags := 0;
-      BlendFunc.SourceConstantAlpha := 127;
-      BlendFunc.AlphaFormat := 0;
-      BmpDC := SelBmp.Canvas.Handle;
-
-      for I := 0 to Length(FHighlightTextRects) - 1 do
-      begin
-        R := InternPageToDevice(Page, FHighlightTextRects[I]);
-        if RectVisible(DC, R) then
-          AlphaBlend(DC, R.Left, R.Top, R.Right - R.Left, R.Bottom - R.Top,
-                     BmpDC, 0, 0, SelBmp.Width, SelBmp.Height,
-                     BlendFunc);
-      end;
-    finally
-      SelBmp.Free;
-    end;
-  end;
+  DrawAlphaRects(DC, Page, FHighlightTextRects, RGB(254, 142, 50));
 end;
 
 procedure TPdfControl.DrawBorderAndShadow(DC: HDC);
@@ -1694,7 +1674,7 @@ begin
   end;
 end;
 
-procedure TPdfControl.InvalidatePdfRectDiffs(const OldRects, NewRects: TPdfControlPdfRectArray);
+procedure TPdfControl.InvalidatePdfRectDiffs(const OldRects, NewRects: TPdfRectArray);
 var
   I: Integer;
   OldRs, NewRs: TPdfControlRectArray;
@@ -2158,7 +2138,7 @@ end;
 
 function TPdfControl.ShellOpenFileName(const FileName: string; Launch: Boolean): Boolean;
 var
-  Info: TShellExecuteInfo;
+  Info: TShellExecuteInfoW;
 begin
   FillChar(Info, SizeOf(Info), 0);
   Info.cbSize := SizeOf(Info);
@@ -2171,7 +2151,7 @@ begin
   Info.lpFile := PChar(FileName);
   Info.lpDirectory := PChar(ExtractFileDir(Document.FileName));
   Info.nShow := SW_NORMAL;
-  Result := ShellExecuteEx(@Info);
+  Result := ShellExecuteExW(@Info);
 end;
 
 procedure TPdfControl.WebLinkClick(const Url: string);
@@ -2697,7 +2677,7 @@ end;
 
 procedure TPdfControl.CalcHighlightTextRects;
 var
-  OldHighlightTextRects: TPdfControlPdfRectArray;
+  OldHighlightTextRects: TPdfRectArray;
   Page: TPdfPage;
   CharIndex, CharCount, I, Count: Integer;
   Num: Integer;
