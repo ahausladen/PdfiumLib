@@ -544,6 +544,7 @@ destructor TPdfControl.Destroy;
 begin
   if FPageBitmap <> 0 then
     DeleteObject(FPageBitmap);
+  FreeAndNil(FWebLinkInfo);	
   FDocument.Free;
   inherited Destroy;
 end;
