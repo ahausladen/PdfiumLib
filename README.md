@@ -15,14 +15,15 @@ chromium/6043
   - TBytes
   - TStream
   - Active buffer (buffer must not be released before the PDF document is closed)
-  - Active TSteam (stream must not be released before the PDF document is closed)
+  - Active TStream (stream must not be released before the PDF document is closed)
   - Callback
 - File Attachments
 - Import pages into other PDF documents
 - Forms
 - PDF rotation (normal, 90° counter clockwise, 180°, 90° clockwise)
 - Highlighted text (e.g. for search results)
-- WebLink click support
+- WebLink/URI-Annotation-Link click event
+- Optional automatic Goto/RemoteGoto/EmbeddedGoto/Launch/URL Annotation-Link handling
 - Flicker-free and optimized painting (only changed parts are painted)
 - Optional buffered page rendering (improves repainting of complex PDF pages)
 - Optional text selection by the user (mouse and Ctrl+A)
