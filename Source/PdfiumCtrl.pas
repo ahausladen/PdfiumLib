@@ -151,7 +151,7 @@ type
     procedure DrawSelection(DC: HDC; Page: TPdfPage);
     procedure DrawHighlightText(DC: HDC; Page: TPdfPage);
     procedure DrawBorderAndShadow(DC: HDC);
-    function InternPageToDevice(Page: TPdfPage; PageRect: TPdfRect): TRect;
+    function InternPageToDevice(Page: TPdfPage; PageRect: TPdfRect; ANormalize: Boolean): TRect;
     procedure SetZoomPercentage(Value: Integer);
     procedure DrawPage(DC: HDC; Page: TPdfPage; DirectDrawPage: Boolean);
     procedure CalcHighlightTextRects;
@@ -619,7 +619,7 @@ begin
       BmpDC := SelBmp.Canvas.Handle;
       for I := 0 to Count - 1 do
       begin
-        R := InternPageToDevice(Page, Rects[I]);
+        R := InternPageToDevice(Page, Rects[I], True);
         if RectVisible(DC, R) then
           AlphaBlend(DC, R.Left, R.Top, R.Right - R.Left, R.Bottom - R.Top,
                      BmpDC, 0, 0, SelBmp.Width, SelBmp.Height,
@@ -1290,9 +1290,26 @@ begin
     Result := Rect(0, 0, 0, 0);
 end;
 
-function TPdfControl.InternPageToDevice(Page: TPdfPage; PageRect: TPdfRect): TRect;
+function TPdfControl.InternPageToDevice(Page: TPdfPage; PageRect: TPdfRect; ANormalize: Boolean): TRect;
+var
+  Value: Integer;
 begin
   Result := Page.PageToDevice(FDrawX, FDrawY, FDrawWidth, FDrawHeight, PageRect, Rotation);
+  if ANormalize then
+  begin
+    if Result.Left > Result.Right then
+    begin
+      Value := Result.Right;
+      Result.Right := Result.Left;
+      Result.Left := Value;
+    end;
+    if Result.Top > Result.Bottom then
+    begin
+      Value := Result.Bottom;
+      Result.Bottom := Result.Top;
+      Result.Top := Value;
+    end;
+  end;
 end;
 
 function TPdfControl.SetSelStopCharIndex(X, Y: Integer): Boolean;
@@ -1640,7 +1657,7 @@ begin
       Count := Page.GetTextRectCount(SelStart, SelLength);
       SetLength(Result, Count);
       for I := 0 to Count - 1 do
-        Result[I] := InternPageToDevice(Page, Page.GetTextRect(I));
+        Result[I] := InternPageToDevice(Page, Page.GetTextRect(I), True);
       Exit;
     end;
   end;
@@ -1686,11 +1703,11 @@ begin
   begin
     SetLength(OldRs, Length(OldRects));
     for I := 0 to Length(OldRects) - 1 do
-      OldRs[I] := InternPageToDevice(Page, OldRects[I]);
+      OldRs[I] := InternPageToDevice(Page, OldRects[I], True);
 
     SetLength(NewRs, Length(NewRects));
     for I := 0 to Length(NewRects) - 1 do
-      NewRs[I] := InternPageToDevice(Page, NewRects[I]);
+      NewRs[I] := InternPageToDevice(Page, NewRects[I], True);
 
     InvalidateRectDiffs(OldRs, NewRs);
   end;
@@ -2731,7 +2748,7 @@ begin
   FFormOutputSelectedRects := nil;
   if HandleAllocated then
   begin
-    R := InternPageToDevice(Page, PageRect);
+    R := InternPageToDevice(Page, PageRect, True);
     InvalidateRect(Handle, @R, True);
   end;
 end;
