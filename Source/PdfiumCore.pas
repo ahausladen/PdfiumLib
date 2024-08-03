@@ -20,7 +20,7 @@ uses
     {$IFDEF FPC}
   LCLType,
     {$ENDIF FPC}
-  ExtCtrls,
+  ExtCtrls, // for TTimer
   {$ENDIF MSWINDOWS}
   Types, SysUtils, Classes, Contnrs,
   PdfiumLib;
@@ -484,8 +484,7 @@ type
     class function GetDrawFlags(const Options: TPdfPageRenderOptions): Integer; static;
     procedure AfterOpen;
     function IsValidForm: Boolean;
-    function GetMouseModifier(const Shift: TShiftState): Integer;
-    function GetKeyModifier(KeyData: LPARAM): Integer;
+    function ShiftStateToModifier(const Shift: TShiftState): Integer;
     function GetHandle: FPDF_PAGE;
     function GetTextHandle: FPDF_TEXTPAGE;
     function GetFormFields: TPdfFormFieldList;
@@ -497,10 +496,19 @@ type
     procedure Close;
     function IsLoaded: Boolean;
 
+    {$IFDEF MSWINDOWS}
+    // Draw the PDF page and the form into the device context.
     procedure Draw(DC: HDC; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation = prNormal;
-      const Options: TPdfPageRenderOptions = []; PageBackground: TColorRef = $FFFFFF);
+      const Options: TPdfPageRenderOptions = []; PageBackground: TColorRef = $FFFFFF); overload;
+    {$ENDIF MSWINDOWS}
+    // Draw the PDF page and the form into the bitmap.
+    procedure Draw(APdfBitmap: TPdfBitmap; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation = prNormal;
+      const Options: TPdfPageRenderOptions = []; PageBackground: TColorRef = $FFFFFF); overload;
+
+    // Draw the PDF page without the form field values into the bitmap.
     procedure DrawToPdfBitmap(APdfBitmap: TPdfBitmap; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation = prNormal;
       const Options: TPdfPageRenderOptions = []);
+    // Draw the PDF form field values into the bitmap.
     procedure DrawFormToPdfBitmap(APdfBitmap: TPdfBitmap; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation = prNormal;
       const Options: TPdfPageRenderOptions = []);
 
@@ -519,9 +527,9 @@ type
     function FormEventLButtonUp(const Shift: TShiftState; PageX, PageY: Double): Boolean;
     function FormEventRButtonDown(const Shift: TShiftState; PageX, PageY: Double): Boolean;
     function FormEventRButtonUp(const Shift: TShiftState; PageX, PageY: Double): Boolean;
-    function FormEventKeyDown(KeyCode: Word; KeyData: LPARAM): Boolean;
-    function FormEventKeyUp(KeyCode: Word; KeyData: LPARAM): Boolean;
-    function FormEventKeyPress(Key: Word; KeyData: LPARAM): Boolean;
+    function FormEventKeyDown(KeyCode: Word; const Shift: TShiftState): Boolean;
+    function FormEventKeyUp(KeyCode: Word; const Shift: TShiftState): Boolean;
+    function FormEventKeyPress(Key: Word; const Shift: TShiftState): Boolean;
     function FormEventKillFocus: Boolean;
     function FormGetFocusedText: string;
     function FormGetSelectedText: string;
@@ -781,6 +789,7 @@ type
     property OnExecuteNamedAction: TPdfExecuteNamedActionEvent read FOnExecuteNamedAction write FOnExecuteNamedAction;
   end;
 
+  {$IFDEF MSWINDOWS}
   TPdfDocumentPrinterStatusEvent = procedure(Sender: TObject; CurrentPageNum, PageCount: Integer) of object;
 
   TPdfDocumentPrinter = class(TObject)
@@ -827,6 +836,7 @@ type
     { OnPrintStatus is triggered after every printed page }
     property OnPrintStatus: TPdfDocumentPrinterStatusEvent read FOnPrintStatus write FOnPrintStatus;
   end;
+  {$ENDIF MSWINDOWS}
 
 function SetThreadPdfUnsupportedFeatureHandler(const Handler: TPdfUnsupportedFeatureHandler): TPdfUnsupportedFeatureHandler;
 
@@ -1168,7 +1178,7 @@ begin
     end;
   end;
 end;
-{$ELSE MSWINDOWS}
+{$ELSE}
 type
   TFFITimer = class(TTimer)
   public
@@ -1603,7 +1613,7 @@ begin
           finally
             FreeAndNil(FFileStream);
           end;
-        end
+        end;
       dloOnDemand:
         LoadFromActiveStream(FFileStream, Password);
     end;
@@ -2385,6 +2395,7 @@ begin
     Result := Result or FPDF_REVERSE_BYTE_ORDER;
 end;
 
+{$IFDEF MSWINDOWS}
 procedure TPdfPage.Draw(DC: HDC; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation;
   const Options: TPdfPageRenderOptions; PageBackground: TColorRef);
 var
@@ -2396,7 +2407,6 @@ var
 begin
   Open;
 
-  {$IFDEF MSWINDOWS}
   if proPrinting in Options then
   begin
     if IsValidForm and (FPDFPage_GetAnnotCount(FPage) > 0) then
@@ -2410,13 +2420,11 @@ begin
     FPDF_RenderPage(DC, FPage, X, Y, Width, Height, Ord(Rotate), GetDrawFlags(Options));
     Exit;
   end;
-  {$ENDIF MSWINDOWS}
-
 
   FillChar(BitmapInfo, SizeOf(BitmapInfo), 0);
   BitmapInfo.bmiHeader.biSize := SizeOf(BitmapInfo);
   BitmapInfo.bmiHeader.biWidth := Width;
-  BitmapInfo.bmiHeader.biHeight := -Height;
+  BitmapInfo.bmiHeader.biHeight := -Height; // negative Height means top to bottom for Y values
   BitmapInfo.bmiHeader.biPlanes := 1;
   BitmapInfo.bmiHeader.biBitCount := 32;
   BitmapInfo.bmiHeader.biCompression := BI_RGB;
@@ -2425,11 +2433,10 @@ begin
   if Bmp <> 0 then
   begin
     try
+      // Use the Windows Bitmap's bits for the PdfBmp
       PdfBmp := TPdfBitmap.Create(Width, Height, bfBGRA, BmpBits, Width * 4);
       try
-        PdfBmp.FillRect(0, 0, Width, Height, $FF000000 or PageBackground);
-        DrawToPdfBitmap(PdfBmp, 0, 0, Width, Height, Rotate, Options);
-        DrawFormToPdfBitmap(PdfBmp, 0, 0, Width, Height, Rotate, Options);
+        Draw(PdfBmp, 0, 0, Width, Height, Rotate, Options, PageBackground);
       finally
         PdfBmp.Free;
       end;
@@ -2443,6 +2450,15 @@ begin
       DeleteObject(Bmp);
     end;
   end;
+end;
+{$ENDIF MSWINDOWS}
+
+procedure TPdfPage.Draw(APdfBitmap: TPdfBitmap; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation = prNormal;
+  const Options: TPdfPageRenderOptions = []; PageBackground: TColorRef = $FFFFFF);
+begin
+  APdfBitmap.FillRect(0, 0, Width, Height, $FF000000 or PageBackground);
+  DrawToPdfBitmap(APdfBitmap, 0, 0, Width, Height, Rotate, Options);
+  DrawFormToPdfBitmap(APdfBitmap, 0, 0, Width, Height, Rotate, Options);
 end;
 
 procedure TPdfPage.DrawToPdfBitmap(APdfBitmap: TPdfBitmap; X, Y, Width, Height: Integer;
@@ -2861,7 +2877,7 @@ begin
   Result := False;
 end;
 
-function TPdfPage.GetMouseModifier(const Shift: TShiftState): Integer;
+function TPdfPage.ShiftStateToModifier(const Shift: TShiftState): Integer;
 begin
   Result := 0;
   if ssShift in Shift then
@@ -2878,25 +2894,10 @@ begin
     Result := Result or FWL_EVENTFLAG_RightButtonDown;
 end;
 
-function TPdfPage.GetKeyModifier(KeyData: LPARAM): Integer;
-const
-  AltMask = $20000000;
-begin
-  Result := 0;
-  {$IFDEF MSWINDOWS}
-  if GetKeyState(VK_SHIFT) < 0 then
-    Result := Result or FWL_EVENTFLAG_ShiftKey;
-  if GetKeyState(VK_CONTROL) < 0 then
-    Result := Result or FWL_EVENTFLAG_ControlKey;
-  {$ENDIF MSWINDOWS}
-  if KeyData and AltMask <> 0 then
-    Result := Result or FWL_EVENTFLAG_AltKey;
-end;
-
 function TPdfPage.FormEventFocus(const Shift: TShiftState; PageX, PageY: Double): Boolean;
 begin
   if IsValidForm then
-    Result := FORM_OnFocus(FDocument.FForm, FPage, GetMouseModifier(Shift), PageX, PageY) <> 0
+    Result := FORM_OnFocus(FDocument.FForm, FPage, ShiftStateToModifier(Shift), PageX, PageY) <> 0
   else
     Result := False;
 end;
@@ -2916,7 +2917,7 @@ begin
       WheelX := WheelDelta
     else
       WheelY := WheelDelta;
-    Result := FORM_OnMouseWheel(FDocument.FForm, FPage, GetMouseModifier(Shift), @Pt, WheelX, WheelY) <> 0;
+    Result := FORM_OnMouseWheel(FDocument.FForm, FPage, ShiftStateToModifier(Shift), @Pt, WheelX, WheelY) <> 0;
   end
   else
     Result := False;
@@ -2925,7 +2926,7 @@ end;
 function TPdfPage.FormEventMouseMove(const Shift: TShiftState; PageX, PageY: Double): Boolean;
 begin
   if IsValidForm then
-    Result := FORM_OnMouseMove(FDocument.FForm, FPage, GetMouseModifier(Shift), PageX, PageY) <> 0
+    Result := FORM_OnMouseMove(FDocument.FForm, FPage, ShiftStateToModifier(Shift), PageX, PageY) <> 0
   else
     Result := False;
 end;
@@ -2933,7 +2934,7 @@ end;
 function TPdfPage.FormEventLButtonDown(const Shift: TShiftState; PageX, PageY: Double): Boolean;
 begin
   if IsValidForm then
-    Result := FORM_OnLButtonDown(FDocument.FForm, FPage, GetMouseModifier(Shift), PageX, PageY) <> 0
+    Result := FORM_OnLButtonDown(FDocument.FForm, FPage, ShiftStateToModifier(Shift), PageX, PageY) <> 0
   else
     Result := False;
 end;
@@ -2941,7 +2942,7 @@ end;
 function TPdfPage.FormEventLButtonUp(const Shift: TShiftState; PageX, PageY: Double): Boolean;
 begin
   if IsValidForm then
-    Result := FORM_OnLButtonUp(FDocument.FForm, FPage, GetMouseModifier(Shift), PageX, PageY) <> 0
+    Result := FORM_OnLButtonUp(FDocument.FForm, FPage, ShiftStateToModifier(Shift), PageX, PageY) <> 0
   else
     Result := False;
 end;
@@ -2949,7 +2950,7 @@ end;
 function TPdfPage.FormEventRButtonDown(const Shift: TShiftState; PageX, PageY: Double): Boolean;
 begin
   if IsValidForm then
-    Result := FORM_OnRButtonDown(FDocument.FForm, FPage, GetMouseModifier(Shift), PageX, PageY) <> 0
+    Result := FORM_OnRButtonDown(FDocument.FForm, FPage, ShiftStateToModifier(Shift), PageX, PageY) <> 0
   else
     Result := False;
 end;
@@ -2957,31 +2958,31 @@ end;
 function TPdfPage.FormEventRButtonUp(const Shift: TShiftState; PageX, PageY: Double): Boolean;
 begin
   if IsValidForm then
-    Result := FORM_OnRButtonUp(FDocument.FForm, FPage, GetMouseModifier(Shift), PageX, PageY) <> 0
+    Result := FORM_OnRButtonUp(FDocument.FForm, FPage, ShiftStateToModifier(Shift), PageX, PageY) <> 0
   else
     Result := False;
 end;
 
-function TPdfPage.FormEventKeyDown(KeyCode: Word; KeyData: LPARAM): Boolean;
+function TPdfPage.FormEventKeyDown(KeyCode: Word; const Shift: TShiftState): Boolean;
 begin
   if IsValidForm then
-    Result := FORM_OnKeyDown(FDocument.FForm, FPage, KeyCode, GetKeyModifier(KeyData)) <> 0
+    Result := FORM_OnKeyDown(FDocument.FForm, FPage, KeyCode, ShiftStateToModifier(Shift)) <> 0
   else
     Result := False;
 end;
 
-function TPdfPage.FormEventKeyUp(KeyCode: Word; KeyData: LPARAM): Boolean;
+function TPdfPage.FormEventKeyUp(KeyCode: Word; const Shift: TShiftState): Boolean;
 begin
   if IsValidForm then
-    Result := FORM_OnKeyUp(FDocument.FForm, FPage, KeyCode, GetKeyModifier(KeyData)) <> 0
+    Result := FORM_OnKeyUp(FDocument.FForm, FPage, KeyCode, ShiftStateToModifier(Shift)) <> 0
   else
     Result := False;
 end;
 
-function TPdfPage.FormEventKeyPress(Key: Word; KeyData: LPARAM): Boolean;
+function TPdfPage.FormEventKeyPress(Key: Word;  const Shift: TShiftState): Boolean;
 begin
   if IsValidForm then
-    Result := FORM_OnChar(FDocument.FForm, FPage, Key, GetKeyModifier(KeyData)) <> 0
+    Result := FORM_OnChar(FDocument.FForm, FPage, Key, ShiftStateToModifier(Shift)) <> 0
   else
     Result := False;
 end;
@@ -4301,7 +4302,7 @@ begin
     Url := '';
 end;
 
-
+{$IFDEF MSWINDOWS}
 { TPdfDocumentPrinter }
 
 constructor TPdfDocumentPrinter.Create;
@@ -4496,6 +4497,7 @@ begin
     prNormal, [proPrinting, proAnnotations]
   );
 end;
+{$ENDIF MSWINDOWS}
 
 initialization
   {$IFDEF FPC}

@@ -175,9 +175,9 @@ type
     procedure MouseMove(Shift: TShiftState; X: Integer; Y: Integer); override;
     function DoMouseWheel(Shift: TShiftState; WheelDelta: Integer; MousePos: TPoint): Boolean; override;
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
-    procedure WMKeyDown(var Message: TWMKeyDown); message WM_KEYDOWN;
-    procedure WMKeyUp(var Message: TWMKeyUp); message WM_KEYUP;
-    procedure WMChar(var Message: TWMChar); message WM_CHAR;
+    procedure WMKeyDown(var Message: TWMKeyDown); message {$IFDEF FPC}CN_KEYDOWN{$ELSE}WM_KEYDOWN{$ENDIF};
+    procedure WMKeyUp(var Message: TWMKeyUp); message {$IFDEF FPC}CN_KEYUP{$ELSE}WM_KEYUP{$ENDIF};
+    procedure WMChar(var Message: TWMChar); message {$IFDEF FPC}CN_CHAR{$ELSE}WM_CHAR{$ENDIF};
     procedure WMKillFocus(var Message: TWMKillFocus); message WM_KILLFOCUS;
 
     function LinkHandlingNeeded: Boolean;
@@ -1978,52 +1978,57 @@ end;
 
 procedure TPdfControl.WMKeyDown(var Message: TWMKeyDown);
 var
-  ShiftState: TShiftState;
+  Shift: TShiftState;
 begin
-  if AllowFormEvents and IsPageValid and CurrentPage.FormEventKeyDown(Message.CharCode, Message.KeyData) then
+  if AllowFormEvents and IsPageValid then
   begin
-    // PDFium doesn't handle Copy&Paste&Cut keyboard shortcuts in form fields
-    case Message.CharCode of
-      Ord('C'), Ord('X'), Ord('V'), VK_INSERT, VK_DELETE:
-        begin
-          ShiftState := KeyDataToShiftState(Message.KeyData);
-          if ShiftState = [ssCtrl] then
+    Shift := KeyDataToShiftState(Message.KeyData);
+    if CurrentPage.FormEventKeyDown(Message.CharCode, Shift) then
+    begin
+      // PDFium doesn't handle Copy&Paste&Cut keyboard shortcuts in form fields
+      case Message.CharCode of
+        Ord('C'), Ord('X'), Ord('V'), VK_INSERT, VK_DELETE:
           begin
-            case Message.CharCode of
-              Ord('C'), VK_INSERT:
-                CopyFormTextToClipboard;
-              Ord('X'):
-                CutFormTextToClipboard;
-              Ord('V'):
-                PasteFormTextFromClipboard;
-            end;
-          end
-          else if ShiftState = [ssShift] then
-          begin
-            case Message.CharCode of
-              VK_INSERT:
-                PasteFormTextFromClipboard;
-              VK_DELETE:
-                CutFormTextToClipboard;
+            if Shift = [ssCtrl] then
+            begin
+              case Message.CharCode of
+                Ord('C'), VK_INSERT:
+                  CopyFormTextToClipboard;
+                Ord('X'):
+                  CutFormTextToClipboard;
+                Ord('V'):
+                  PasteFormTextFromClipboard;
+              end;
+            end
+            else if Shift = [ssShift] then
+            begin
+              case Message.CharCode of
+                VK_INSERT:
+                  PasteFormTextFromClipboard;
+                VK_DELETE:
+                  CutFormTextToClipboard;
+              end;
             end;
           end;
-        end;
+      end;
+      Exit;
     end;
-    Exit;
   end;
   inherited;
 end;
 
 procedure TPdfControl.WMKeyUp(var Message: TWMKeyUp);
 begin
-  if AllowFormEvents and IsPageValid and CurrentPage.FormEventKeyUp(Message.CharCode, Message.KeyData) then
+  if AllowFormEvents and IsPageValid
+     and CurrentPage.FormEventKeyUp(Message.CharCode, KeyDataToShiftState(Message.KeyData)) then
     Exit;
   inherited;
 end;
 
 procedure TPdfControl.WMChar(var Message: TWMChar);
 begin
-  if AllowFormEvents and IsPageValid and CurrentPage.FormEventKeyPress(Message.CharCode, Message.KeyData) then
+  if AllowFormEvents and IsPageValid
+     and CurrentPage.FormEventKeyPress(Message.CharCode, KeyDataToShiftState(Message.KeyData)) then
     Exit;
   inherited;
 end;
