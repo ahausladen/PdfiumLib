@@ -388,6 +388,7 @@ begin
   Result := not Printer.Aborted;
 end;
 
+
 { TPdfDocumentVclPrinter }
 
 function TPdfDocumentVclPrinter.PrinterStartDoc(const AJobTitle: string): Boolean;
@@ -503,6 +504,7 @@ begin
     PdfPrinter.Free;
   end;
 end;
+
 
 { TPdfControl }
 

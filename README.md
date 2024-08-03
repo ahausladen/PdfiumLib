@@ -4,10 +4,10 @@ Example of a PDF VCL Control using PDFium
 ## Requirements
 pdfium.dll (x86/x64) from the [pdfium-binaries](https://github.com/bblanchon/pdfium-binaries)
 
-Binary release: [chromium/6043](https://github.com/bblanchon/pdfium-binaries/releases/tag/chromium%2F6043)
+Binary release: [chromium/6611](https://github.com/bblanchon/pdfium-binaries/releases/tag/chromium%2F6611)
 
 ## Required pdfium.dll version
-chromium/6043
+chromium/6611
 
 ## Features
 - Multiple PDF load functions:

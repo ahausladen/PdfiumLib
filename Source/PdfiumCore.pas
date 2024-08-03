@@ -218,9 +218,11 @@ type
     lgdvFitBV   = PDFDEST_VIEW_FITBV
   );
 
+  // Make the TObject.Create constructor private to hide it, so that the TPdfBitmap.Create
+  // overloads won't allow calling TObject.Create.
   _TPdfBitmapHideCtor = class(TObject)
   private
-    procedure Create;
+    constructor Create;
   end;
 
   TPdfBitmap = class(_TPdfBitmapHideCtor)
@@ -1399,6 +1401,7 @@ begin
   end;
 end;
 
+
 { TPdfDocument }
 
 constructor TPdfDocument.Create;
@@ -2224,6 +2227,7 @@ begin
   end;
   Result := nil;
 end;
+
 
 { TPdfPage }
 
@@ -3121,12 +3125,14 @@ begin
   Result := Annotations.FormFields;
 end;
 
+
 { _TPdfBitmapHideCtor }
 
-procedure _TPdfBitmapHideCtor.Create;
+constructor _TPdfBitmapHideCtor.Create;
 begin
   inherited Create;
 end;
+
 
 { TPdfBitmap }
 
@@ -3194,6 +3200,7 @@ begin
   Result.Y := 0;
 end;
 
+
 { TPdfAttachmentList }
 
 constructor TPdfAttachmentList.Create(ADocument: TPdfDocument);
@@ -3243,6 +3250,7 @@ begin
       Exit;
   Result := -1;
 end;
+
 
 { TPdfAttachment }
 
@@ -3558,6 +3566,7 @@ function TPdfAttachment.GetContentAsString(Encoding: TEncoding): string;
 begin
   GetContent(Result, Encoding);
 end;
+
 
 { TPdfAnnotationList }
 
@@ -3880,6 +3889,7 @@ begin
     end;
   end;
 end;
+
 
 { TPdfFormField }
 
@@ -4212,6 +4222,7 @@ begin
   else
     Result := False;
 end;
+
 
 { TPdfPageWebLinksInfo }
 

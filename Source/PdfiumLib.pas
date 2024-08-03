@@ -1,6 +1,6 @@
 // Use DLLs (x64, x86) from https://github.com/bblanchon/pdfium-binaries
 //
-// DLL Version: chromium/6043
+// DLL Version: chromium/6611
 
 unit PdfiumLib;
 {$IFDEF FPC}
@@ -15,7 +15,7 @@ unit PdfiumLib;
 
 {.$DEFINE DLLEXPORT} // stdcall in WIN32 instead of CDECL in WIN32 (The library switches between those from release to release)
 
-{$DEFINE _SKIA_SUPPORT_}
+{$DEFINE PDF_USE_SKIA}
 {$DEFINE PDF_ENABLE_XFA}
 {$DEFINE PDF_ENABLE_V8}
 
@@ -126,6 +126,7 @@ type
   FPDF_SKIA_CANVAS        = type Pointer;  // Passed into Skia as an SkCanvas.
   FPDF_STRUCTELEMENT      = type __PFPDF_PTRREC;
   FPDF_STRUCTELEMENT_ATTR = type __PFPDF_PTRREC;
+  FPDF_STRUCTELEMENT_ATTR_VALUE = type __PFPDF_PTRREC;
   FPDF_STRUCTTREE         = type __PFPDF_PTRREC;
   FPDF_TEXTPAGE           = type __PFPDF_PTRREC;
   FPDF_WIDGET             = type __PFPDF_PTRREC;
@@ -497,88 +498,79 @@ type
   PFPdfFileAccess = ^TFPdfFileAccess;
   TFPdfFileAccess = FPDF_FILEACCESS;
 
-  //*
-  //* Structure for file reading or writing (I/O).
-  //*
-  //* Note: This is a handler and should be implemented by callers,
-  //*
+  // Structure for file reading or writing (I/O).
+  //
+  // Note: This is a handler and should be implemented by callers,
+  // and is only used from XFA.
   PFPDF_FILEHANDLER = ^FPDF_FILEHANDLER;
   FPDF_FILEHANDLER = record
-    //*
-    //* User-defined data.
-    //* Node: Callers can use this field to track controls.
-    //*
+    // User-defined data.
+    // Note: Callers can use this field to track controls.
     clientData: Pointer;
-    //*
-    //* Callback function to release the current file stream object.
-    //*
-    //* Parameters:
-    //*       clientData   -  Pointer to user-defined data.
-    //* Returns:
-    //*       None.
-    //*
+
+    // Callback function to release the current file stream object.
+    //
+    // Parameters:
+    //       clientData   -  Pointer to user-defined data.
+    // Returns:
+    //       None.
     Release: procedure(clientData: Pointer); cdecl;
-    //*
-    //* Callback function to retrieve the current file stream size.
-    //*
-    //* Parameters:
-    //*       clientData   -  Pointer to user-defined data.
-    //* Returns:
-    //*       Size of file stream.
-    //*
+
+    // Callback function to retrieve the current file stream size.
+    //
+    // Parameters:
+    //       clientData   -  Pointer to user-defined data.
+    // Returns:
+    //       Size of file stream.
     GetSize: function(clientData: Pointer): FPDF_DWORD; cdecl;
-    //*
-    //* Callback function to read data from the current file stream.
-    //*
-    //* Parameters:
-    //*       clientData   -  Pointer to user-defined data.
-    //*       offset       -  Offset position starts from the beginning of file
-    //*                       stream. This parameter indicates reading position.
-    //*       buffer       -  Memory buffer to store data which are read from
-    //*                       file stream. This parameter should not be NULL.
-    //*       size         -  Size of data which should be read from file stream,
-    //*                       in bytes. The buffer indicated by |buffer| must be
-    //*                       large enough to store specified data.
-    //* Returns:
-    //*       0 for success, other value for failure.
-    //*
+
+    // Callback function to read data from the current file stream.
+    //
+    // Parameters:
+    //       clientData   -  Pointer to user-defined data.
+    //       offset       -  Offset position starts from the beginning of file
+    //                       stream. This parameter indicates reading position.
+    //       buffer       -  Memory buffer to store data which are read from
+    //                       file stream. This parameter should not be NULL.
+    //       size         -  Size of data which should be read from file stream,
+    //                       in bytes. The buffer indicated by |buffer| must be
+    //                       large enough to store specified data.
+    // Returns:
+    //       0 for success, other value for failure.
     ReadBlock: function(clientData: Pointer; offset: FPDF_DWORD; buffer: Pointer; size: FPDF_DWORD): FPDF_RESULT; cdecl;
-    //*
-    //* Callback function to write data into the current file stream.
-    //*
-    //* Parameters:
-    //*       clientData   -  Pointer to user-defined data.
-    //*       offset       -  Offset position starts from the beginning of file
-    //*                       stream. This parameter indicates writing position.
-    //*       buffer       -  Memory buffer contains data which is written into
-    //*                       file stream. This parameter should not be NULL.
-    //*       size         -  Size of data which should be written into file
-    //*                       stream, in bytes.
-    //* Returns:
-    //*       0 for success, other value for failure.
-    //*
+
+    // Callback function to write data into the current file stream.
+    //
+    // Parameters:
+    //       clientData   -  Pointer to user-defined data.
+    //       offset       -  Offset position starts from the beginning of file
+    //                       stream. This parameter indicates writing position.
+    //       buffer       -  Memory buffer contains data which is written into
+    //                       file stream. This parameter should not be NULL.
+    //       size         -  Size of data which should be written into file
+    //                       stream, in bytes.
+    // Returns:
+    //       0 for success, other value for failure.
     WriteBlock: function(clientData: Pointer; offset: FPDF_DWORD; const buffer: Pointer; size: FPDF_DWORD): FPDF_RESULT; cdecl;
-    //**
-    //* Callback function to flush all internal accessing buffers.
-    //*
-    //* Parameters:
-    //*       clientData   -  Pointer to user-defined data.
-    //* Returns:
-    //*       0 for success, other value for failure.
-    //*
+
+    // Callback function to flush all internal accessing buffers.
+    //
+    // Parameters:
+    //       clientData   -  Pointer to user-defined data.
+    // Returns:
+    //       0 for success, other value for failure.
     Flush: function(clientData: Pointer): FPDF_RESULT; cdecl;
-    //**
-    //* Callback function to change file size.
-    //*
-    //* Description:
-    //*       This function is called under writing mode usually. Implementer
-    //*       can determine whether to realize it based on application requests.
-    //* Parameters:
-    //*       clientData   -  Pointer to user-defined data.
-    //*       size         -  New size of file stream, in bytes.
-    //* Returns:
-    //*       0 for success, other value for failure.
-    //*
+
+    // Callback function to change file size.
+    //
+    // Description:
+    //       This function is called under writing mode usually. Implementer
+    //       can determine whether to realize it based on application requests.
+    // Parameters:
+    //       clientData   -  Pointer to user-defined data.
+    //       size         -  New size of file stream, in bytes.
+    // Returns:
+    //       0 for success, other value for failure.
     Truncate: function(clientData: Pointer; size: FPDF_DWORD): FPDF_RESULT; cdecl;
   end;
   PFPdfFileHandler = ^TFPdfFileHandler;
@@ -941,7 +933,7 @@ var
   FPDF_RenderPageBitmapWithMatrix: procedure(bitmap: FPDF_BITMAP; page: FPDF_PAGE; matrix: PFS_MATRIX;
     clipping: PFS_RECTF; flags: Integer); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-{$IFDEF _SKIA_SUPPORT_}
+{$IFDEF PDF_USE_SKIA}
 // Function: FPDF_RenderPageSkia
 //          Render contents of a page to a Skia SkCanvas.
 // Parameters:
@@ -953,7 +945,7 @@ var
 //          None.
 var
   FPDF_RenderPageSkia: procedure(canvas: FPDF_SKIA_CANVAS; page: FPDF_PAGE; size_x, size_y: Integer); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
-{$ENDIF _SKIA_SUPPORT_}
+{$ENDIF PDF_USE_SKIA}
 
 // Function: FPDF_ClosePage
 //          Close a loaded PDF page.
@@ -1296,14 +1288,15 @@ var
 //          document    -   Handle to the loaded document.
 //          key         -   Name of the key in the viewer pref dictionary,
 //                          encoded in UTF-8.
-//          buffer      -   A string to write the contents of the key to.
+//          buffer      -   Caller-allocate buffer to receive the key, or NULL
+//                      -   to query the required length.
 //          length      -   Length of the buffer.
 // Return value:
 //          The number of bytes in the contents, including the NULL terminator.
 //          Thus if the return value is 0, then that indicates an error, such
 //          as when |document| is invalid or |buffer| is NULL. If |length| is
-//          less than the returned length, or |buffer| is NULL, |buffer| will
-//          not be modified.
+//          as when |document| is invalid. If |length| is less than the required
+//          length, or |buffer| is NULL, |buffer| will not be modified.
 var
   FPDF_VIEWERREF_GetName: function(document: FPDF_DOCUMENT; key: FPDF_BYTESTRING; buffer: PAnsiChar;
     length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
@@ -1431,6 +1424,9 @@ var
 //          Use is optional, but allows external creation of isolates
 //          matching the ones PDFium will make when none is provided
 //          via |FPDF_LIBRARY_CONFIG::m_pIsolate|.
+//
+//          Can only be called when the library is in an uninitialized or
+//          destroyed state.
 var
   FPDF_GetArrayBufferAllocatorSharedInstance: function: Pointer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 {$ENDIF PDF_ENABLE_V8}
@@ -1621,26 +1617,28 @@ var
 var
   FPDFPage_SetRotation: procedure(page: FPDF_PAGE; rotate: Integer); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Insert |page_obj| into |page|.
+// Insert |page_object| into |page|.
 //
-//   page     - handle to a page
-//   page_obj - handle to a page object. The |page_obj| will be automatically
-//              freed.
+//   page        - handle to a page
+//   page_object - handle to a page object. The |page_object| will be
+//                 automatically freed.
 var
-  FPDFPage_InsertObject: procedure(page: FPDF_PAGE; page_obj: FPDF_PAGEOBJECT); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDFPage_InsertObject: procedure(page: FPDF_PAGE; page_object: FPDF_PAGEOBJECT); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
-// Remove |page_obj| from |page|.
+// Remove |page_object| from |page|.
 //
-//   page     - handle to a page
-//   page_obj - handle to a page object to be removed.
+//   page        - handle to a page
+//   page_object - handle to a page object to be removed.
 //
 // Returns TRUE on success.
 //
 // Ownership is transferred to the caller. Call FPDFPageObj_Destroy() to free
 // it.
+// Note that when removing a |page_object| of type FPDF_PAGEOBJ_TEXT, all
+// FPDF_TEXTPAGE handles for |page| are no longer valid.
 var
-  FPDFPage_RemoveObject: function(page: FPDF_PAGE; page_obj: FPDF_PAGEOBJECT): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDFPage_RemoveObject: function(page: FPDF_PAGE; page_object: FPDF_PAGEOBJECT): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Get number of page objects inside |page|.
 //
@@ -1678,13 +1676,13 @@ var
 var
   FPDFPage_GenerateContent: function(page: FPDF_PAGE): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-// Destroy |page_obj| by releasing its resources. |page_obj| must have been
-// created by FPDFPageObj_CreateNew{Path|Rect}() or
+// Destroy |page_object| by releasing its resources. |page_object| must have
+// been created by FPDFPageObj_CreateNew{Path|Rect}() or
 // FPDFPageObj_New{Text|Image}Obj(). This function must be called on
 // newly-created objects if they are not added to a page through
 // FPDFPage_InsertObject() or to an annotation through FPDFAnnot_AppendObject().
 //
-//   page_obj - handle to a page object.
+//   page_object - handle to a page object.
 var
   FPDFPageObj_Destroy: procedure(page_obj: FPDF_PAGEOBJECT); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -1723,6 +1721,21 @@ var
   FPDFPageObj_Transform: procedure(page_object: FPDF_PAGEOBJECT; a, b, c, d, e, f: Double); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
+// Transform |page_object| by the given matrix.
+//
+//   page_object - handle to a page object.
+//   matrix      - the transform matrix.
+//
+// Returns TRUE on success.
+//
+// This can be used to scale, rotate, shear and translate the |page_object|.
+// It is an improved version of FPDFPageObj_Transform() that does not do
+// unnecessary double to float conversions, and only uses 1 parameter for the
+// matrix. It also returns whether the operation succeeded or not.
+var
+  FPDFPageObj_TransformF: function(page_object: FPDF_PAGEOBJECT; matrix: PFS_MATRIX): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
 // Get the transform matrix of a page object.
 //
 //   page_object - handle to a page object.
@@ -1732,6 +1745,11 @@ var
 //   |a c e|
 //   |b d f|
 // and used to scale, rotate, shear and translate the page object.
+//
+// For page objects outside form objects, the matrix values are relative to the
+// page that contains it.
+// For page objects inside form objects, the matrix values are relative to the
+// form that contains it.
 //
 // Returns TRUE on success.
 var
@@ -1750,7 +1768,7 @@ var
 //
 // Returns TRUE on success.
 var
-  FPDFPageObj_SetMatrix: function(path: FPDF_PAGEOBJECT; const matrix: PFS_MATRIX): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDFPageObj_SetMatrix: function(page_object: FPDF_PAGEOBJECT; const matrix: PFS_MATRIX): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Transform all annotations in |page|.
 //
@@ -1776,6 +1794,15 @@ var
 // Returns a handle to a new image object.
 var
   FPDFPageObj_NewImageObj: function(document: FPDF_DOCUMENT): FPDF_PAGEOBJECT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get the marked content ID for the object.
+//
+//   page_object - handle to a page object.
+//
+// Returns the page object's marked content ID, or -1 on error.
+var
+  FPDFPageObj_GetMarkedContentID: function(page_object: FPDF_PAGEOBJECT): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Get number of content marks in |page_object|.
@@ -2537,18 +2564,16 @@ var
   FPDFText_SetCharcodes: function(text_object: FPDF_PAGEOBJECT; const charcodes: PUINT; count: SIZE_T): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Returns a font object loaded from a stream of data. The font is loaded
-// into the document.
+// into the document. Various font data structures, such as the ToUnicode data,
+// are auto-generated based on the inputs.
 //
-// document   - handle to the document.
-// data       - the stream of data, which will be copied by the font object.
-// size       - size of the stream, in bytes.
-// font_type  - FPDF_FONT_TYPE1 or FPDF_FONT_TRUETYPE depending on the font
-// type.
-// cid        - a boolean specifying if the font is a CID font or not.
+// document  - handle to the document.
+// data      - the stream of font data, which will be copied by the font object.
+// size      - the size of the font data, in bytes.
+// font_type - FPDF_FONT_TYPE1 or FPDF_FONT_TRUETYPE depending on the font type.
+// cid       - a boolean specifying if the font is a CID font or not.
 //
-// The loaded font can be closed using FPDFFont_Close.
-//
-// Returns NULL on failure
+// The loaded font can be closed using FPDFFont_Close().
 var
   FPDFText_LoadFont: function(document: FPDF_DOCUMENT; data: PByte; size: DWORD;
     font_type: Integer; cid: FPDF_BOOL): FPDF_FONT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
@@ -2561,11 +2586,31 @@ var
 // document   - handle to the document.
 // font       - string containing the font name, without spaces.
 //
-// The loaded font can be closed using FPDFFont_Close.
+// The loaded font can be closed using FPDFFont_Close().
 //
 // Returns NULL on failure.
 var
   FPDFText_LoadStandardFont: function(document: FPDF_DOCUMENT; font: FPDF_BYTESTRING): FPDF_FONT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Returns a font object loaded from a stream of data for a type 2 CID font. The
+// font is loaded into the document. Unlike FPDFText_LoadFont(), the ToUnicode
+// data and the CIDToGIDMap data are caller provided, instead of auto-generated.
+//
+// document                 - handle to the document.
+// font_data                - the stream of font data, which will be copied by
+//                            the font object.
+// font_data_size           - the size of the font data, in bytes.
+// to_unicode_cmap          - the ToUnicode data.
+// cid_to_gid_map_data      - the stream of CIDToGIDMap data.
+// cid_to_gid_map_data_size - the size of the CIDToGIDMap data, in bytes.
+//
+// The loaded font can be closed using FPDFFont_Close().
+//
+// Returns NULL on failure.
+var
+  FPDFText_LoadCidType2Font: function(document: FPDF_DOCUMENT; font_data: PByte; font_data_size: DWORD;
+    to_unicode_cmap: FPDF_BYTESTRING; cid_to_gid_map_data: PByte; cid_to_gid_map_data_size: DWORD): FPDF_FONT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Get the font size of a text object.
 //
@@ -2658,20 +2703,20 @@ var
   FPDFTextObj_GetFont: function(text: FPDF_PAGEOBJECT): FPDF_FONT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
-// Get the font name of a font.
+// Get the family name of a font.
 //
 // font   - the handle to the font object.
 // buffer - the address of a buffer that receives the font name.
 // length - the size, in bytes, of |buffer|.
 //
-// Returns the number of bytes in the font name (including the trailing NUL
+// Returns the number of bytes in the family name (including the trailing NUL
 // character) on success, 0 on error.
 //
 // Regardless of the platform, the |buffer| is always in UTF-8 encoding.
 // If |length| is less than the returned length, or |buffer| is NULL, |buffer|
 // will not be modified.
 var
-  FPDFFont_GetFontName: function(font: FPDF_FONT; buffer: PAnsiChar; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDFFont_GetFamilyName: function(font: FPDF_FONT; buffer: PAnsiChar; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Get the decoded data from the |font| object.
@@ -3061,6 +3106,21 @@ var
   FPDFText_GetUnicode: function(text_page: FPDF_TEXTPAGE; index: Integer): WideChar; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
+// Function: FPDFText_GetTextObject
+//          Get the FPDF_PAGEOBJECT associated with a given character.
+// Parameters:
+//          text_page   -   Handle to a text page information structure.
+//                          Returned by FPDFText_LoadPage function.
+//          index       -   Zero-based index of the character.
+// Return value:
+//          The associated text object for the character at |index|, or NULL on
+//          error. The returned text object, if non-null, is of type
+//          |FPDF_PAGEOBJ_TEXT|. The caller does not own the returned object.
+//
+var
+  FPDFText_GetTextObject: function(text_page: FPDF_TEXTPAGE; index: Integer): FPDF_PAGEOBJECT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
 // Function: FPDFText_IsGenerated
 //          Get if a character in a page is generated by PDFium.
 // Parameters:
@@ -3156,22 +3216,6 @@ var
 //
 var
   FPDFText_GetFontWeight: function(text_page: FPDF_TEXTPAGE; index: Integer): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
-
-// Experimental API.
-// Function: FPDFText_GetTextRenderMode
-//          Get text rendering mode of character.
-// Parameters:
-//          text_page   -   Handle to a text page information structure.
-//                          Returned by FPDFText_LoadPage function.
-//          index       -   Zero-based index of the character.
-// Return Value:
-//          On success, return the render mode value. A valid value is of type
-//          FPDF_TEXT_RENDERMODE. If |text_page| is invalid, if |index| is out
-//          of bounds, or if the text object is undefined, then return
-//          FPDF_TEXTRENDERMODE_UNKNOWN.
-//
-var
-  FPDFText_GetTextRenderMode: function(text_page: FPDF_TEXTPAGE; index: Integer): FPDF_TEXT_RENDERMODE; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Function: FPDFText_GetFillColor
@@ -3332,17 +3376,16 @@ var
 //          text_page   -   Handle to a text page information structure.
 //                          Returned by FPDFText_LoadPage function.
 //          start_index -   Index for the start characters.
-//          count       -   Number of characters to be extracted.
+//          count       -   Number of UCS-2 values to be extracted.
 //          result      -   A buffer (allocated by application) receiving the
-//                          extracted unicodes. The size of the buffer must be
-//                          able to hold the number of characters plus a
-//                          terminator.
+//                          extracted UCS-2 values. The buffer must be able to
+//                          hold `count` UCS-2 values plus a terminator.
 // Return Value:
 //          Number of characters written into the result buffer, including the
 //          trailing terminator.
 // Comments:
-//          This function ignores characters without unicode information.
-//          It returns all characters on the page, even those that are not
+//          This function ignores characters without UCS-2 representations.
+//          It considers all characters on the page, even those that are not
 //          visible when the page has a cropbox. To filter out the characters
 //          outside of the cropbox, use FPDF_GetPageBoundingBox() and
 //          FPDFText_GetCharBox().
@@ -3405,20 +3448,20 @@ var
 //          top         -   Top boundary.
 //          right       -   Right boundary.
 //          bottom      -   Bottom boundary.
-//          buffer      -   A unicode buffer.
-//          buflen      -   Number of characters (not bytes) for the buffer,
-//                          excluding an additional terminator.
+//          buffer      -   Caller-allocated buffer to receive UTF-16 values.
+//          buflen      -   Number of UTF-16 values (not bytes) that `buffer`
+//                          is capable of holding.
 // Return Value:
-//          If buffer is NULL or buflen is zero, return number of characters
-//          (not bytes) of text present within the rectangle, excluding a
-//          terminating NUL. Generally you should pass a buffer at least one
+//          If buffer is NULL or buflen is zero, return number of UTF-16
+//          values (not bytes) of text present within the rectangle, excluding
+//          a terminating NUL. Generally you should pass a buffer at least one
 //          larger than this if you want a terminating NUL, which will be
-//          provided if space is available. Otherwise, return number of
-//          characters copied into the buffer, including the terminating NUL
-//          when space for it is available.
+//          provided if space is available. Otherwise, return number of UTF-16
+//          values copied into the buffer, including the terminating NUL when
+//          space for it is available.
 // Comment:
 //          If the buffer is too small, as much text as will fit is copied into
-//          it.
+//          it. May return a split surrogate in that case.
 //
 var
   FPDFText_GetBoundedText: function(text_page: FPDF_TEXTPAGE; left, top, right, bottom: Double;
@@ -3649,24 +3692,19 @@ const
 type
   PIFSDK_PAUSE = ^IFSDK_PAUSE;
   IFSDK_PAUSE = record
-    //*
-    //* Version number of the interface. Currently must be 1.
-    //*
+    // Version number of the interface. Currently must be 1.
     version: Integer;
 
-    //*
-    //* Method: NeedToPauseNow
-    //*      Check if we need to pause a progressive process now.
-    //* Interface Version:
-    //*      1
-    //* Implementation Required:
-    //*      yes
-    //* Parameters:
-    //*      pThis    -  Pointer to the interface structure itself
-    //* Return Value:
-    //*       Non-zero for pause now, 0 for continue.
-    //*
-    //*
+    // Method: NeedToPauseNow
+    //           Check if we need to pause a progressive process now.
+    // Interface Version:
+    //           1
+    // Implementation Required:
+    //           yes
+    // Parameters:
+    //           pThis       -   Pointer to the interface structure itself
+    // Return Value:
+    //           Non-zero for pause now, 0 for continue.
     NeedToPauseNow: function(pThis: PIFSDK_PAUSE): FPDF_BOOL; cdecl;
 
     // A user defined data pointer, used by user's application. Can be NULL.
@@ -3938,6 +3976,8 @@ type
 //
 // Returns a handle to the first child of |bookmark| or the first top-level
 // bookmark item. NULL if no child or top-level bookmark found.
+// Note that another name for the bookmarks is the document outline, as
+// described in ISO 32000-1:2008, section 12.3.3.
 var
   FPDFBookmark_GetFirstChild: function(document: FPDF_DOCUMENT; bookmark: FPDF_BOOKMARK): FPDF_BOOKMARK; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -4326,184 +4366,166 @@ const
   FXFONT_FW_NORMAL = 400;
   FXFONT_FW_BOLD   = 700;
 
-//*
-//* Interface: FPDF_SYSFONTINFO
-//*      Interface for getting system font information and font mapping
-//*
+// Interface: FPDF_SYSFONTINFO
+//          Interface for getting system font information and font mapping
 type
   PFPDF_SYSFONTINFO = ^FPDF_SYSFONTINFO;
   FPDF_SYSFONTINFO = record
-    //*
-    //* Version number of the interface. Currently must be 1.
-    //*
+    // Version number of the interface. Currently must be 1.
     version: Integer;
 
-    //*
-    //* Method: Release
-    //*          Give implementation a chance to release any data after the
-    //* interface is no longer used
-    //* Interface Version:
-    //*          1
-    //* Implementation Required:
-    //*          No
-    //* Comments:
-    //*          Called by Foxit SDK during the final cleanup process.
-    //* Parameters:
-    //*          pThis       -   Pointer to the interface structure itself
-    //* Return Value:
-    //*          None
-    //*
+    // Method: Release
+    //          Give implementation a chance to release any data after the
+    //          interface is no longer used.
+    // Interface Version:
+    //          1
+    // Implementation Required:
+    //          No
+    // Parameters:
+    //          pThis       -   Pointer to the interface structure itself
+    // Return Value:
+    //          None
+    // Comments:
+    //          Called by PDFium during the final cleanup process.
     Release: procedure(pThis: PFPDF_SYSFONTINFO); cdecl;
 
-    //*
-    //* Method: EnumFonts
-    //*          Enumerate all fonts installed on the system
-    //* Interface Version:
-    //*          1
-    //* Implementation Required:
-    //*          No
-    //* Parameters:
-    //*          pThis       -   Pointer to the interface structure itself
-    //*          pMapper     -   An opaque pointer to internal font mapper, used
-    //*                          when calling FPDF_AddInstalledFont().
-    //* Return Value:
-    //*          None
-    //* Comments:
-    //*          Implementations should call FPDF_AddIntalledFont() function for
-    //*          each font found. Only TrueType/OpenType and Type1 fonts are accepted
-    //*          by PDFium.
-    //*
+    // Method: EnumFonts
+    //          Enumerate all fonts installed on the system
+    // Interface Version:
+    //          1
+    // Implementation Required:
+    //          No
+    // Parameters:
+    //          pThis       -   Pointer to the interface structure itself
+    //          pMapper     -   An opaque pointer to internal font mapper, used
+    //                          when calling FPDF_AddInstalledFont().
+    // Return Value:
+    //          None
+    // Comments:
+    //          Implementations should call FPDF_AddInstalledFont() function for
+    //          each font found. Only TrueType/OpenType and Type1 fonts are
+    //          accepted by PDFium.
     EnumFonts: procedure(pThis: PFPDF_SYSFONTINFO; pMapper: Pointer); cdecl;
 
-    //*
-    //* Method: MapFont
-    //*          Use the system font mapper to get a font handle from requested
-    //*          parameters.
-    //* Interface Version:
-    //*          1
-    //* Implementation Required:
-    //*          Required if GetFont method is not implemented.
-    //* Parameters:
-    //*          pThis       -   Pointer to the interface structure itself
-    //*          weight      -   Weight of the requested font. 400 is normal and
-    //*                          700 is bold.
-    //*          bItalic     -   Italic option of the requested font, TRUE or
-    //*                          FALSE.
-    //*          charset     -   Character set identifier for the requested font.
-    //*                          See above defined constants.
-    //*          pitch_family -  A combination of flags. See above defined
-    //*                          constants.
-    //*          face        -   Typeface name. Currently use system local encoding
-    //*                          only.
-    //*          bExact      -   Obsolete: this parameter is now ignored.
-    //* Return Value:
-    //*          An opaque pointer for font handle, or NULL if system mapping is
-    //*          not supported.
-    //* Comments:
-    //*          If the system supports native font mapper (like Windows),
-    //*          implementation can implement this method to get a font handle.
-    //*          Otherwise, PDFium will do the mapping and then call GetFont
-    //*          method. Only TrueType/OpenType and Type1 fonts are accepted
-    //*          by PDFium.
-    //*
+    // Method: MapFont
+    //          Use the system font mapper to get a font handle from requested
+    //          parameters.
+    // Interface Version:
+    //          1
+    // Implementation Required:
+    //          Required if GetFont method is not implemented.
+    // Parameters:
+    //          pThis       -   Pointer to the interface structure itself
+    //          weight      -   Weight of the requested font. 400 is normal and
+    //                          700 is bold.
+    //          bItalic     -   Italic option of the requested font, TRUE or
+    //                          FALSE.
+    //          charset     -   Character set identifier for the requested font.
+    //                          See above defined constants.
+    //          pitch_family -  A combination of flags. See above defined
+    //                          constants.
+    //          face        -   Typeface name. Currently use system local encoding
+    //                          only.
+    //          bExact      -   Obsolete: this parameter is now ignored.
+    // Return Value:
+    //          An opaque pointer for font handle, or NULL if system mapping is
+    //          not supported.
+    // Comments:
+    //          If the system supports native font mapper (like Windows),
+    //          implementation can implement this method to get a font handle.
+    //          Otherwise, PDFium will do the mapping and then call GetFont
+    //          method. Only TrueType/OpenType and Type1 fonts are accepted
+    //          by PDFium.
     MapFont: function(pThis: PFPDF_SYSFONTINFO; weight, bItalic, charset, pitch_family: Integer;
       face: PAnsiChar; bExact: PInteger): Pointer; cdecl;
 
-    //*
-    //* Method: GetFont
-    //*          Get a handle to a particular font by its internal ID
-    //* Interface Version:
-    //*          1
-    //* Implementation Required:
-    //*          Required if MapFont method is not implemented.
-    //* Return Value:
-    //*          An opaque pointer for font handle.
-    //* Parameters:
-    //*          pThis       -   Pointer to the interface structure itself
-    //*          face        -   Typeface name in system local encoding.
-    //* Comments:
-    //*          If the system mapping not supported, PDFium will do the font
-    //*          mapping and use this method to get a font handle.
-    //*
+    // Method: GetFont
+    //          Get a handle to a particular font by its internal ID
+    // Interface Version:
+    //          1
+    // Implementation Required:
+    //          Required if MapFont method is not implemented.
+    // Return Value:
+    //          An opaque pointer for font handle.
+    // Parameters:
+    //          pThis       -   Pointer to the interface structure itself
+    //          face        -   Typeface name in system local encoding.
+    // Comments:
+    //          If the system mapping not supported, PDFium will do the font
+    //          mapping and use this method to get a font handle.
     GetFont: function(pThis: PFPDF_SYSFONTINFO; face: PAnsiChar): Pointer; cdecl;
 
-    //*
-    //* Method: GetFontData
-    //*          Get font data from a font
-    //* Interface Version:
-    //*          1
-    //* Implementation Required:
-    //*          Yes
-    //* Parameters:
-    //*          pThis       -   Pointer to the interface structure itself
-    //*          hFont       -   Font handle returned by MapFont or GetFont method
-    //*          table       -   TrueType/OpenType table identifier (refer to
-    //*                          TrueType specification), or 0 for the whole file.
-    //*          buffer      -   The buffer receiving the font data. Can be NULL if
-    //*                          not provided.
-    //*          buf_size    -   Buffer size, can be zero if not provided.
-    //* Return Value:
-    //*          Number of bytes needed, if buffer not provided or not large
-    //*          enough, or number of bytes written into buffer otherwise.
-    //* Comments:
-    //*          Can read either the full font file, or a particular
-    //*          TrueType/OpenType table.
-    //*
+    // Method: GetFontData
+    //          Get font data from a font
+    // Interface Version:
+    //          1
+    // Implementation Required:
+    //          Yes
+    // Parameters:
+    //          pThis       -   Pointer to the interface structure itself
+    //          hFont       -   Font handle returned by MapFont or GetFont method
+    //          table       -   TrueType/OpenType table identifier (refer to
+    //                          TrueType specification), or 0 for the whole file.
+    //          buffer      -   The buffer receiving the font data. Can be NULL if
+    //                          not provided.
+    //          buf_size    -   Buffer size, can be zero if not provided.
+    // Return Value:
+    //          Number of bytes needed, if buffer not provided or not large
+    //          enough, or number of bytes written into buffer otherwise.
+    // Comments:
+    //          Can read either the full font file, or a particular
+    //          TrueType/OpenType table.
     GetFontData: function(pThis: PFPDF_SYSFONTINFO; hFont: Pointer; table: LongWord; buffer: PWideChar;
       buf_size: LongWord): LongWord; cdecl;
 
-    //*
-    //* Method: GetFaceName
-    //*          Get face name from a font handle
-    //* Interface Version:
-    //*          1
-    //* Implementation Required:
-    //*          No
-    //* Parameters:
-    //*          pThis       -   Pointer to the interface structure itself
-    //*          hFont       -   Font handle returned by MapFont or GetFont method
-    //*          buffer      -   The buffer receiving the face name. Can be NULL if
-    //*                          not provided
-    //*          buf_size    -   Buffer size, can be zero if not provided
-    //* Return Value:
-    //*          Number of bytes needed, if buffer not provided or not large
-    //*          enough, or number of bytes written into buffer otherwise.
-    //*
+    // Method: GetFaceName
+    //          Get face name from a font handle
+    // Interface Version:
+    //          1
+    // Implementation Required:
+    //          No
+    // Parameters:
+    //          pThis       -   Pointer to the interface structure itself
+    //          hFont       -   Font handle returned by MapFont or GetFont method
+    //          buffer      -   The buffer receiving the face name. Can be NULL if
+    //                          not provided
+    //          buf_size    -   Buffer size, can be zero if not provided
+    // Return Value:
+    //          Number of bytes needed, if buffer not provided or not large
+    //          enough, or number of bytes written into buffer otherwise.
     GetFaceName: function(pThis: PFPDF_SYSFONTINFO; hFont: Pointer; buffer: PAnsiChar; buf_size: LongWord): LongWord; cdecl;
 
-    //*
-    //* Method: GetFontCharset
-    //*          Get character set information for a font handle
-    //* Interface Version:
-    //*          1
-    //* Implementation Required:
-    //*          No
-    //* Parameters:
-    //*          pThis       -   Pointer to the interface structure itself
-    //*          hFont       -   Font handle returned by MapFont or GetFont method
-    //* Return Value:
-    //*          Character set identifier. See defined constants above.
-    //*
+    // Method: GetFontCharset
+    //          Get character set information for a font handle
+    // Interface Version:
+    //          1
+    // Implementation Required:
+    //          No
+    // Parameters:
+    //          pThis       -   Pointer to the interface structure itself
+    //          hFont       -   Font handle returned by MapFont or GetFont method
+    // Return Value:
+    //          Character set identifier. See defined constants above.
     GetFontCharset: function(pThis: PFPDF_SYSFONTINFO; hFont: Pointer): Integer; cdecl;
 
-    //*
-    //* Method: DeleteFont
-    //*          Delete a font handle
-    //* Interface Version:
-    //*          1
-    //* Implementation Required:
-    //*          Yes
-    //* Parameters:
-    //*          pThis       -   Pointer to the interface structure itself
-    //*          hFont       -   Font handle returned by MapFont or GetFont method
-    //* Return Value:
-    //*          None
-    //*
+    // Method: DeleteFont
+    //          Delete a font handle
+    // Interface Version:
+    //          1
+    // Implementation Required:
+    //          Yes
+    // Parameters:
+    //          pThis       -   Pointer to the interface structure itself
+    //          hFont       -   Font handle returned by MapFont or GetFont method
+    // Return Value:
+    //          None
     DeleteFont: procedure(pThis: PFPDF_SYSFONTINFO; hFont: Pointer); cdecl;
   end;
   PFPdfSysFontInfo = ^TFPdfSysFontInfo;
   TFPdfSysFontInfo = FPDF_SYSFONTINFO;
 
+  // Struct: FPDF_CharsetFontMap
+  //    Provides the name of a font to use for a given charset value.
   PFPDF_CharsetFontMap = ^FPDF_CharsetFontMap;
   FPDF_CharsetFontMap = record
     charset: Integer;     // Character Set Enum value, see FXFONT_*_CHARSET above.
@@ -4512,79 +4534,100 @@ type
   PFPdfCharsetFontMap = ^TFPdfCharsetFontMap;
   TFPdfCharsetFontMap = FPDF_CharsetFontMap;
 
-//*
-//* Function: FPDF_GetDefaultTTFMap
-//*    Returns a pointer to the default character set to TT Font name map. The
-//*    map is an array of FPDF_CharsetFontMap structs, with its end indicated
-//*    by a { -1, NULL } entry.
-//* Parameters:
-//*     None.
-//* Return Value:
-//*     Pointer to the Charset Font Map.
-//*
+// Function: FPDF_GetDefaultTTFMap
+//    Returns a pointer to the default character set to TT Font name map. The
+//    map is an array of FPDF_CharsetFontMap structs, with its end indicated
+//    by a { -1, NULL } entry.
+// Parameters:
+//     None.
+// Return Value:
+//     Pointer to the Charset Font Map.
+// Note:
+//     Once FPDF_GetDefaultTTFMapCount() and FPDF_GetDefaultTTFMapEntry() are no
+//     longer experimental, this API will be marked as deprecated.
+//     See https://crbug.com/348468114
 var
   FPDF_GetDefaultTTFMap: function: PFPDF_CharsetFontMap; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FPDF_AddInstalledFont
-//*          Add a system font to the list in PDFium.
-//* Comments:
-//*          This function is only called during the system font list building
-//*          process.
-//* Parameters:
-//*          mapper          -   Opaque pointer to Foxit font mapper
-//*          face            -   The font face name
-//*          charset         -   Font character set. See above defined constants.
-//* Return Value:
-//*          None.
-//*
+// Experimental API.
+//
+// Function: FPDF_GetDefaultTTFMapCount
+//    Returns the number of entries in the default character set to TT Font name
+//    map.
+// Parameters:
+//    None.
+// Return Value:
+//    The number of entries in the map.
+var
+  FPDF_GetDefaultTTFMapCount: function(): SIZE_T; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+//
+// Function: FPDF_GetDefaultTTFMapEntry
+//    Returns an entry in the default character set to TT Font name map.
+// Parameters:
+//    index    -   The index to the entry in the map to retrieve.
+// Return Value:
+//     A pointer to the entry, if it is in the map, or NULL if the index is out
+//     of bounds.
+var
+  FPDF_GetDefaultTTFMapEntry: function(index: SIZE_T): PFPDF_CharsetFontMap; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Function: FPDF_AddInstalledFont
+//          Add a system font to the list in PDFium.
+// Comments:
+//          This function is only called during the system font list building
+//          process.
+// Parameters:
+//          mapper          -   Opaque pointer to Foxit font mapper
+//          face            -   The font face name
+//          charset         -   Font character set. See above defined constants.
+// Return Value:
+//          None.
 var
   FPDF_AddInstalledFont: procedure(mapper: Pointer; face: PAnsiChar; charset: Integer); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FPDF_SetSystemFontInfo
-//*          Set the system font info interface into PDFium
-//* Parameters:
-//*          pFontInfo       -   Pointer to a FPDF_SYSFONTINFO structure
-//* Return Value:
-//*          None
-//* Comments:
-//*          Platform support implementation should implement required methods of
-//*          FFDF_SYSFONTINFO interface, then call this function during PDFium
-//*          initialization process.
-//*
+// Function: FPDF_SetSystemFontInfo
+//          Set the system font info interface into PDFium
+// Parameters:
+//          pFontInfo       -   Pointer to a FPDF_SYSFONTINFO structure
+// Return Value:
+//          None
+// Comments:
+//          Platform support implementation should implement required methods of
+//          FFDF_SYSFONTINFO interface, then call this function during PDFium
+//          initialization process.
+//
+//          Call this with NULL to tell PDFium to stop using a previously set
+//          |FPDF_SYSFONTINFO|.
 var
   FPDF_SetSystemFontInfo: procedure(pFontInfo: PFPDF_SYSFONTINFO); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FPDF_GetDefaultSystemFontInfo
-//*          Get default system font info interface for current platform
-//* Parameters:
-//*          None
-//* Return Value:
-//*          Pointer to a FPDF_SYSFONTINFO structure describing the default
-//*          interface, or NULL if the platform doesn't have a default interface.
-//*          Application should call FPDF_FreeDefaultSystemFontInfo to free the
-//*          returned pointer.
-//* Comments:
-//*          For some platforms, PDFium implements a default version of system
-//*          font info interface. The default implementation can be passed to
-//*          FPDF_SetSystemFontInfo().
-//*
+// Function: FPDF_GetDefaultSystemFontInfo
+//          Get default system font info interface for current platform
+// Parameters:
+//          None
+// Return Value:
+//          Pointer to a FPDF_SYSFONTINFO structure describing the default
+//          interface, or NULL if the platform doesn't have a default interface.
+//          Application should call FPDF_FreeDefaultSystemFontInfo to free the
+//          returned pointer.
+// Comments:
+//          For some platforms, PDFium implements a default version of system
+//          font info interface. The default implementation can be passed to
+//          FPDF_SetSystemFontInfo().
 var
   FPDF_GetDefaultSystemFontInfo: function(): FPDF_SYSFONTINFO; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FPDF_FreeDefaultSystemFontInfo
-//*           Free a default system font info interface
-//* Parameters:
-//*           pFontInfo       -   Pointer to a FPDF_SYSFONTINFO structure
-//* Return Value:
-//*           None
-//* Comments:
-//*           This function should be called on the output from
-//*           FPDF_SetSystemFontInfo() once it is no longer needed.
-//*
+// Function: FPDF_FreeDefaultSystemFontInfo
+//           Free a default system font info interface
+// Parameters:
+//           pFontInfo       -   Pointer to a FPDF_SYSFONTINFO structure
+// Return Value:
+//           None
+// Comments:
+//           This function should be called on the output from
+//           FPDF_GetDefaultSystemFontInfo() once it is no longer needed.
 var
   FPDF_FreeDefaultSystemFontInfo: procedure(pFontInfo: PFPDF_SYSFONTINFO); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -4921,245 +4964,224 @@ const
 type
   PIPDF_JsPlatform = ^IPDF_JsPlatform;
   IPDF_JsPlatform = record
-    //*
-    //* Version number of the interface. Currently must be 2.
-    //*
+    // Version number of the interface. Currently must be 2.
     version: Integer;
 
-    //* Version 1.
+    // Version 1.
 
-    //*
-    //* Method: app_alert
-    //*       Pop up a dialog to show warning or hint.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       yes
-    //* Parameters:
-    //*       pThis       -   Pointer to the interface structure itself.
-    //*       Msg         -   A string containing the message to be displayed.
-    //*       Title       -   The title of the dialog.
-    //*       Type        -   The type of button group, one of the
-    //*                       JSPLATFORM_ALERT_BUTTON_* values above.
-    //*       nIcon       -   The type of the icon, one of the
-    //*                       JSPLATFORM_ALERT_ICON_* above.
-    //* Return Value:
-    //*       Option selected by user in dialogue, one of the
-    //*       JSPLATFORM_ALERT_RETURN_* values above.
-    //*
+    // Method: app_alert
+    //       Pop up a dialog to show warning or hint.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself.
+    //       Msg         -   A string containing the message to be displayed.
+    //       Title       -   The title of the dialog.
+    //       Type        -   The type of button group, one of the
+    //                       JSPLATFORM_ALERT_BUTTON_* values above.
+    //       nIcon       -   The type of the icon, one of the
+    //                       JSPLATFORM_ALERT_ICON_* above.
+    // Return Value:
+    //       Option selected by user in dialogue, one of the
+    //       JSPLATFORM_ALERT_RETURN_* values above.
     app_alert: function(pThis: PIPDF_JsPlatform; Msg, Title: FPDF_WIDESTRING; nType: Integer;
                         Icon: Integer): Integer; cdecl;
 
-    //*
-    //* Method: app_beep
-    //*       Causes the system to play a sound.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       yes
-    //* Parameters:
-    //*       pThis       -   Pointer to the interface structure itself
-    //*       nType       -   The sound type, see JSPLATFORM_BEEP_TYPE_*
-    //*                       above.
-    //* Return Value:
-    //*       None
-    //*
+    // Method: app_beep
+    //       Causes the system to play a sound.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself
+    //       nType       -   The sound type, see JSPLATFORM_BEEP_TYPE_*
+    //                       above.
+    // Return Value:
+    //       None
     app_beep: procedure(pThis: PIPDF_JsPlatform; nType: Integer); cdecl;
 
-    //*
-    //* Method: app_response
-    //*       Displays a dialog box containing a question and an entry field for
-    //*       the user to reply to the question.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       yes
-    //* Parameters:
-    //*       pThis       -   Pointer to the interface structure itself
-    //*       Question    -   The question to be posed to the user.
-    //*       Title       -   The title of the dialog box.
-    //*       Default     -   A default value for the answer to the question. If
-    //*                       not specified, no default value is presented.
-    //*       cLabel      -   A short string to appear in front of and on the
-    //*                       same line as the edit text field.
-    //*       bPassword   -   If true, indicates that the user's response should
-    //*                       be shown as asterisks (*) or bullets (?) to mask
-    //*                       the response, which might be sensitive information.
-    //*       response    -   A string buffer allocated by PDFium, to receive the
-    //*                       user's response.
-    //*       length      -   The length of the buffer in bytes. Currently, it is
-    //*                       always 2048.
-    //* Return Value:
-    //*       Number of bytes the complete user input would actually require, not
-    //*       including trailing zeros, regardless of the value of the length
-    //*       parameter or the presence of the response buffer.
-    //* Comments:
-    //*       No matter on what platform, the response buffer should be always
-    //*       written using UTF-16LE encoding. If a response buffer is
-    //*       present and the size of the user input exceeds the capacity of the
-    //*       buffer as specified by the length parameter, only the
-    //*       first "length" bytes of the user input are to be written to the
-    //*       buffer.
-    //*
+    // Method: app_response
+    //       Displays a dialog box containing a question and an entry field for
+    //       the user to reply to the question.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself
+    //       Question    -   The question to be posed to the user.
+    //       Title       -   The title of the dialog box.
+    //       Default     -   A default value for the answer to the question. If
+    //                       not specified, no default value is presented.
+    //       cLabel      -   A short string to appear in front of and on the
+    //                       same line as the edit text field.
+    //       bPassword   -   If true, indicates that the user's response should
+    //                       be shown as asterisks (*) or bullets (?) to mask
+    //                       the response, which might be sensitive information.
+    //       response    -   A string buffer allocated by PDFium, to receive the
+    //                       user's response.
+    //       length      -   The length of the buffer in bytes. Currently, it is
+    //                       always 2048.
+    // Return Value:
+    //       Number of bytes the complete user input would actually require, not
+    //       including trailing zeros, regardless of the value of the length
+    //       parameter or the presence of the response buffer.
+    // Comments:
+    //       No matter on what platform, the response buffer should be always
+    //       written using UTF-16LE encoding. If a response buffer is
+    //       present and the size of the user input exceeds the capacity of the
+    //       buffer as specified by the length parameter, only the
+    //       first "length" bytes of the user input are to be written to the
+    //       buffer.
     app_response: function(pThis: PIPDF_JsPlatform; Question, Title, Default, cLabel: FPDF_WIDESTRING;
                            bPassword: FPDF_BOOL; response: Pointer; length: Integer): Integer; cdecl;
 
-    //*
-    //* Method: Doc_getFilePath
-    //*       Get the file path of the current document.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       yes
-    //* Parameters:
-    //*       pThis       -   Pointer to the interface structure itself
-    //*       filePath    -   The string buffer to receive the file path. Can
-    //*                       be NULL.
-    //*       length      -   The length of the buffer, number of bytes. Can
-    //*                       be 0.
-    //* Return Value:
-    //*       Number of bytes the filePath consumes, including trailing zeros.
-    //* Comments:
-    //*       The filePath should always be provided in the local encoding.
-    //*       The return value always indicated number of bytes required for
-    //*       the buffer, even when there is no buffer specified, or the buffer
-    //*       size is less than required. In this case, the buffer will not
-    //*       be modified.
-    //*
+    // Method: Doc_getFilePath
+    //       Get the file path of the current document.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself
+    //       filePath    -   The string buffer to receive the file path. Can
+    //                       be NULL.
+    //       length      -   The length of the buffer, number of bytes. Can
+    //                       be 0.
+    // Return Value:
+    //       Number of bytes the filePath consumes, including trailing zeros.
+    // Comments:
+    //       The filePath should always be provided in the local encoding.
+    //       The return value always indicated number of bytes required for
+    //       the buffer, even when there is no buffer specified, or the buffer
+    //       size is less than required. In this case, the buffer will not
+    //       be modified.
     Doc_getFilePath: function(pThis: PIPDF_JsPlatform; filePath: Pointer; length: Integer): Integer; cdecl;
 
-    //*
-    //* Method: Doc_mail
-    //*       Mails the data buffer as an attachment to all recipients, with or
-    //*       without user interaction.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       yes
-    //* Parameters:
-    //*       pThis       -   Pointer to the interface structure itself
-    //*       mailData    -   Pointer to the data buffer to be sent. Can be NULL.
-    //*       length      -   The size,in bytes, of the buffer pointed by
-    //*                       mailData parameter. Can be 0.
-    //*       bUI         -   If true, the rest of the parameters are used in a
-    //*                       compose-new-message window that is displayed to the
-    //*                       user. If false, the cTo parameter is required and
-    //*                       all others are optional.
-    //*       To          -   A semicolon-delimited list of recipients for the
-    //*                       message.
-    //*       Subject     -   The subject of the message. The length limit is
-    //*                       64 KB.
-    //*       CC          -   A semicolon-delimited list of CC recipients for
-    //*                       the message.
-    //*       BCC         -   A semicolon-delimited list of BCC recipients for
-    //*                       the message.
-    //*       Msg         -   The content of the message. The length limit is
-    //*                       64 KB.
-    //* Return Value:
-    //*       None.
-    //* Comments:
-    //*       If the parameter mailData is NULL or length is 0, the current
-    //*       document will be mailed as an attachment to all recipients.
-    //*
+    // Method: Doc_mail
+    //       Mails the data buffer as an attachment to all recipients, with or
+    //       without user interaction.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself
+    //       mailData    -   Pointer to the data buffer to be sent. Can be NULL.
+    //       length      -   The size,in bytes, of the buffer pointed by
+    //                       mailData parameter. Can be 0.
+    //       bUI         -   If true, the rest of the parameters are used in a
+    //                       compose-new-message window that is displayed to the
+    //                       user. If false, the cTo parameter is required and
+    //                       all others are optional.
+    //       To          -   A semicolon-delimited list of recipients for the
+    //                       message.
+    //       Subject     -   The subject of the message. The length limit is
+    //                       64 KB.
+    //       CC          -   A semicolon-delimited list of CC recipients for
+    //                       the message.
+    //       BCC         -   A semicolon-delimited list of BCC recipients for
+    //                       the message.
+    //       Msg         -   The content of the message. The length limit is
+    //                       64 KB.
+    // Return Value:
+    //       None.
+    // Comments:
+    //       If the parameter mailData is NULL or length is 0, the current
+    //       document will be mailed as an attachment to all recipients.
     Doc_mail: procedure(pThis: PIPDF_JsPlatform; mailData: Pointer; length: Integer; bUI: FPDF_BOOL;
                         sTo, subject, CC, BCC, Msg: FPDF_WIDESTRING); cdecl;
 
-    //*
-    //* Method: Doc_print
-    //*       Prints all or a specific number of pages of the document.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       yes
-    //* Parameters:
-    //*       pThis         -   Pointer to the interface structure itself.
-    //*       bUI           -   If true, will cause a UI to be presented to the
-    //*                         user to obtain printing information and confirm
-    //*                         the action.
-    //*       nStart        -   A 0-based index that defines the start of an
-    //*                         inclusive range of pages.
-    //*       nEnd          -   A 0-based index that defines the end of an
-    //*                         inclusive page range.
-    //*       bSilent       -   If true, suppresses the cancel dialog box while
-    //*                         the document is printing. The default is false.
-    //*       bShrinkToFit  -   If true, the page is shrunk (if necessary) to
-    //*                         fit within the imageable area of the printed page.
-    //*       bPrintAsImage -   If true, print pages as an image.
-    //*       bReverse      -   If true, print from nEnd to nStart.
-    //*       bAnnotations  -   If true (the default), annotations are
-    //*                         printed.
-    //* Return Value:
-    //*       None.
-    //*
+    // Method: Doc_print
+    //       Prints all or a specific number of pages of the document.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis         -   Pointer to the interface structure itself.
+    //       bUI           -   If true, will cause a UI to be presented to the
+    //                         user to obtain printing information and confirm
+    //                         the action.
+    //       nStart        -   A 0-based index that defines the start of an
+    //                         inclusive range of pages.
+    //       nEnd          -   A 0-based index that defines the end of an
+    //                         inclusive page range.
+    //       bSilent       -   If true, suppresses the cancel dialog box while
+    //                         the document is printing. The default is false.
+    //       bShrinkToFit  -   If true, the page is shrunk (if necessary) to
+    //                         fit within the imageable area of the printed page.
+    //       bPrintAsImage -   If true, print pages as an image.
+    //       bReverse      -   If true, print from nEnd to nStart.
+    //       bAnnotations  -   If true (the default), annotations are
+    //                         printed.
+    // Return Value:
+    //       None.
     Doc_print: procedure(pThis: PIPDF_JsPlatform; bUI: FPDF_BOOKMARK; nStart, nEnd: Integer;
                          bSilent, bShrinkToFit, bPrintAsImage, bReverse, bAnnotations: FPDF_BOOL); cdecl;
 
-    //*
-    //* Method: Doc_submitForm
-    //*       Send the form data to a specified URL.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       yes
-    //* Parameters:
-    //*       pThis       -   Pointer to the interface structure itself
-    //*       formData    -   Pointer to the data buffer to be sent.
-    //*       length      -   The size,in bytes, of the buffer pointed by
-    //*                       formData parameter.
-    //*       URL         -   The URL to send to.
-    //* Return Value:
-    //*       None.
-    //*
+    // Method: Doc_submitForm
+    //       Send the form data to a specified URL.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself
+    //       formData    -   Pointer to the data buffer to be sent.
+    //       length      -   The size,in bytes, of the buffer pointed by
+    //                       formData parameter.
+    //       URL         -   The URL to send to.
+    // Return Value:
+    //       None.
     Doc_submitForm: procedure(pThis: PIPDF_JsPlatform; formData: Pointer; length: Integer; URL: FPDF_WIDESTRING); cdecl;
 
-    //*
-    //* Method: Doc_gotoPage
-    //*       Jump to a specified page.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       yes
-    //* Parameters:
-    //*       pThis       -   Pointer to the interface structure itself
-    //*       nPageNum    -   The specified page number, zero for the first page.
-    //* Return Value:
-    //*       None.
-    //*
+    // Method: Doc_gotoPage
+    //       Jump to a specified page.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself
+    //       nPageNum    -   The specified page number, zero for the first page.
+    // Return Value:
+    //       None.
     Doc_gotoPage: procedure(pThis: PIPDF_JsPlatform; nPageNum: Integer); cdecl;
 
-    //*
-    //* Method: Field_browse
-    //*       Show a file selection dialog, and return the selected file path.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       yes
-    //* Parameters:
-    //*       pThis       -   Pointer to the interface structure itself.
-    //*       filePath    -   Pointer to the data buffer to receive the file
-    //*                       path. Can be NULL.
-    //*       length      -   The length of the buffer, in bytes. Can be 0.
-    //* Return Value:
-    //*       Number of bytes the filePath consumes, including trailing zeros.
-    //* Comments:
-    //*       The filePath shoule always be provided in local encoding.
-    //*
+    // Method: Field_browse
+    //       Show a file selection dialog, and return the selected file path.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself.
+    //       filePath    -   Pointer to the data buffer to receive the file
+    //                       path. Can be NULL.
+    //       length      -   The length of the buffer, in bytes. Can be 0.
+    // Return Value:
+    //       Number of bytes the filePath consumes, including trailing zeros.
+    // Comments:
+    //       The filePath should always be provided in local encoding.
     Field_browse: function(pThis: PIPDF_JsPlatform; filePath: Pointer; length: Integer): Integer; cdecl;
 
-    //*
-    //* Pointer for embedder-specific data. Unused by PDFium, and despite
-    //* its name, can be any data the embedder desires, though traditionally
-    //* a FPDF_FORMFILLINFO interface.
-    //*
+
+    // Pointer for embedder-specific data. Unused by PDFium, and despite
+    // its name, can be any data the embedder desires, though traditionally
+    // a FPDF_FORMFILLINFO interface.
     m_pFormfillinfo: Pointer;
 
-    //* Version 2.
+    // Version 2.
 
     m_isolate: Pointer;               // Unused in v3, retain for compatibility.
     m_v8EmbedderSlot: DWORD;          // Unused in v3, retain for compatibility.
 
-    //* Version 3.
-    //* Version 3 moves m_Isolate and m_v8EmbedderSlot to FPDF_LIBRARY_CONFIG.
+    // Version 3.
+    // Version 3 moves m_Isolate and m_v8EmbedderSlot to FPDF_LIBRARY_CONFIG.
   end;
   PIPDFJsPlatform = ^TIPDFJsPlatform;
   TIPDFJsPlatform = IPDF_JSPLATFORM;
@@ -5173,21 +5195,17 @@ const
   FXCT_HBEAM = 4;
   FXCT_HAND  = 5;
 
-//*
-//* Function signature for the callback function passed to the FFI_SetTimer
-//* method.
-//* Parameters:
-//*          idEvent     -   Identifier of the timer.
-//* Return value:
-//*          None.
-//*
+// Function signature for the callback function passed to the FFI_SetTimer
+// method.
+// Parameters:
+//          idEvent     -   Identifier of the timer.
+// Return value:
+//          None.
 type
   TFPDFTimerCallback = procedure(idEvent: Integer); cdecl;
 
 type
-  //*
-  //* Declares of a struct type to the local system time.
-  //*
+  // Declares of a struct type to the local system time.
   {$IFDEF MSWINDOWS}
   PFPDF_SYSTEMTIME = PSystemTime;
   FPDF_SYSTEMTIME = TSystemTime;
@@ -5230,796 +5248,710 @@ const
 type
   PFPDF_FORMFILLINFO = ^FPDF_FORMFILLINFO;
   FPDF_FORMFILLINFO = record
-    //*
-    //* Version number of the interface.
-    //* Version 1 contains stable interfaces. Version 2 has additional
-    //* experimental interfaces.
-    //* When PDFium is built without the XFA module, version can be 1 or 2.
-    //* With version 1, only stable interfaces are called. With version 2,
-    //* additional experimental interfaces are also called.
-    //* When PDFium is built with the XFA module, version must be 2.
-    //* All the XFA related interfaces are experimental. If PDFium is built with
-    //* the XFA module and version 1 then none of the XFA related interfaces
-    //* would be called. When PDFium is built with XFA module then the version
-    //* must be 2.
-    //*
+    // Version number of the interface.
+    // Version 1 contains stable interfaces. Version 2 has additional
+    // experimental interfaces.
+    // When PDFium is built without the XFA module, version can be 1 or 2.
+    // With version 1, only stable interfaces are called. With version 2,
+    // additional experimental interfaces are also called.
+    // When PDFium is built with the XFA module, version must be 2.
+    // All the XFA related interfaces are experimental. If PDFium is built with
+    // the XFA module and version 1 then none of the XFA related interfaces
+    // would be called. When PDFium is built with XFA module then the version
+    // must be 2.
     version: Integer;
 
-    //* Version 1.
+    // Version 1.
 
-    //*
-    //* Method: Release
-    //*     Give the implementation a chance to release any resources after the
-    //*     interface is no longer used.
-    //* Interface Version:
-    //*     1
-    //* Implementation Required:
-    //*     No
-    //* Comments:
-    //*     Called by PDFium during the final cleanup process.
-    //* Parameters:
-    //*     pThis       -   Pointer to the interface structure itself
-    //* Return Value:
-    //*     None
-    //*
+    // Method: Release
+    //       Give the implementation a chance to release any resources after the
+    //       interface is no longer used.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       No
+    // Comments:
+    //       Called by PDFium during the final cleanup process.
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself
+    // Return Value:
+    //       None
     Release: procedure(pThis: PFPDF_FORMFILLINFO); cdecl;
 
-    //*
-    //* Method: FFI_Invalidate
-    //*     Invalidate the client area within the specified rectangle.
-    //* Interface Version:
-    //*     1
-    //* Implementation Required:
-    //*     yes
-    //* Parameters:
-    //*     pThis       -   Pointer to the interface structure itself.
-    //*     page        -   Handle to the page. Returned by FPDF_LoadPage().
-    //*     left        -   Left position of the client area in PDF page
-    //*                     coordinates.
-    //*     top         -   Top position of the client area in PDF page
-    //*                     coordinates.
-    //*     right       -   Right position of the client area in PDF page
-    //*                     coordinates.
-    //*     bottom      -   Bottom position of the client area in PDF page
-    //*                     coordinates.
-    //* Return Value:
-    //*     None.
-    //*
-    //* Comments:
-    //*       All positions are measured in PDF "user space".
-    //*       Implementation should call FPDF_RenderPageBitmap() for repainting
-    //*       the specified page area.
-    //*
+    // Method: FFI_Invalidate
+    //       Invalidate the client area within the specified rectangle.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself.
+    //       page        -   Handle to the page. Returned by FPDF_LoadPage().
+    //       left        -   Left position of the client area in PDF page
+    //                       coordinates.
+    //       top         -   Top position of the client area in PDF page
+    //                       coordinates.
+    //       right       -   Right position of the client area in PDF page
+    //                       coordinates.
+    //       bottom      -   Bottom position of the client area in PDF page
+    //                       coordinates.
+    // Return Value:
+    //       None.
+    // Comments:
+    //       All positions are measured in PDF "user space".
+    //       Implementation should call FPDF_RenderPageBitmap() for repainting
+    //       the specified page area.
     FFI_Invalidate: procedure(pThis: PFPDF_FORMFILLINFO; page: FPDF_PAGE; left, top, right, bottom: Double); cdecl;
 
-    //*
-    //* Method: FFI_OutputSelectedRect
-    //*     When the user selects text in form fields with the mouse, this
-    //*     callback function will be invoked with the selected areas.
-    //*
-    //* Interface Version:
-    //*     1
-    //* Implementation Required:
-    //*     No
-    //* Parameters:
-    //*     pThis       -   Pointer to the interface structure itself.
-    //*     page        -   Handle to the page. Returned by FPDF_LoadPage()/
-    //*     left        -   Left position of the client area in PDF page
-    //*                     coordinates.
-    //*     top         -   Top position of the client area in PDF page
-    //*                     coordinates.
-    //*     right       -   Right position of the client area in PDF page
-    //*                     coordinates.
-    //*     bottom      -   Bottom position of the client area in PDF page
-    //*                     coordinates.
-    //* Return Value:
-    //*     None.
-    //*
-    //* Comments:
-    //*       This callback function is useful for implementing special text
-    //*       selection effects. An implementation should first record the
-    //*       returned rectangles, then draw them one by one during the next
-    //*       painting period. Lastly, it should remove all the recorded
-    //*       rectangles when finished painting.
-    //*
+    // Method: FFI_OutputSelectedRect
+    //       When the user selects text in form fields with the mouse, this
+    //       callback function will be invoked with the selected areas.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       No
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself.
+    //       page        -   Handle to the page. Returned by FPDF_LoadPage()/
+    //       left        -   Left position of the client area in PDF page
+    //                       coordinates.
+    //       top         -   Top position of the client area in PDF page
+    //                       coordinates.
+    //       right       -   Right position of the client area in PDF page
+    //                       coordinates.
+    //       bottom      -   Bottom position of the client area in PDF page
+    //                       coordinates.
+    // Return Value:
+    //       None.
+    // Comments:
+    //       This callback function is useful for implementing special text
+    //       selection effects. An implementation should first record the
+    //       returned rectangles, then draw them one by one during the next
+    //       painting period. Lastly, it should remove all the recorded
+    //       rectangles when finished painting.
     FFI_OutputSelectedRect: procedure(pThis: PFPDF_FORMFILLINFO; page: FPDF_PAGE; left, top, right, bottom: Double); cdecl;
 
-    //*
-    //* Method: FFI_SetCursor
-    //*     Set the Cursor shape.
-    //* Interface Version:
-    //*     1
-    //* Implementation Required:
-    //*     yes
-    //* Parameters:
-    //*       pThis       -   Pointer to the interface structure itself.
-    //*       nCursorType -   Cursor type, see Flags for Cursor type for details.
-    //* Return value:
-    //*     None.
-    //*
+    // Method: FFI_SetCursor
+    //       Set the Cursor shape.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself.
+    //       nCursorType -   Cursor type, see Flags for Cursor type for details.
+    // Return value:
+    //       None.
     FFI_SetCursor: procedure(pThis: PFPDF_FORMFILLINFO; nCursorType: Integer); cdecl;
 
-    //*
-    //* Method: FFI_SetTimer
-    //*     This method installs a system timer. An interval value is specified,
-    //*     and every time that interval elapses, the system must call into the
-    //*     callback function with the timer ID as returned by this function.
-    //* Interface Version:
-    //*     1
-    //* Implementation Required:
-    //*     yes
-    //* Parameters:
-    //*     pThis       -   Pointer to the interface structure itself.
-    //*     uElapse     -   Specifies the time-out value, in milliseconds.
-    //*     lpTimerFunc -   A pointer to the callback function-TimerCallback.
-    //* Return value:
-    //*     The timer identifier of the new timer if the function is successful.
-    //*     An application passes this value to the FFI_KillTimer method to kill
-    //*     the timer. Nonzero if it is successful; otherwise, it is zero.
-    //*
+    // Method: FFI_SetTimer
+    //       This method installs a system timer. An interval value is specified,
+    //       and every time that interval elapses, the system must call into the
+    //       callback function with the timer ID as returned by this function.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself.
+    //       uElapse     -   Specifies the time-out value, in milliseconds.
+    //       lpTimerFunc -   A pointer to the callback function-TimerCallback.
+    // Return value:
+    //       The timer identifier of the new timer if the function is successful.
+    //       An application passes this value to the FFI_KillTimer method to kill
+    //       the timer. Nonzero if it is successful; otherwise, it is zero.
     FFI_SetTimer: function(pThis: PFPDF_FORMFILLINFO; uElapse: Integer; lpTimerFunc: TFPDFTimerCallback): Integer; cdecl;
 
-    //*
-    //* Method: FFI_KillTimer
-    //*     This method uninstalls a system timer, as set by an earlier call to
-    //*     FFI_SetTimer.
-    //* Interface Version:
-    //*     1
-    //* Implementation Required:
-    //*     yes
-    //* Parameters:
-    //*     pThis       -   Pointer to the interface structure itself.
-    //*     nTimerID    -   The timer ID returned by FFI_SetTimer function.
-    //* Return value:
-    //*     None.
-    //*
-
+    // Method: FFI_KillTimer
+    //       This method uninstalls a system timer, as set by an earlier call to
+    //       FFI_SetTimer.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself.
+    //       nTimerID    -   The timer ID returned by FFI_SetTimer function.
+    // Return value:
+    //       None.
     FFI_KillTimer: procedure(pThis: PFPDF_FORMFILLINFO; nTimerID: Integer); cdecl;
 
-    //*
-    //* Method: FFI_GetLocalTime
-    //*     This method receives the current local time on the system.
-    //* Interface Version:
-    //*     1
-    //* Implementation Required:
-    //*     yes
-    //* Parameters:
-    //*     pThis       -   Pointer to the interface structure itself.
-    //* Return value:
-    //*     The local time. See FPDF_SYSTEMTIME above for details.
-    //* Note: Unused.
-    //*
+    // Method: FFI_GetLocalTime
+    //       This method receives the current local time on the system.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself.
+    // Return value:
+    //       The local time. See FPDF_SYSTEMTIME above for details.
+    // Note: Unused.
     FFI_GetLocalTime: function(pThis: PFPDF_FORMFILLINFO): FPDF_SYSTEMTIME; cdecl;
 
-    //*
-    //* Method: FFI_OnChange
-    //*     This method will be invoked to notify the implementation when the
-    //*     value of any FormField on the document had been changed.
-    //* Interface Version:
-    //*     1
-    //* Implementation Required:
-    //*     no
-    //* Parameters:
-    //*     pThis       -   Pointer to the interface structure itself.
-    //* Return value:
-    //*     None.
-    //*
+    // Method: FFI_OnChange
+    //       This method will be invoked to notify the implementation when the
+    //       value of any FormField on the document had been changed.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       no
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself.
+    // Return value:
+    //       None.
     FFI_OnChange: procedure(pThis: PFPDF_FORMFILLINFO); cdecl;
 
-    //*
-    //* Method: FFI_GetPage
-    //*       This method receives the page handle associated with a specified
-    //*       page index.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       yes
-    //* Parameters:
-    //*       pThis       -   Pointer to the interface structure itself.
-    //*       document    -   Handle to document. Returned by FPDF_LoadDocument().
-    //*       nPageIndex  -   Index number of the page. 0 for the first page.
-    //* Return value:
-    //*       Handle to the page, as previously returned to the implementation by
-    //*       FPDF_LoadPage().
-    //* Comments:
-    //*       The implementation is expected to keep track of the page handles it
-    //*       receives from PDFium, and their mappings to page numbers. In some
-    //*       cases, the document-level JavaScript action may refer to a page
-    //*       which hadn't been loaded yet. To successfully run the Javascript
-    //*       action, the implementation needs to load the page.
-    //*
+    // Method: FFI_GetPage
+    //       This method receives the page handle associated with a specified
+    //       page index.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself.
+    //       document    -   Handle to document. Returned by FPDF_LoadDocument().
+    //       nPageIndex  -   Index number of the page. 0 for the first page.
+    // Return value:
+    //       Handle to the page, as previously returned to the implementation by
+    //       FPDF_LoadPage().
+    // Comments:
+    //       The implementation is expected to keep track of the page handles it
+    //       receives from PDFium, and their mappings to page numbers. In some
+    //       cases, the document-level JavaScript action may refer to a page
+    //       which hadn't been loaded yet. To successfully run the Javascript
+    //       action, the implementation needs to load the page.
     FFI_GetPage: function(pThis: PFPDF_FORMFILLINFO; document: FPDF_DOCUMENT; nPageIndex: Integer): FPDF_PAGE; cdecl;
 
-    //*
-    //* Method: FFI_GetCurrentPage
-    //*       This method receives the handle to the current page.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       Yes when V8 support is present, otherwise unused.
-    //* Parameters:
-    //*       pThis       -   Pointer to the interface structure itself.
-    //*       document    -   Handle to document. Returned by FPDF_LoadDocument().
-    //* Return value:
-    //*       Handle to the page. Returned by FPDF_LoadPage().
-    //* Comments:
-    //*       PDFium doesn't keep keep track of the "current page" (e.g. the one
-    //*       that is most visible on screen), so it must ask the embedder for
-    //*       this information.
-    //*
+    // Method: FFI_GetCurrentPage
+    //       This method receives the handle to the current page.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       Yes when V8 support is present, otherwise unused.
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself.
+    //       document    -   Handle to document. Returned by FPDF_LoadDocument().
+    // Return value:
+    //       Handle to the page. Returned by FPDF_LoadPage().
+    // Comments:
+    //       PDFium doesn't keep keep track of the "current page" (e.g. the one
+    //       that is most visible on screen), so it must ask the embedder for
+    //       this information.
     FFI_GetCurrentPage: function(pThis: PFPDF_FORMFILLINFO; document: FPDF_DOCUMENT): FPDF_PAGE; cdecl;
 
-    //*
-    //* Method: FFI_GetRotation
-    //*       This method receives currently rotation of the page view.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       yes
-    //* Parameters:
-    //*       pThis       -   Pointer to the interface structure itself.
-    //*       page        -   Handle to page, as returned by FPDF_LoadPage().
-    //* Return value:
-    //*       A number to indicate the page rotation in 90 degree increments
-    //*       in a clockwise direction:
-    //*         0 - 0 degrees
-    //*         1 - 90 degrees
-    //*         2 - 180 degrees
-    //*         3 - 270 degrees
-    //* Note: Unused.
-    //*
+    // Method: FFI_GetRotation
+    //       This method receives currently rotation of the page view.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis       -   Pointer to the interface structure itself.
+    //       page        -   Handle to page, as returned by FPDF_LoadPage().
+    // Return value:
+    //       A number to indicate the page rotation in 90 degree increments
+    //       in a clockwise direction:
+    //         0 - 0 degrees
+    //         1 - 90 degrees
+    //         2 - 180 degrees
+    //         3 - 270 degrees
+    // Note: Unused.
     FFI_GetRotation: function(pThis: PFPDF_FORMFILLINFO; page: FPDF_PAGE): Integer; cdecl;
 
-    //*
-    //* Method: FFI_ExecuteNamedAction
-    //*     This method will execute a named action.
-    //* Interface Version:
-    //*     1
-    //* Implementation Required:
-    //*     yes
-    //* Parameters:
-    //*     pThis           -   Pointer to the interface structure itself.
-    //*     namedAction     -   A byte string which indicates the named action,
-    //*                         terminated by 0.
-    //* Return value:
-    //*     None.
-    //* Comments:
-    //*     See ISO 32000-1:2008, section 12.6.4.11 for descriptions of the
-    //*     standard named actions, but note that a document may supply any
-    //*     name of its choosing.
-    //*
+    // Method: FFI_ExecuteNamedAction
+    //       This method will execute a named action.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       yes
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       namedAction     -   A byte string which indicates the named action,
+    //                           terminated by 0.
+    // Return value:
+    //       None.
+    // Comments:
+    //       See ISO 32000-1:2008, section 12.6.4.11 for descriptions of the
+    //       standard named actions, but note that a document may supply any
+    //       name of its choosing.
     FFI_ExecuteNamedAction: procedure(pThis: PFPDF_FORMFILLINFO; namedAction: FPDF_BYTESTRING); cdecl;
 
-    //*
-    //* Method: FFI_SetTextFieldFocus
-    //*       Called when a text field is getting or losing focus.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       no
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       value           -   The string value of the form field, in UTF-16LE
-    //*                           format.
-    //*       valueLen        -   The length of the string value. This is the
-    //*                           number of characters, not bytes.
-    //*       is_focus        -   True if the form field is getting focus, false
-    //*                           if the form field is losing focus.
-    //* Return value:
-    //*       None.
-    //* Comments:
-    //*       Only supports text fields and combobox fields.
-    //*
+    // Method: FFI_SetTextFieldFocus
+    //       Called when a text field is getting or losing focus.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       no
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       value           -   The string value of the form field, in UTF-16LE
+    //                           format.
+    //       valueLen        -   The length of the string value. This is the
+    //                           number of characters, not bytes.
+    //       is_focus        -   True if the form field is getting focus, false
+    //                           if the form field is losing focus.
+    // Return value:
+    //       None.
+    // Comments:
+    //       Only supports text fields and combobox fields.
     FFI_SetTextFieldFocus: procedure(pThis: PFPDF_FORMFILLINFO; value: FPDF_WIDESTRING; valueLen: FPDF_DWORD; is_focus: FPDF_BOOL); cdecl;
 
-    //*
-    //* Method: FFI_DoURIAction
-    //*       Ask the implementation to navigate to a uniform resource identifier.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       No
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       bsURI           -   A byte string which indicates the uniform
-    //*                           resource identifier, terminated by 0.
-    //* Return value:
-    //*       None.
-    //* Comments:
-    //*       If the embedder is version 2 or higher and have implementation for
-    //*       FFI_DoURIActionWithKeyboardModifier, then
-    //*       FFI_DoURIActionWithKeyboardModifier takes precedence over
-    //*       FFI_DoURIAction.
-    //*       See the URI actions description of <<PDF Reference, version 1.7>>
-    //*       for more details.
-    //*
+    // Method: FFI_DoURIAction
+    //       Ask the implementation to navigate to a uniform resource identifier.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       No
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       bsURI           -   A byte string which indicates the uniform
+    //                           resource identifier, terminated by 0.
+    // Return value:
+    //       None.
+    // Comments:
+    //       If the embedder is version 2 or higher and have implementation for
+    //       FFI_DoURIActionWithKeyboardModifier, then
+    //       FFI_DoURIActionWithKeyboardModifier takes precedence over
+    //       FFI_DoURIAction.
+    //       See the URI actions description of <<PDF Reference, version 1.7>>
+    //       for more details.
     FFI_DoURIAction: procedure(pThis: PFPDF_FORMFILLINFO; bsURI: FPDF_WIDESTRING); cdecl;
 
-    //*
-    //* Method: FFI_DoGoToAction
-    //*       This action changes the view to a specified destination.
-    //* Interface Version:
-    //*       1
-    //* Implementation Required:
-    //*       No
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       nPageIndex      -   The index of the PDF page.
-    //*       zoomMode        -   The zoom mode for viewing page. See below.
-    //*       fPosArray       -   The float array which carries the position info.
-    //*       sizeofArray     -   The size of float array.
-    //* PDFZoom values:
-    //*         - XYZ = 1
-    //*         - FITPAGE = 2
-    //*         - FITHORZ = 3
-    //*         - FITVERT = 4
-    //*         - FITRECT = 5
-    //*         - FITBBOX = 6
-    //*         - FITBHORZ = 7
-    //*         - FITBVERT = 8
-    //* Return value:
-    //*       None.
-    //* Comments:
-    //*       See the Destinations description of <<PDF Reference, version 1.7>>
-    //*       in 8.2.1 for more details.
-    //*
+    // Method: FFI_DoGoToAction
+    //       This action changes the view to a specified destination.
+    // Interface Version:
+    //       1
+    // Implementation Required:
+    //       No
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       nPageIndex      -   The index of the PDF page.
+    //       zoomMode        -   The zoom mode for viewing page. See below.
+    //       fPosArray       -   The float array which carries the position info.
+    //       sizeofArray     -   The size of float array.
+    // PDFZoom values:
+    //         - XYZ = 1
+    //         - FITPAGE = 2
+    //         - FITHORZ = 3
+    //         - FITVERT = 4
+    //         - FITRECT = 5
+    //         - FITBBOX = 6
+    //         - FITBHORZ = 7
+    //         - FITBVERT = 8
+    // Return value:
+    //       None.
+    // Comments:
+    //       See the Destinations description of <<PDF Reference, version 1.7>>
+    //       in 8.2.1 for more details.
     FFI_DoGoToAction: procedure(pThis: PFPDF_FORMFILLINFO; nPageIndex, zoomMode: Integer; fPosArray: PSingle; sizeofArray: Integer); cdecl;
 
-    //*
-    //*   Pointer to IPDF_JSPLATFORM interface.
-    //*   Unused if PDFium is built without V8 support. Otherwise, if NULL, then
-    //*   JavaScript will be prevented from executing while rendering the document.
-    //*
+    // Pointer to IPDF_JSPLATFORM interface.
+    // Unused if PDFium is built without V8 support. Otherwise, if NULL, then
+    // JavaScript will be prevented from executing while rendering the document.
     m_pJsPlatform: PIPDF_JSPLATFORM;
 
-    //* Version 2 - Experimental.
-    //*
-    //* Whether the XFA module is disabled when built with the XFA module.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //*
+    // Version 2 - Experimental.
+
+    // Whether the XFA module is disabled when built with the XFA module.
+    // Interface Version:
+    //       Ignored if |version| < 2.
     xfa_disabled: FPDF_BOOL;
 
-    //*
-    //* Method: FFI_DisplayCaret
-    //*       This method will show the caret at specified position.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       page            -   Handle to page. Returned by FPDF_LoadPage().
-    //*       left            -   Left position of the client area in PDF page
-    //*                           coordinates.
-    //*       top             -   Top position of the client area in PDF page
-    //*                           coordinates.
-    //*       right           -   Right position of the client area in PDF page
-    //*                           coordinates.
-    //*       bottom          -   Bottom position of the client area in PDF page
-    //*                           coordinates.
-    //* Return value:
-    //*       None.
-    //*
+    // Method: FFI_DisplayCaret
+    //       This method will show the caret at specified position.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       page            -   Handle to page. Returned by FPDF_LoadPage().
+    //       left            -   Left position of the client area in PDF page
+    //                           coordinates.
+    //       top             -   Top position of the client area in PDF page
+    //                           coordinates.
+    //       right           -   Right position of the client area in PDF page
+    //                           coordinates.
+    //       bottom          -   Bottom position of the client area in PDF page
+    //                           coordinates.
+    // Return value:
+    //       None.
     FFI_DisplayCaret: procedure(pThis: PFPDF_FORMFILLINFO; page: FPDF_PAGE; bVisible: FPDF_BOOL;
                                 left, top, right, bottom: Double); cdecl;
 
-    //*
-    //* Method: FFI_GetCurrentPageIndex
-    //*       This method will get the current page index.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       document        -   Handle to document from FPDF_LoadDocument().
-    //* Return value:
-    //*       The index of current page.
-    //*
+    // Method: FFI_GetCurrentPageIndex
+    //       This method will get the current page index.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       document        -   Handle to document from FPDF_LoadDocument().
+    // Return value:
+    //       The index of current page.
     FFI_GetCurrentPageIndex: function(pThis: PFPDF_FORMFILLINFO; document: FPDF_DOCUMENT): Integer; cdecl;
 
-    //*
-    //* Method: FFI_SetCurrentPage
-    //*       This method will set the current page.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       document        -   Handle to document from FPDF_LoadDocument().
-    //*       iCurPage        -   The index of the PDF page.
-    //* Return value:
-    //*       None.
-    //*
+    // Method: FFI_SetCurrentPage
+    //       This method will set the current page.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       document        -   Handle to document from FPDF_LoadDocument().
+    //       iCurPage        -   The index of the PDF page.
+    // Return value:
+    //       None.
     FFI_SetCurrentPage: procedure(pThis: PFPDF_FORMFILLINFO; document: FPDF_DOCUMENT; iCurPage: Integer); cdecl;
 
-    //*
-    //* Method: FFI_GotoURL
-    //*       This method will navigate to the specified URL.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis            -   Pointer to the interface structure itself.
-    //*       document         -   Handle to document from FPDF_LoadDocument().
-    //*       wsURL            -   The string value of the URL, in UTF-16LE format.
-    //* Return value:
-    //*       None.
-    //*
+    // Method: FFI_GotoURL
+    //       This method will navigate to the specified URL.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis            -   Pointer to the interface structure itself.
+    //       document         -   Handle to document from FPDF_LoadDocument().
+    //       wsURL            -   The string value of the URL, in UTF-16LE format.
+    // Return value:
+    //       None.
     FFI_GotoURL: procedure(pThis: PFPDF_FORMFILLINFO; document: FPDF_DOCUMENT; wsURL: FPDF_WIDESTRING); cdecl;
 
-    //*
-    //* Method: FFI_GetPageViewRect
-    //*       This method will get the current page view rectangle.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       page            -   Handle to page. Returned by FPDF_LoadPage().
-    //*       left            -   The pointer to receive left position of the page
-    //*                           view area in PDF page coordinates.
-    //*       top             -   The pointer to receive top position of the page
-    //*                           view area in PDF page coordinates.
-    //*       right           -   The pointer to receive right position of the
-    //*                           page view area in PDF page coordinates.
-    //*       bottom          -   The pointer to receive bottom position of the
-    //*                           page view area in PDF page coordinates.
-    //* Return value:
-    //*     None.
-    //*
+    // Method: FFI_GetPageViewRect
+    //       This method will get the current page view rectangle.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       page            -   Handle to page. Returned by FPDF_LoadPage().
+    //       left            -   The pointer to receive left position of the page
+    //                           view area in PDF page coordinates.
+    //       top             -   The pointer to receive top position of the page
+    //                           view area in PDF page coordinates.
+    //       right           -   The pointer to receive right position of the
+    //                           page view area in PDF page coordinates.
+    //       bottom          -   The pointer to receive bottom position of the
+    //                           page view area in PDF page coordinates.
+    // Return value:
+    //     None.
     FFI_GetPageViewRect: procedure(pThis: PFPDF_FORMFILLINFO; page: FPDF_PAGE; var left, top, right, bottom: Double); cdecl;
 
-    //*
-    //* Method: FFI_PageEvent
-    //*       This method fires when pages have been added to or deleted from
-    //*       the XFA document.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       page_count      -   The number of pages to be added or deleted.
-    //*       event_type      -   See FXFA_PAGEVIEWEVENT_* above.
-    //* Return value:
-    //*       None.
-    //* Comments:
-    //*       The pages to be added or deleted always start from the last page
-    //*       of document. This means that if parameter page_count is 2 and
-    //*       event type is FXFA_PAGEVIEWEVENT_POSTADDED, 2 new pages have been
-    //*       appended to the tail of document; If page_count is 2 and
-    //*       event type is FXFA_PAGEVIEWEVENT_POSTREMOVED, the last 2 pages
-    //*       have been deleted.
-    //*
+    // Method: FFI_PageEvent
+    //       This method fires when pages have been added to or deleted from
+    //       the XFA document.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       page_count      -   The number of pages to be added or deleted.
+    //       event_type      -   See FXFA_PAGEVIEWEVENT_* above.
+    // Return value:
+    //       None.
+    // Comments:
+    //       The pages to be added or deleted always start from the last page
+    //       of document. This means that if parameter page_count is 2 and
+    //       event type is FXFA_PAGEVIEWEVENT_POSTADDED, 2 new pages have been
+    //       appended to the tail of document; If page_count is 2 and
+    //       event type is FXFA_PAGEVIEWEVENT_POSTREMOVED, the last 2 pages
+    //       have been deleted.
     FFI_PageEvent: procedure(pThis: PFPDF_FORMFILLINFO; page_count: Integer; event_type: FPDF_DWORD); cdecl;
 
-    //*
-    //* Method: FFI_PopupMenu
-    //*       This method will track the right context menu for XFA fields.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       page            -   Handle to page. Returned by FPDF_LoadPage().
-    //*       hWidget         -   Always null, exists for compatibility.
-    //*       menuFlag        -   The menu flags. Please refer to macro definition
-    //*                           of FXFA_MENU_XXX and this can be one or a
-    //*                           combination of these macros.
-    //*       x               -   X position of the client area in PDF page
-    //*                           coordinates.
-    //*       y               -   Y position of the client area in PDF page
-    //*                           coordinates.
-    //* Return value:
-    //*       TRUE indicates success; otherwise false.
-    //*
+    // Method: FFI_PopupMenu
+    //       This method will track the right context menu for XFA fields.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       page            -   Handle to page. Returned by FPDF_LoadPage().
+    //       hWidget         -   Always null, exists for compatibility.
+    //       menuFlag        -   The menu flags. Please refer to macro definition
+    //                           of FXFA_MENU_XXX and this can be one or a
+    //                           combination of these macros.
+    //       x               -   X position of the client area in PDF page
+    //                           coordinates.
+    //       y               -   Y position of the client area in PDF page
+    //                           coordinates.
+    // Return value:
+    //       TRUE indicates success; otherwise false.
     FFI_PopupMenu: function(pThis: PFPDF_FORMFILLINFO; page: FPDF_PAGE; hWidget: FPDF_WIDGET;
                             menuFlag: Integer; x, y: Single): FPDF_BOOL; cdecl;
 
-    //*
-    //* Method: FFI_OpenFile
-    //*       This method will open the specified file with the specified mode.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       fileFlag        -   The file flag. Please refer to macro definition
-    //*                           of FXFA_SAVEAS_XXX and use one of these macros.
-    //*       wsURL           -   The string value of the file URL, in UTF-16LE
-    //*                           format.
-    //*       mode            -   The mode for open file, e.g. "rb" or "wb".
-    //* Return value:
-    //*       The handle to FPDF_FILEHANDLER.
-    //**
+    // Method: FFI_OpenFile
+    //       This method will open the specified file with the specified mode.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       fileFlag        -   The file flag. Please refer to macro definition
+    //                           of FXFA_SAVEAS_XXX and use one of these macros.
+    //       wsURL           -   The string value of the file URL, in UTF-16LE
+    //                           format.
+    //       mode            -   The mode for open file, e.g. "rb" or "wb".
+    // Return value:
+    //       The handle to FPDF_FILEHANDLER.
     FFI_OpenFile: function(pThis: PFPDF_FORMFILLINFO; fileFlag: Integer; wsURL: FPDF_WIDESTRING;
                            mode: PAnsiChar): PFPDF_FILEHANDLER; cdecl;
 
-    //*
-    //* Method: FFI_EmailTo
-    //*       This method will email the specified file stream to the specified
-    //*       contact.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       pFileHandler    -   Handle to the FPDF_FILEHANDLER.
-    //*       pTo             -   A semicolon-delimited list of recipients for the
-    //*                           message,in UTF-16LE format.
-    //*       pSubject        -   The subject of the message,in UTF-16LE format.
-    //*       pCC             -   A semicolon-delimited list of CC recipients for
-    //*                           the message,in UTF-16LE format.
-    //*       pBcc            -   A semicolon-delimited list of BCC recipients for
-    //*                           the message,in UTF-16LE format.
-    //*       pMsg            -   Pointer to the data buffer to be sent.Can be
-    //*                           NULL,in UTF-16LE format.
-    //* Return value:
-    //*       None.
-    //*
+    // Method: FFI_EmailTo
+    //       This method will email the specified file stream to the specified
+    //       contact.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       pFileHandler    -   Handle to the FPDF_FILEHANDLER.
+    //       pTo             -   A semicolon-delimited list of recipients for the
+    //                           message,in UTF-16LE format.
+    //       pSubject        -   The subject of the message,in UTF-16LE format.
+    //       pCC             -   A semicolon-delimited list of CC recipients for
+    //                           the message,in UTF-16LE format.
+    //       pBcc            -   A semicolon-delimited list of BCC recipients for
+    //                           the message,in UTF-16LE format.
+    //       pMsg            -   Pointer to the data buffer to be sent.Can be
+    //                           NULL,in UTF-16LE format.
+    // Return value:
+    //       None.
     FFI_EmailTo: procedure(pThis: PFPDF_FORMFILLINFO; fileHandler: PFPDF_FILEHANDLER;
                            pTo, pSubject, pCC, pBcc, pMsg: FPDF_WIDESTRING); cdecl;
 
-    //*
-    //* Method: FFI_UploadTo
-    //*       This method will upload the specified file stream to the
-    //*       specified URL.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       pFileHandler    -   Handle to the FPDF_FILEHANDLER.
-    //*       fileFlag        -   The file flag. Please refer to macro definition
-    //*                           of FXFA_SAVEAS_XXX and use one of these macros.
-    //*       uploadTo        -   Pointer to the URL path, in UTF-16LE format.
-    //* Return value:
-    //*       None.
-    //*
+    // Method: FFI_UploadTo
+    //       This method will upload the specified file stream to the
+    //       specified URL.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       pFileHandler    -   Handle to the FPDF_FILEHANDLER.
+    //       fileFlag        -   The file flag. Please refer to macro definition
+    //                           of FXFA_SAVEAS_XXX and use one of these macros.
+    //       uploadTo        -   Pointer to the URL path, in UTF-16LE format.
+    // Return value:
+    //       None.
     FFI_UploadTo: procedure(pThis: PFPDF_FORMFILLINFO; fileHandler: PFPDF_FILEHANDLER; fileFlag: Integer;
                             uploadTo: FPDF_WIDESTRING); cdecl;
 
-    //*
-    //* Method: FFI_GetPlatform
-    //*       This method will get the current platform.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       platform        -   Pointer to the data buffer to receive the
-    //*                           platform,in UTF-16LE format. Can be NULL.
-    //*       length          -   The length of the buffer in bytes. Can be
-    //*                           0 to query the required size.
-    //* Return value:
-    //*       The length of the buffer, number of bytes.
-    //*
+    // Method: FFI_GetPlatform
+    //       This method will get the current platform.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       platform        -   Pointer to the data buffer to receive the
+    //                           platform,in UTF-16LE format. Can be NULL.
+    //       length          -   The length of the buffer in bytes. Can be
+    //                           0 to query the required size.
+    // Return value:
+    //       The length of the buffer, number of bytes.
     FFI_GetPlatform: function(pThis: PFPDF_FORMFILLINFO; platform_: Pointer; length: Integer): Integer; cdecl;
 
-    //*
-    //* Method: FFI_GetLanguage
-    //*       This method will get the current language.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       language        -   Pointer to the data buffer to receive the
-    //*                           current language. Can be NULL.
-    //*       length          -   The length of the buffer in bytes. Can be
-    //*                           0 to query the required size.
-    //* Return value:
-    //*       The length of the buffer, number of bytes.
-    //*
+    // Method: FFI_GetLanguage
+    //       This method will get the current language.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       language        -   Pointer to the data buffer to receive the
+    //                           current language. Can be NULL.
+    //       length          -   The length of the buffer in bytes. Can be
+    //                           0 to query the required size.
+    // Return value:
+    //       The length of the buffer, number of bytes.
     FFI_GetLanguage: function(pThis: PFPDF_FORMFILLINFO; language: Pointer; length: Integer): Integer; cdecl;
 
-    //*
-    //* Method: FFI_DownloadFromURL
-    //*       This method will download the specified file from the URL.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       URL             -   The string value of the file URL, in UTF-16LE
-    //*                           format.
-    //* Return value:
-    //*       The handle to FPDF_FILEHANDLER.
-    //*
+    // Method: FFI_DownloadFromURL
+    //       This method will download the specified file from the URL.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       URL             -   The string value of the file URL, in UTF-16LE
+    //                           format.
+    // Return value:
+    //       The handle to FPDF_FILEHANDLER.
     FFI_DownloadFromURL: function(pThis: PFPDF_FORMFILLINFO; URL: FPDF_WIDESTRING): PFPDF_FILEHANDLER; cdecl;
 
-    //*
-    //* Method: FFI_PostRequestURL
-    //*       This method will post the request to the server URL.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       wsURL           -   The string value of the server URL, in UTF-16LE
-    //*                           format.
-    //*       wsData          -   The post data,in UTF-16LE format.
-    //*       wsContentType   -   The content type of the request data, in
-    //*                           UTF-16LE format.
-    //*       wsEncode        -   The encode type, in UTF-16LE format.
-    //*       wsHeader        -   The request header,in UTF-16LE format.
-    //*       response        -   Pointer to the FPDF_BSTR to receive the response
-    //*                           data from the server, in UTF-16LE format.
-    //* Return value:
-    //*       TRUE indicates success, otherwise FALSE.
-    //*
+    // Method: FFI_PostRequestURL
+    //       This method will post the request to the server URL.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       wsURL           -   The string value of the server URL, in UTF-16LE
+    //                           format.
+    //       wsData          -   The post data,in UTF-16LE format.
+    //       wsContentType   -   The content type of the request data, in
+    //                           UTF-16LE format.
+    //       wsEncode        -   The encode type, in UTF-16LE format.
+    //       wsHeader        -   The request header,in UTF-16LE format.
+    //       response        -   Pointer to the FPDF_BSTR to receive the response
+    //                           data from the server, in UTF-16LE format.
+    // Return value:
+    //       TRUE indicates success, otherwise FALSE.
     FFI_PostRequestURL: function(pThis: PFPDF_FORMFILLINFO; wsURL, wsData, wsContentType,
                                  wsEncode, wsHeader: FPDF_WIDESTRING; respone: PFPDF_BSTR): FPDF_BOOL; cdecl;
 
-    //*
-    //* Method: FFI_PutRequestURL
-    //*       This method will put the request to the server URL.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       Required for XFA, otherwise set to NULL.
-    //* Parameters:
-    //*       pThis           -   Pointer to the interface structure itself.
-    //*       wsURL           -   The string value of the server URL, in UTF-16LE
-    //*                           format.
-    //*       wsData          -   The put data, in UTF-16LE format.
-    //*       wsEncode        -   The encode type, in UTR-16LE format.
-    //* Return value:
-    //*       TRUE indicates success, otherwise FALSE.
-    //*
+    // Method: FFI_PutRequestURL
+    //       This method will put the request to the server URL.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       Required for XFA, otherwise set to NULL.
+    // Parameters:
+    //       pThis           -   Pointer to the interface structure itself.
+    //       wsURL           -   The string value of the server URL, in UTF-16LE
+    //                           format.
+    //       wsData          -   The put data, in UTF-16LE format.
+    //       wsEncode        -   The encode type, in UTR-16LE format.
+    // Return value:
+    //       TRUE indicates success, otherwise FALSE.
     FFI_PutRequestURL: function(pThis: PFPDF_FORMFILLINFO; wsURL, wsData, wsEncode: FPDF_WIDESTRING): FPDF_BOOL; cdecl;
 
-    //*
-    //* Method: FFI_OnFocusChange
-    //*     Called when the focused annotation is updated.
-    //* Interface Version:
-    //*     Ignored if |version| < 2.
-    //* Implementation Required:
-    //*     No
-    //* Parameters:
-    //*     param           -   Pointer to the interface structure itself.
-    //*     annot           -   The focused annotation.
-    //*     page_index      -   Index number of the page which contains the
-    //*                         focused annotation. 0 for the first page.
-    //* Return value:
-    //*     None.
-    //* Comments:
-    //*     This callback function is useful for implementing any view based
-    //*     action such as scrolling the annotation rect into view. The
-    //*     embedder should not copy and store the annot as its scope is
-    //*     limited to this call only.
-    //*
+    // Method: FFI_OnFocusChange
+    //     Called when the focused annotation is updated.
+    // Interface Version:
+    //     Ignored if |version| < 2.
+    // Implementation Required:
+    //     No
+    // Parameters:
+    //     param           -   Pointer to the interface structure itself.
+    //     annot           -   The focused annotation.
+    //     page_index      -   Index number of the page which contains the
+    //                         focused annotation. 0 for the first page.
+    // Return value:
+    //     None.
+    // Comments:
+    //     This callback function is useful for implementing any view based
+    //     action such as scrolling the annotation rect into view. The
+    //     embedder should not copy and store the annot as its scope is
+    //     limited to this call only.
     FFI_OnFocusChange: procedure(param: PFPDF_FORMFILLINFO; annot: FPDF_ANNOTATION; page_index: Integer); cdecl;
 
-    //*
-    //* Method: FFI_DoURIActionWithKeyboardModifier
-    //*       Ask the implementation to navigate to a uniform resource identifier
-    //*       with the specified modifiers.
-    //* Interface Version:
-    //*       Ignored if |version| < 2.
-    //* Implementation Required:
-    //*       No
-    //* Parameters:
-    //*       param           -   Pointer to the interface structure itself.
-    //*       uri             -   A byte string which indicates the uniform
-    //*                           resource identifier, terminated by 0.
-    //*       modifiers       -   Keyboard modifier that indicates which of
-    //*                           the virtual keys are down, if any.
-    //* Return value:
-    //*       None.
-    //* Comments:
-    //*       If the embedder who is version 2 and does not implement this API,
-    //*       then a call will be redirected to FFI_DoURIAction.
-    //*       See the URI actions description of <<PDF Reference, version 1.7>>
-    //*       for more details.
-    //*
+    // Method: FFI_DoURIActionWithKeyboardModifier
+    //       Ask the implementation to navigate to a uniform resource identifier
+    //       with the specified modifiers.
+    // Interface Version:
+    //       Ignored if |version| < 2.
+    // Implementation Required:
+    //       No
+    // Parameters:
+    //       param           -   Pointer to the interface structure itself.
+    //       uri             -   A byte string which indicates the uniform
+    //                           resource identifier, terminated by 0.
+    //       modifiers       -   Keyboard modifier that indicates which of
+    //                           the virtual keys are down, if any.
+    // Return value:
+    //       None.
+    // Comments:
+    //       If the embedder who is version 2 and does not implement this API,
+    //       then a call will be redirected to FFI_DoURIAction.
+    //       See the URI actions description of <<PDF Reference, version 1.7>>
+    //       for more details.
     FFI_DoURIActionWithKeyboardModifier: procedure(param: PFPDF_FORMFILLINFO; uri: FPDF_BYTESTRING; modifiers: Integer); cdecl;
   end;
   PFPDFFormFillInfo = ^TFPDFFormFillInfo;
   TFPDFFormFillInfo = FPDF_FORMFILLINFO;
 
-
-//*
-//* Function: FPDFDOC_InitFormFillEnvironment
-//*       Initialize form fill environment.
-//* Parameters:
-//*       document        -   Handle to document from FPDF_LoadDocument().
-//*       formInfo        -   Pointer to a FPDF_FORMFILLINFO structure.
-//* Return Value:
-//*       Handle to the form fill module, or NULL on failure.
-//* Comments:
-//*       This function should be called before any form fill operation.
-//*       The FPDF_FORMFILLINFO passed in via |formInfo| must remain valid until
-//*       the returned FPDF_FORMHANDLE is closed.
-//*
+// Function: FPDFDOC_InitFormFillEnvironment
+//       Initialize form fill environment.
+// Parameters:
+//       document        -   Handle to document from FPDF_LoadDocument().
+//       formInfo        -   Pointer to a FPDF_FORMFILLINFO structure.
+// Return Value:
+//       Handle to the form fill module, or NULL on failure.
+// Comments:
+//       This function should be called before any form fill operation.
+//       The FPDF_FORMFILLINFO passed in via |formInfo| must remain valid until
+//       the returned FPDF_FORMHANDLE is closed.
 var
   FPDFDOC_InitFormFillEnvironment: function(document: FPDF_DOCUMENT; formInfo: PFPDF_FORMFILLINFO): FPDF_FORMHANDLE; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FPDFDOC_ExitFormFillEnvironment
-//*       Take ownership of |hHandle| and exit form fill environment.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//* Return Value:
-//*       None.
-//* Comments:
-//*       This function is a no-op when |hHandle| is null.
-//*
+// Function: FPDFDOC_ExitFormFillEnvironment
+//       Take ownership of |hHandle| and exit form fill environment.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+// Return Value:
+//       None.
+// Comments:
+//       This function is a no-op when |hHandle| is null.
 var
   FPDFDOC_ExitFormFillEnvironment: procedure(hHandle: FPDF_FORMHANDLE); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_OnAfterLoadPage
-//*       This method is required for implementing all the form related
-//*       functions. Should be invoked after user successfully loaded a
-//*       PDF page, and FPDFDOC_InitFormFillEnvironment() has been invoked.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//* Return Value:
-//*       None.
-//*
+// Function: FORM_OnAfterLoadPage
+//       This method is required for implementing all the form related
+//       functions. Should be invoked after user successfully loaded a
+//       PDF page, and FPDFDOC_InitFormFillEnvironment() has been invoked.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+// Return Value:
+//       None.
 var
   FORM_OnAfterLoadPage: procedure(page: FPDF_PAGE; hHandle: FPDF_FORMHANDLE); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_OnBeforeClosePage
-//*       This method is required for implementing all the form related
-//*       functions. Should be invoked before user closes the PDF page.
-//* Parameters:
-//*        page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*        hHandle     -   Handle to the form fill module, as returned by
-//*                        FPDFDOC_InitFormFillEnvironment().
-//* Return Value:
-//*        None.
-//*
+// Function: FORM_OnBeforeClosePage
+//       This method is required for implementing all the form related
+//       functions. Should be invoked before user closes the PDF page.
+// Parameters:
+//        page        -   Handle to the page, as returned by FPDF_LoadPage().
+//        hHandle     -   Handle to the form fill module, as returned by
+//                        FPDFDOC_InitFormFillEnvironment().
+// Return Value:
+//        None.
 var
   FORM_OnBeforeClosePage: procedure(page: FPDF_PAGE; hHandle: FPDF_FORMHANDLE); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_DoDocumentJSAction
-//*       This method is required for performing document-level JavaScript
-//*       actions. It should be invoked after the PDF document has been loaded.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//* Return Value:
-//*       None.
-//* Comments:
-//*       If there is document-level JavaScript action embedded in the
-//*       document, this method will execute the JavaScript action. Otherwise,
-//*       the method will do nothing.
-//*
+// Function: FORM_DoDocumentJSAction
+//       This method is required for performing document-level JavaScript
+//       actions. It should be invoked after the PDF document has been loaded.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+// Return Value:
+//       None.
+// Comments:
+//       If there is document-level JavaScript action embedded in the
+//       document, this method will execute the JavaScript action. Otherwise,
+//       the method will do nothing.
 var
   FORM_DoDocumentJSAction: procedure(hHandle: FPDF_FORMHANDLE); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_DoDocumentOpenAction
-//*       This method is required for performing open-action when the document
-//*       is opened.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//* Return Value:
-//*       None.
-//* Comments:
-//*       This method will do nothing if there are no open-actions embedded
-//*       in the document.
-//*
+// Function: FORM_DoDocumentOpenAction
+//       This method is required for performing open-action when the document
+//       is opened.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+// Return Value:
+//       None.
+// Comments:
+//       This method will do nothing if there are no open-actions embedded
+//       in the document.
 var
   FORM_DoDocumentOpenAction: procedure(hHandle: FPDF_FORMHANDLE); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -6036,21 +5968,19 @@ const
   FPDFDOC_AACTION_WP = $13;
   FPDFDOC_AACTION_DP = $14;
 
-//*
-//* Function: FORM_DoDocumentAAction
-//*       This method is required for performing the document's
-//*       additional-action.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module. Returned by
-//*                       FPDFDOC_InitFormFillEnvironment.
-//*       aaType      -   The type of the additional-actions which defined
-//*                       above.
-//* Return Value:
-//*       None.
-//* Comments:
-//*       This method will do nothing if there is no document
-//*       additional-action corresponding to the specified |aaType|.
-//*
+// Function: FORM_DoDocumentAAction
+//       This method is required for performing the document's
+//       additional-action.
+// Parameters:
+//       hHandle     -   Handle to the form fill module. Returned by
+//                       FPDFDOC_InitFormFillEnvironment.
+//       aaType      -   The type of the additional-actions which defined
+//                       above.
+// Return Value:
+//       None.
+// Comments:
+//       This method will do nothing if there is no document
+//       additional-action corresponding to the specified |aaType|.
 var
   FORM_DoDocumentAAction: procedure(hHandle: FPDF_FORMHANDLE; aaType: Integer); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -6061,429 +5991,382 @@ const
   FPDFPAGE_AACTION_OPEN  = 0;
   FPDFPAGE_AACTION_CLOSE = 1;
 
-//*
-//* Function: FORM_DoPageAAction
-//*       This method is required for performing the page object's
-//*       additional-action when opened or closed.
-//* Parameters:
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       aaType      -   The type of the page object's additional-actions
-//*                       which defined above.
-//* Return Value:
-//*       None.
-//* Comments:
-//*       This method will do nothing if no additional-action corresponding
-//*       to the specified |aaType| exists.
-//*
+// Function: FORM_DoPageAAction
+//       This method is required for performing the page object's
+//       additional-action when opened or closed.
+// Parameters:
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       aaType      -   The type of the page object's additional-actions
+//                       which defined above.
+// Return Value:
+//       None.
+// Comments:
+//       This method will do nothing if no additional-action corresponding
+//       to the specified |aaType| exists.
 var
   FORM_DoPageAAction: procedure(page: FPDF_PAGE; hHandle: FPDF_FORMHANDLE; aaType: Integer); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_OnMouseMove
-//*       Call this member function when the mouse cursor moves.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*       modifier    -   Indicates whether various virtual keys are down.
-//*       page_x      -   Specifies the x-coordinate of the cursor in PDF user
-//*                       space.
-//*       page_y      -   Specifies the y-coordinate of the cursor in PDF user
-//*                       space.
-//* Return Value:
-//*       True indicates success; otherwise false.
-//*
+// Function: FORM_OnMouseMove
+//       Call this member function when the mouse cursor moves.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//       modifier    -   Indicates whether various virtual keys are down.
+//       page_x      -   Specifies the x-coordinate of the cursor in PDF user
+//                       space.
+//       page_y      -   Specifies the y-coordinate of the cursor in PDF user
+//                       space.
+// Return Value:
+//       True indicates success; otherwise false.
 var
   FORM_OnMouseMove: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; modifier: Integer;
     page_x, page_y: Double): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Experimental API
-//* Function: FORM_OnMouseWheel
-//*       Call this member function when the user scrolls the mouse wheel.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*       modifier    -   Indicates whether various virtual keys are down.
-//*       page_coord  -   Specifies the coordinates of the cursor in PDF user
-//*                       space.
-//*       delta_x     -   Specifies the amount of wheel movement on the x-axis,
-//*                       in units of platform-agnostic wheel deltas. Negative
-//*                       values mean left.
-//*       delta_y     -   Specifies the amount of wheel movement on the y-axis,
-//*                       in units of platform-agnostic wheel deltas. Negative
-//*                       values mean down.
-//* Return Value:
-//*       True indicates success; otherwise false.
-//* Comments:
-//*       For |delta_x| and |delta_y|, the caller must normalize
-//*       platform-specific wheel deltas. e.g. On Windows, a delta value of 240
-//*       for a WM_MOUSEWHEEL event normalizes to 2, since Windows defines
-//*       WHEEL_DELTA as 120.
-//*
+// Experimental API
+// Function: FORM_OnMouseWheel
+//       Call this member function when the user scrolls the mouse wheel.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//       modifier    -   Indicates whether various virtual keys are down.
+//       page_coord  -   Specifies the coordinates of the cursor in PDF user
+//                       space.
+//       delta_x     -   Specifies the amount of wheel movement on the x-axis,
+//                       in units of platform-agnostic wheel deltas. Negative
+//                       values mean left.
+//       delta_y     -   Specifies the amount of wheel movement on the y-axis,
+//                       in units of platform-agnostic wheel deltas. Negative
+//                       values mean down.
+// Return Value:
+//       True indicates success; otherwise false.
+// Comments:
+//       For |delta_x| and |delta_y|, the caller must normalize
+//       platform-specific wheel deltas. e.g. On Windows, a delta value of 240
+//       for a WM_MOUSEWHEEL event normalizes to 2, since Windows defines
+//       WHEEL_DELTA as 120.
 var
   FORM_OnMouseWheel: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; modifier: Integer;
     const page_coord: PFS_POINTF; delta_x, delta_y: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_OnFocus
-//*       This function focuses the form annotation at a given point. If the
-//*       annotation at the point already has focus, nothing happens. If there
-//*       is no annotation at the point, removes form focus.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*       modifier    -   Indicates whether various virtual keys are down.
-//*       page_x      -   Specifies the x-coordinate of the cursor in PDF user
-//*                       space.
-//*       page_y      -   Specifies the y-coordinate of the cursor in PDF user
-//*                       space.
-//* Return Value:
-//*       True if there is an annotation at the given point and it has focus.
-//*
+// Function: FORM_OnFocus
+//       This function focuses the form annotation at a given point. If the
+//       annotation at the point already has focus, nothing happens. If there
+//       is no annotation at the point, removes form focus.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//       modifier    -   Indicates whether various virtual keys are down.
+//       page_x      -   Specifies the x-coordinate of the cursor in PDF user
+//                       space.
+//       page_y      -   Specifies the y-coordinate of the cursor in PDF user
+//                       space.
+// Return Value:
+//       True if there is an annotation at the given point and it has focus.
 var
   FORM_OnFocus: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; modifier: Integer;
     page_x, page_y: Double): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_OnLButtonDown
-//*       Call this member function when the user presses the left
-//*       mouse button.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*       modifier    -   Indicates whether various virtual keys are down.
-//*       page_x      -   Specifies the x-coordinate of the cursor in PDF user
-//*                       space.
-//*       page_y      -   Specifies the y-coordinate of the cursor in PDF user
-//*                       space.
-//* Return Value:
-//*       True indicates success; otherwise false.
-//*
+// Function: FORM_OnLButtonDown
+//       Call this member function when the user presses the left
+//       mouse button.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//       modifier    -   Indicates whether various virtual keys are down.
+//       page_x      -   Specifies the x-coordinate of the cursor in PDF user
+//                       space.
+//       page_y      -   Specifies the y-coordinate of the cursor in PDF user
+//                       space.
+// Return Value:
+//       True indicates success; otherwise false.
 var
   FORM_OnLButtonDown: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; modifier: Integer;
     page_x, page_y: Double): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_OnRButtonDown
-//*       Same as above, execpt for the right mouse button.
-//* Comments:
-//*       At the present time, has no effect except in XFA builds, but is
-//*       included for the sake of symmetry.
-//*
+// Function: FORM_OnRButtonDown
+//       Same as above, execpt for the right mouse button.
+// Comments:
+//       At the present time, has no effect except in XFA builds, but is
+//       included for the sake of symmetry.
 var
   FORM_OnRButtonDown: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; modifier: Integer;
     page_x, page_y: Double): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_OnLButtonUp
-//*       Call this member function when the user releases the left
-//*       mouse button.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*       modifier    -   Indicates whether various virtual keys are down.
-//*       page_x      -   Specifies the x-coordinate of the cursor in device.
-//*       page_y      -   Specifies the y-coordinate of the cursor in device.
-//* Return Value:
-//*       True indicates success; otherwise false.
-//*
+// Function: FORM_OnLButtonUp
+//       Call this member function when the user releases the left
+//       mouse button.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//       modifier    -   Indicates whether various virtual keys are down.
+//       page_x      -   Specifies the x-coordinate of the cursor in device.
+//       page_y      -   Specifies the y-coordinate of the cursor in device.
+// Return Value:
+//       True indicates success; otherwise false.
 var
   FORM_OnLButtonUp: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; modifier: Integer;
     page_x, page_y: Double): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_OnRButtonUp
-//*       Same as above, execpt for the right mouse button.
-//* Comments:
-//*       At the present time, has no effect except in XFA builds, but is
-//*       included for the sake of symmetry.
-//*
+// Function: FORM_OnRButtonUp
+//       Same as above, execpt for the right mouse button.
+// Comments:
+//       At the present time, has no effect except in XFA builds, but is
+//       included for the sake of symmetry.
 var
   FORM_OnRButtonUp: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; modifier: Integer;
     page_x, page_y: Double): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_OnLButtonDoubleClick
-//*       Call this member function when the user double clicks the
-//*       left mouse button.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*       modifier    -   Indicates whether various virtual keys are down.
-//*       page_x      -   Specifies the x-coordinate of the cursor in PDF user
-//*                       space.
-//*       page_y      -   Specifies the y-coordinate of the cursor in PDF user
-//*                       space.
-//* Return Value:
-//*       True indicates success; otherwise false.
-//*
+// Function: FORM_OnLButtonDoubleClick
+//       Call this member function when the user double clicks the
+//       left mouse button.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//       modifier    -   Indicates whether various virtual keys are down.
+//       page_x      -   Specifies the x-coordinate of the cursor in PDF user
+//                       space.
+//       page_y      -   Specifies the y-coordinate of the cursor in PDF user
+//                       space.
+// Return Value:
+//       True indicates success; otherwise false.
 var
   FORM_OnLButtonDoubleClick: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; modifier: Integer;
     page_x, page_y: Double): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_OnKeyDown
-//*       Call this member function when a nonsystem key is pressed.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, aseturned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*       nKeyCode    -   The virtual-key code of the given key (see
-//*                       fpdf_fwlevent.h for virtual key codes).
-//*       modifier    -   Mask of key flags (see fpdf_fwlevent.h for key
-//*                       flag values).
-//* Return Value:
-//*       True indicates success; otherwise false.
-//*
+// Function: FORM_OnKeyDown
+//       Call this member function when a nonsystem key is pressed.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, aseturned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//       nKeyCode    -   The virtual-key code of the given key (see
+//                       fpdf_fwlevent.h for virtual key codes).
+//       modifier    -   Mask of key flags (see fpdf_fwlevent.h for key
+//                       flag values).
+// Return Value:
+//       True indicates success; otherwise false.
 var
   FORM_OnKeyDown: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; nKeyCode, modifier: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_OnKeyUp
-//*       Call this member function when a nonsystem key is released.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*       nKeyCode    -   The virtual-key code of the given key (see
-//*                       fpdf_fwlevent.h for virtual key codes).
-//*       modifier    -   Mask of key flags (see fpdf_fwlevent.h for key
-//*                       flag values).
-//* Return Value:
-//*       True indicates success; otherwise false.
-//* Comments:
-//*       Currently unimplemented and always returns false. PDFium reserves this
-//*       API and may implement it in the future on an as-needed basis.
-//*
+// Function: FORM_OnKeyUp
+//       Call this member function when a nonsystem key is released.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//       nKeyCode    -   The virtual-key code of the given key (see
+//                       fpdf_fwlevent.h for virtual key codes).
+//       modifier    -   Mask of key flags (see fpdf_fwlevent.h for key
+//                       flag values).
+// Return Value:
+//       True indicates success; otherwise false.
+// Comments:
+//       Currently unimplemented and always returns false. PDFium reserves this
+//       API and may implement it in the future on an as-needed basis.
 var
   FORM_OnKeyUp: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; nKeyCode, modifier: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_OnChar
-//*       Call this member function when a keystroke translates to a
-//*       nonsystem character.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*       nChar       -   The character code value itself.
-//*       modifier    -   Mask of key flags (see fpdf_fwlevent.h for key
-//*                       flag values).
-//* Return Value:
-//*       True indicates success; otherwise false.
-//*
+// Function: FORM_OnChar
+//       Call this member function when a keystroke translates to a
+//       nonsystem character.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//       nChar       -   The character code value itself.
+//       modifier    -   Mask of key flags (see fpdf_fwlevent.h for key
+//                       flag values).
+// Return Value:
+//       True indicates success; otherwise false.
 var
   FORM_OnChar: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; nChar, modifier: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Experimental API
-//* Function: FORM_GetFocusedText
-//*       Call this function to obtain the text within the current focused
-//*       field, if any.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*       buffer      -   Buffer for holding the form text, encoded in
-//*                       UTF-16LE. If NULL, |buffer| is not modified.
-//*       buflen      -   Length of |buffer| in bytes. If |buflen| is less
-//*                       than the length of the form text string, |buffer| is
-//*                       not modified.
-//* Return Value:
-//*       Length in bytes for the text in the focused field.
-//*
+// Experimental API
+// Function: FORM_GetFocusedText
+//       Call this function to obtain the text within the current focused
+//       field, if any.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//       buffer      -   Buffer for holding the form text, encoded in
+//                       UTF-16LE. If NULL, |buffer| is not modified.
+//       buflen      -   Length of |buffer| in bytes. If |buflen| is less
+//                       than the length of the form text string, |buffer| is
+//                       not modified.
+// Return Value:
+//       Length in bytes for the text in the focused field.
 var
   FORM_GetFocusedText: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; buffer: Pointer; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_GetSelectedText
-//*       Call this function to obtain selected text within a form text
-//*       field or form combobox text field.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//*       buffer      -   Buffer for holding the selected text, encoded in
-//*                       UTF-16LE. If NULL, |buffer| is not modified.
-//*       buflen      -   Length of |buffer| in bytes. If |buflen| is less
-//*                       than the length of the selected text string,
-//*                       |buffer| is not modified.
-//* Return Value:
-//*       Length in bytes of selected text in form text field or form combobox
-//*       text field.
-//*
+// Function: FORM_GetSelectedText
+//       Call this function to obtain selected text within a form text
+//       field or form combobox text field.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+//       buffer      -   Buffer for holding the selected text, encoded in
+//                       UTF-16LE. If NULL, |buffer| is not modified.
+//       buflen      -   Length of |buffer| in bytes. If |buflen| is less
+//                       than the length of the selected text string,
+//                       |buffer| is not modified.
+// Return Value:
+//       Length in bytes of selected text in form text field or form combobox
+//       text field.
 var
   FORM_GetSelectedText: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; buffer: Pointer; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//* Experimental API
-//* Function: FORM_ReplaceAndKeepSelection
-//*       Call this function to replace the selected text in a form
-//*       text field or user-editable form combobox text field with another
-//*       text string (which can be empty or non-empty). If there is no
-//*       selected text, this function will append the replacement text after
-//*       the current caret position. After the insertion, the inserted text
-//*       will be selected.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as Returned by FPDF_LoadPage().
-//*       wsText      -   The text to be inserted, in UTF-16LE format.
-//* Return Value:
-//*       None.
-//*
+// Experimental API
+// Function: FORM_ReplaceAndKeepSelection
+//       Call this function to replace the selected text in a form
+//       text field or user-editable form combobox text field with another
+//       text string (which can be empty or non-empty). If there is no
+//       selected text, this function will append the replacement text after
+//       the current caret position. After the insertion, the inserted text
+//       will be selected.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as Returned by FPDF_LoadPage().
+//       wsText      -   The text to be inserted, in UTF-16LE format.
+// Return Value:
+//       None.
 var
   FORM_ReplaceAndKeepSelection: procedure(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; wsText: FPDF_WIDESTRING); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_ReplaceSelection
-//*       Call this function to replace the selected text in a form
-//*       text field or user-editable form combobox text field with another
-//*       text string (which can be empty or non-empty). If there is no
-//*       selected text, this function will append the replacement text after
-//*       the current caret position. After the insertion, the selection range
-//*       will be set to empty.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as Returned by FPDF_LoadPage().
-//*       wsText      -   The text to be inserted, in UTF-16LE format.
-//* Return Value:
-//*       None.
-//*
+// Function: FORM_ReplaceSelection
+//       Call this function to replace the selected text in a form
+//       text field or user-editable form combobox text field with another
+//       text string (which can be empty or non-empty). If there is no
+//       selected text, this function will append the replacement text after
+//       the current caret position. After the insertion, the selection range
+//       will be set to empty.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as Returned by FPDF_LoadPage().
+//       wsText      -   The text to be inserted, in UTF-16LE format.
+// Return Value:
+//       None.
 var
   FORM_ReplaceSelection: procedure(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; wsText: FPDF_WIDESTRING); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Experimental API
-//* Function: FORM_SelectAllText
-//*       Call this function to select all the text within the currently focused
-//*       form text field or form combobox text field.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//* Return Value:
-//*       Whether the operation succeeded or not.
-//*
+// Experimental API
+// Function: FORM_SelectAllText
+//       Call this function to select all the text within the currently focused
+//       form text field or form combobox text field.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+// Return Value:
+//       Whether the operation succeeded or not.
 var
   FORM_SelectAllText: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_CanUndo
-//*       Find out if it is possible for the current focused widget in a given
-//*       form to perform an undo operation.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//* Return Value:
-//*       True if it is possible to undo.
-//*
+// Function: FORM_CanUndo
+//       Find out if it is possible for the current focused widget in a given
+//       form to perform an undo operation.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+// Return Value:
+//       True if it is possible to undo.
 var
   FORM_CanUndo: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_CanRedo
-//*       Find out if it is possible for the current focused widget in a given
-//*       form to perform a redo operation.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//* Return Value:
-//*       True if it is possible to redo.
-//*
+// Function: FORM_CanRedo
+//       Find out if it is possible for the current focused widget in a given
+//       form to perform a redo operation.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+// Return Value:
+//       True if it is possible to redo.
 var
   FORM_CanRedo: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_Undo
-//*       Make the current focussed widget perform an undo operation.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//* Return Value:
-//*       True if the undo operation succeeded.
-//*
+// Function: FORM_Undo
+//       Make the current focused widget perform an undo operation.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+// Return Value:
+//       True if the undo operation succeeded.
 var
   FORM_Undo: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_Redo
-//*       Make the current focussed widget perform a redo operation.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page        -   Handle to the page, as returned by FPDF_LoadPage().
-//* Return Value:
-//*       True if the redo operation succeeded.
-//*
+// Function: FORM_Redo
+//       Make the current focused widget perform a redo operation.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page        -   Handle to the page, as returned by FPDF_LoadPage().
+// Return Value:
+//       True if the redo operation succeeded.
 var
   FORM_Redo: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FORM_ForceToKillFocus.
-//*       Call this member function to force to kill the focus of the form
-//*       field which has focus. If it would kill the focus of a form field,
-//*       save the value of form field if was changed by theuser.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//* Return Value:
-//*       True indicates success; otherwise false.
-//*
+// Function: FORM_ForceToKillFocus.
+//       Call this member function to force to kill the focus of the form
+//       field which has focus. If it would kill the focus of a form field,
+//       save the value of form field if was changed by theuser.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+// Return Value:
+//       True indicates success; otherwise false.
 var
   FORM_ForceToKillFocus: function(hHandle: FPDF_FORMHANDLE): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Experimental API.
-//* Function: FORM_GetFocusedAnnot.
-//*       Call this member function to get the currently focused annotation.
-//* Parameters:
-//*       handle      -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       page_index  -   Buffer to hold the index number of the page which
-//*                       contains the focused annotation. 0 for the first page.
-//*                       Can't be NULL.
-//*       annot       -   Buffer to hold the focused annotation. Can't be NULL.
-//* Return Value:
-//*       On success, return true and write to the out parameters. Otherwise return
-//*       false and leave the out parameters unmodified.
-//* Comments:
-//*       Not currently supported for XFA forms - will report no focused
-//*       annotation.
-//*       Must call FPDFPage_CloseAnnot() when the annotation returned in |annot|
-//*       by this function is no longer needed.
-//*       This will return true and set |page_index| to -1 and |annot| to NULL, if
-//*       there is no focused annotation.
-//*
+// Experimental API.
+// Function: FORM_GetFocusedAnnot.
+//       Call this member function to get the currently focused annotation.
+// Parameters:
+//       handle      -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       page_index  -   Buffer to hold the index number of the page which
+//                       contains the focused annotation. 0 for the first page.
+//                       Can't be NULL.
+//       annot       -   Buffer to hold the focused annotation. Can't be NULL.
+// Return Value:
+//       On success, return true and write to the out parameters. Otherwise
+//       return false and leave the out parameters unmodified.
+// Comments:
+//       Not currently supported for XFA forms - will report no focused
+//       annotation.
+//       Must call FPDFPage_CloseAnnot() when the annotation returned in |annot|
+//       by this function is no longer needed.
+//       This will return true and set |page_index| to -1 and |annot| to NULL,
+//       if there is no focused annotation.
 var
   FORM_GetFocusedAnnot: function(handle: FPDF_FORMHANDLE; var page_index: Integer;
     var annot: FPDF_ANNOTATION): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Experimental API.
-//* Function: FORM_SetFocusedAnnot.
-//*       Call this member function to set the currently focused annotation.
-//* Parameters:
-//*       handle      -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       annot       -   Handle to an annotation.
-//* Return Value:
-//*       True indicates success; otherwise false.
-//* Comments:
-//*       |annot| can't be NULL. To kill focus, use FORM_ForceToKillFocus()
-//*       instead.
-//*
+// Experimental API.
+// Function: FORM_SetFocusedAnnot.
+//       Call this member function to set the currently focused annotation.
+// Parameters:
+//       handle      -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       annot       -   Handle to an annotation.
+// Return Value:
+//       True indicates success; otherwise false.
+// Comments:
+//       |annot| can't be NULL. To kill focus, use FORM_ForceToKillFocus()
+//       instead.
 var
   FORM_SetFocusedAnnot: function(handle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -6521,215 +6404,196 @@ function IS_XFA_FORMFIELD(type_: Integer): Boolean; inline;
 {$ENDIF PDF_ENABLE_XFA}
 
 
-//*
-//* Function: FPDFPage_HasFormFieldAtPoint
-//*     Get the form field type by point.
-//* Parameters:
-//*     hHandle     -   Handle to the form fill module. Returned by
-//*                     FPDFDOC_InitFormFillEnvironment().
-//*     page        -   Handle to the page. Returned by FPDF_LoadPage().
-//*     page_x      -   X position in PDF "user space".
-//*     page_y      -   Y position in PDF "user space".
-//* Return Value:
-//*     Return the type of the form field; -1 indicates no field.
-//*     See field types above.
-//*
+
+// Function: FPDFPage_HasFormFieldAtPoint
+//     Get the form field type by point.
+// Parameters:
+//     hHandle     -   Handle to the form fill module. Returned by
+//                     FPDFDOC_InitFormFillEnvironment().
+//     page        -   Handle to the page. Returned by FPDF_LoadPage().
+//     page_x      -   X position in PDF "user space".
+//     page_y      -   Y position in PDF "user space".
+// Return Value:
+//     Return the type of the form field; -1 indicates no field.
+//     See field types above.
 var
   FPDFPage_HasFormFieldAtPoint: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; page_x, page_y: Double): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FPDFPage_FormFieldZOrderAtPoint
-//*     Get the form field z-order by point.
-//* Parameters:
-//*     hHandle     -   Handle to the form fill module. Returned by
-//*                     FPDFDOC_InitFormFillEnvironment().
-//*     page        -   Handle to the page. Returned by FPDF_LoadPage().
-//*     page_x      -   X position in PDF "user space".
-//*     page_y      -   Y position in PDF "user space".
-//* Return Value:
-//*     Return the z-order of the form field; -1 indicates no field.
-//*     Higher numbers are closer to the front.
-//*
+// Function: FPDFPage_FormFieldZOrderAtPoint
+//     Get the form field z-order by point.
+// Parameters:
+//     hHandle     -   Handle to the form fill module. Returned by
+//                     FPDFDOC_InitFormFillEnvironment().
+//     page        -   Handle to the page. Returned by FPDF_LoadPage().
+//     page_x      -   X position in PDF "user space".
+//     page_y      -   Y position in PDF "user space".
+// Return Value:
+//     Return the z-order of the form field; -1 indicates no field.
+//     Higher numbers are closer to the front.
 var
   FPDFPage_FormFieldZOrderAtPoint: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; page_x, page_y: Double): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FPDF_SetFormFieldHighlightColor
-//*       Set the highlight color of the specified (or all) form fields
-//*       in the document.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       doc         -   Handle to the document, as returned by
-//*                       FPDF_LoadDocument().
-//*       fieldType   -   A 32-bit integer indicating the type of a form
-//*                       field (defined above).
-//*       color       -   The highlight color of the form field. Constructed by
-//*                       0xxxrrggbb.
-//* Return Value:
-//*       None.
-//* Comments:
-//*       When the parameter fieldType is set to FPDF_FORMFIELD_UNKNOWN, the
-//*       highlight color will be applied to all the form fields in the
-//*       document.
-//*       Please refresh the client window to show the highlight immediately
-//*       if necessary.
-//*
+// Function: FPDF_SetFormFieldHighlightColor
+//       Set the highlight color of the specified (or all) form fields
+//       in the document.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       doc         -   Handle to the document, as returned by
+//                       FPDF_LoadDocument().
+//       fieldType   -   A 32-bit integer indicating the type of a form
+//                       field (defined above).
+//       color       -   The highlight color of the form field. Constructed by
+//                       0xxxrrggbb.
+// Return Value:
+//       None.
+// Comments:
+//       When the parameter fieldType is set to FPDF_FORMFIELD_UNKNOWN, the
+//       highlight color will be applied to all the form fields in the
+//       document.
+//       Please refresh the client window to show the highlight immediately
+//       if necessary.
 var
   FPDF_SetFormFieldHighlightColor: procedure(hHandle: FPDF_FORMHANDLE; fieldType: Integer; Color: LongWord); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FPDF_SetFormFieldHighlightAlpha
-//*       Set the transparency of the form field highlight color in the
-//*       document.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//*       doc         -   Handle to the document, as returaned by
-//*                       FPDF_LoadDocument().
-//*       alpha       -   The transparency of the form field highlight color,
-//*                       between 0-255.
-//* Return Value:
-//*       None.
-//*
+// Function: FPDF_SetFormFieldHighlightAlpha
+//       Set the transparency of the form field highlight color in the
+//       document.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+//       doc         -   Handle to the document, as returaned by
+//                       FPDF_LoadDocument().
+//       alpha       -   The transparency of the form field highlight color,
+//                       between 0-255.
+// Return Value:
+//       None.
 var
   FPDF_SetFormFieldHighlightAlpha: procedure(hHandle: FPDF_FORMHANDLE; alpha: Byte); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FPDF_RemoveFormFieldHighlight
-//*       Remove the form field highlight color in the document.
-//* Parameters:
-//*       hHandle     -   Handle to the form fill module, as returned by
-//*                       FPDFDOC_InitFormFillEnvironment().
-//* Return Value:
-//*       None.
-//* Comments:
-//*       Please refresh the client window to remove the highlight immediately
-//*       if necessary.
-//*
+// Function: FPDF_RemoveFormFieldHighlight
+//       Remove the form field highlight color in the document.
+// Parameters:
+//       hHandle     -   Handle to the form fill module, as returned by
+//                       FPDFDOC_InitFormFillEnvironment().
+// Return Value:
+//       None.
+// Comments:
+//       Please refresh the client window to remove the highlight immediately
+//       if necessary.
 var
   FPDF_RemoveFormFieldHighlight: procedure(hHandle: FPDF_FORMHANDLE); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FPDF_FFLDraw
-//*       Render FormFields and popup window on a page to a device independent
-//*       bitmap.
-//* Parameters:
-//*       hHandle      -   Handle to the form fill module, as returned by
-//*                        FPDFDOC_InitFormFillEnvironment().
-//*       bitmap       -   Handle to the device independent bitmap (as the
-//*                        output buffer). Bitmap handles can be created by
-//*                        FPDFBitmap_Create().
-//*       page         -   Handle to the page, as returned by FPDF_LoadPage().
-//*       start_x      -   Left pixel position of the display area in the
-//*                        device coordinates.
-//*       start_y      -   Top pixel position of the display area in the device
-//*                        coordinates.
-//*       size_x       -   Horizontal size (in pixels) for displaying the page.
-//*       size_y       -   Vertical size (in pixels) for displaying the page.
-//*       rotate       -   Page orientation: 0 (normal), 1 (rotated 90 degrees
-//*                        clockwise), 2 (rotated 180 degrees), 3 (rotated 90
-//*                        degrees counter-clockwise).
-//*       flags        -   0 for normal display, or combination of flags
-//*                        defined above.
-//* Return Value:
-//*       None.
-//* Comments:
-//*       This function is designed to render annotations that are
-//*       user-interactive, which are widget annotations (for FormFields) and
-//*       popup annotations.
-//*       With the FPDF_ANNOT flag, this function will render a popup annotation
-//*       when users mouse-hover on a non-widget annotation. Regardless of
-//*       FPDF_ANNOT flag, this function will always render widget annotations
-//*       for FormFields.
-//*       In order to implement the FormFill functions, implementation should
-//*       call this function after rendering functions, such as
-//*       FPDF_RenderPageBitmap() or FPDF_RenderPageBitmap_Start(), have
-//*       finished rendering the page contents.
-//*
+// Function: FPDF_FFLDraw
+//       Render FormFields and popup window on a page to a device independent
+//       bitmap.
+// Parameters:
+//       hHandle      -   Handle to the form fill module, as returned by
+//                        FPDFDOC_InitFormFillEnvironment().
+//       bitmap       -   Handle to the device independent bitmap (as the
+//                        output buffer). Bitmap handles can be created by
+//                        FPDFBitmap_Create().
+//       page         -   Handle to the page, as returned by FPDF_LoadPage().
+//       start_x      -   Left pixel position of the display area in the
+//                        device coordinates.
+//       start_y      -   Top pixel position of the display area in the device
+//                        coordinates.
+//       size_x       -   Horizontal size (in pixels) for displaying the page.
+//       size_y       -   Vertical size (in pixels) for displaying the page.
+//       rotate       -   Page orientation: 0 (normal), 1 (rotated 90 degrees
+//                        clockwise), 2 (rotated 180 degrees), 3 (rotated 90
+//                        degrees counter-clockwise).
+//       flags        -   0 for normal display, or combination of flags
+//                        defined above.
+// Return Value:
+//       None.
+// Comments:
+//       This function is designed to render annotations that are
+//       user-interactive, which are widget annotations (for FormFields) and
+//       popup annotations.
+//       With the FPDF_ANNOT flag, this function will render a popup annotation
+//       when users mouse-hover on a non-widget annotation. Regardless of
+//       FPDF_ANNOT flag, this function will always render widget annotations
+//       for FormFields.
+//       In order to implement the FormFill functions, implementation should
+//       call this function after rendering functions, such as
+//       FPDF_RenderPageBitmap() or FPDF_RenderPageBitmap_Start(), have
+//       finished rendering the page contents.
 var
   FPDF_FFLDraw: procedure(hHandle: FPDF_FORMHANDLE; bitmap: FPDF_BITMAP; page: FPDF_PAGE;
     start_x, start_y, size_x, size_y, rotate, flags: Integer); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-{$IFDEF _SKIA_SUPPORT_}
+{$IFDEF PDF_USE_SKIA}
 var
   FPDF_FFLDrawSkia: procedure(hHandle: FPDF_FORMHANDLE; canvas: FPDF_SKIA_CANVAS; page: FPDF_PAGE;
     start_x, start_y, size_x, size_y, rotate, flags: Integer); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
-{$ENDIF _SKIA_SUPPORT_}
+{$ENDIF PDF_USE_SKIA}
 
-//*
-//* Experimental API
-//* Function: FPDF_GetFormType
-//*           Returns the type of form contained in the PDF document.
-//* Parameters:
-//*           document - Handle to document.
-//* Return Value:
-//*           Integer value representing one of the FORMTYPE_ values.
-//* Comments:
-//*           If |document| is NULL, then the return value is FORMTYPE_NONE.
-//*
+// Experimental API
+// Function: FPDF_GetFormType
+//           Returns the type of form contained in the PDF document.
+// Parameters:
+//           document - Handle to document.
+// Return Value:
+//           Integer value representing one of the FORMTYPE_ values.
+// Comments:
+//           If |document| is NULL, then the return value is FORMTYPE_NONE.
 var
   FPDF_GetFormType: function(document: FPDF_DOCUMENT): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Experimental API
-//* Function: FORM_SetIndexSelected
-//*           Selects/deselects the value at the given |index| of the focused
-//*           annotation.
-//* Parameters:
-//*           hHandle     -   Handle to the form fill module. Returned by
-//*                           FPDFDOC_InitFormFillEnvironment.
-//*           page        -   Handle to the page. Returned by FPDF_LoadPage
-//*           index       -   0-based index of value to be set as
-//*                           selected/unselected
-//*           selected    -   true to select, false to deselect
-//* Return Value:
-//*           TRUE if the operation succeeded.
-//*           FALSE if the operation failed or widget is not a supported type.
-//* Comments:
-//*           Intended for use with listbox/combobox widget types. Comboboxes
-//*           have at most a single value selected at a time which cannot be
-//*           deselected. Deselect on a combobox is a no-op that returns false.
-//*           Default implementation is a no-op that will return false for
-//*           other types.
-//*           Not currently supported for XFA forms - will return false.
-//*
+// Experimental API
+// Function: FORM_SetIndexSelected
+//           Selects/deselects the value at the given |index| of the focused
+//           annotation.
+// Parameters:
+//           hHandle     -   Handle to the form fill module. Returned by
+//                           FPDFDOC_InitFormFillEnvironment.
+//           page        -   Handle to the page. Returned by FPDF_LoadPage
+//           index       -   0-based index of value to be set as
+//                           selected/unselected
+//           selected    -   true to select, false to deselect
+// Return Value:
+//           TRUE if the operation succeeded.
+//           FALSE if the operation failed or widget is not a supported type.
+// Comments:
+//           Intended for use with listbox/combobox widget types. Comboboxes
+//           have at most a single value selected at a time which cannot be
+//           deselected. Deselect on a combobox is a no-op that returns false.
+//           Default implementation is a no-op that will return false for
+//           other types.
+//           Not currently supported for XFA forms - will return false.
 var
   FORM_SetIndexSelected: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; index: Integer;
     selected: FPDF_BOOL): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Experimental API
-//* Function: FORM_IsIndexSelected
-//*           Returns whether or not the value at |index| of the focused
-//*           annotation is currently selected.
-//* Parameters:
-//*           hHandle     -   Handle to the form fill module. Returned by
-//*                           FPDFDOC_InitFormFillEnvironment.
-//*           page        -   Handle to the page. Returned by FPDF_LoadPage
-//*           index       -   0-based Index of value to check
-//* Return Value:
-//*           TRUE if value at |index| is currently selected.
-//*           FALSE if value at |index| is not selected or widget is not a
-//*           supported type.
-//* Comments:
-//*           Intended for use with listbox/combobox widget types. Default
-//*           implementation is a no-op that will return false for other types.
-//*           Not currently supported for XFA forms - will return false.
-//*
+// Experimental API
+// Function: FORM_IsIndexSelected
+//           Returns whether or not the value at |index| of the focused
+//           annotation is currently selected.
+// Parameters:
+//           hHandle     -   Handle to the form fill module. Returned by
+//                           FPDFDOC_InitFormFillEnvironment.
+//           page        -   Handle to the page. Returned by FPDF_LoadPage
+//           index       -   0-based Index of value to check
+// Return Value:
+//           TRUE if value at |index| is currently selected.
+//           FALSE if value at |index| is not selected or widget is not a
+//           supported type.
+// Comments:
+//           Intended for use with listbox/combobox widget types. Default
+//           implementation is a no-op that will return false for other types.
+//           Not currently supported for XFA forms - will return false.
 var
   FORM_IsIndexSelected: function(hHandle: FPDF_FORMHANDLE; page: FPDF_PAGE; index: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//*
-//* Function: FPDF_LoadXFA
-//*          If the document consists of XFA fields, call this method to
-//*          attempt to load XFA fields.
-//* Parameters:
-//*          document     -   Handle to document from FPDF_LoadDocument().
-//* Return Value:
-//*          TRUE upon success, otherwise FALSE. If XFA support is not built
-//*          into PDFium, performs no action and always returns FALSE.
-//*
+// Function: FPDF_LoadXFA
+//          If the document consists of XFA fields, call this method to
+//          attempt to load XFA fields.
+// Parameters:
+//          document     -   Handle to document from FPDF_LoadDocument().
+// Return Value:
+//          TRUE upon success, otherwise FALSE. If XFA support is not built
+//          into PDFium, performs no action and always returns FALSE.
 var
   FPDF_LoadXFA: function(document: FPDF_DOCUMENT): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -6822,6 +6686,7 @@ type
 // Check if an annotation subtype is currently supported for creation.
 // Currently supported subtypes:
 //    - circle
+//    - fileattachment
 //    - freetext
 //    - highlight
 //    - ink
@@ -7518,6 +7383,18 @@ var
 var
   FPDFAnnot_GetFontSize: function(hHandle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION; var value: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Get the RGB value of the font color for an |annot| with variable text.
+//
+//   hHandle  - handle to the form fill module, returned by
+//              FPDFDOC_InitFormFillEnvironment.
+//   annot    - handle to an annotation.
+//   R, G, B  - buffer to hold the RGB value of the color. Ranges from 0 to 255.
+//
+// Returns true if the font color was set, false on error or if the font
+// color was not provided.
+var
+  FPDFAnnot_GetFontColor: function(hHandle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION; var R, G, B: Cardinal): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 // Experimental API.
 // Determine if |annot| is a form widget that is checked. Intended for use with
 // checkbox and radio button widgets.
@@ -7639,20 +7516,37 @@ var
 var
   FPDFAnnot_SetURI: function(annot: FPDF_ANNOTATION; uri: PAnsiChar): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
+// Get the attachment from |annot|.
+//
+//   annot - handle to a file annotation.
+//
+// Returns the handle to the attachment object, or NULL on failure.
+var
+  FPDFAnnot_GetFileAttachment: function(annot: FPDF_ANNOTATION): FPDF_ATTACHMENT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Add an embedded file with |name| to |annot|.
+//
+//   annot    - handle to a file annotation.
+//   name     - name of the new attachment.
+//
+// Returns a handle to the new attachment object, or NULL on failure.
+var
+  FPDFAnnot_AddFileAttachment: function(annot: FPDF_ANNOTATION; name: FPDF_WIDESTRING): FPDF_ATTACHMENT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 // *** _FPDF_CATALOG_H_ ***
 
-//**
-//* Experimental API.
-//*
-//* Determine if |document| represents a tagged PDF.
-//*
-//* For the definition of tagged PDF, See (see 10.7 "Tagged PDF" in PDF
-//* Reference 1.7).
-//*
-//*   document - handle to a document.
-//*
-//* Returns |true| iff |document| is a tagged PDF.
-//*
+// Experimental API.
+//
+// Determine if |document| represents a tagged PDF.
+//
+// For the definition of tagged PDF, See (see 10.7 "Tagged PDF" in PDF
+// Reference 1.7).
+//
+//   document - handle to a document.
+//
+// Returns |true| iff |document| is a tagged PDF.
 var
   FPDFCatalog_IsTagged: function(document: FPDF_DOCUMENT): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -7833,173 +7727,147 @@ type
 
 // *** _FPDF_TRANSFORMPAGE_H_ ***
 
-//**
-//* Set "MediaBox" entry to the page dictionary.
-//*
-//* page   - Handle to a page.
-//* left   - The left of the rectangle.
-//* bottom - The bottom of the rectangle.
-//* right  - The right of the rectangle.
-//* top    - The top of the rectangle.
-//*
+// Set "MediaBox" entry to the page dictionary.
+//
+// page   - Handle to a page.
+// left   - The left of the rectangle.
+// bottom - The bottom of the rectangle.
+// right  - The right of the rectangle.
+// top    - The top of the rectangle.
 var
   FPDFPage_SetMediaBox: procedure(page: FPDF_PAGE; left, bottom, right, top: Single); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//**
-//* Set "CropBox" entry to the page dictionary.
-//*
-//* page   - Handle to a page.
-//* left   - The left of the rectangle.
-//* bottom - The bottom of the rectangle.
-//* right  - The right of the rectangle.
-//* top    - The top of the rectangle.
-//*
+// Set "CropBox" entry to the page dictionary.
+//
+// page   - Handle to a page.
+// left   - The left of the rectangle.
+// bottom - The bottom of the rectangle.
+// right  - The right of the rectangle.
+// top    - The top of the rectangle.
 var
   FPDFPage_SetCropBox: procedure(page: FPDF_PAGE; left, bottom, right, top: Single); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//**
-//* Set "BleedBox" entry to the page dictionary.
-//*
-//* page   - Handle to a page.
-//* left   - The left of the rectangle.
-//* bottom - The bottom of the rectangle.
-//* right  - The right of the rectangle.
-//* top    - The top of the rectangle.
-//*
+// Set "BleedBox" entry to the page dictionary.
+//
+// page   - Handle to a page.
+// left   - The left of the rectangle.
+// bottom - The bottom of the rectangle.
+// right  - The right of the rectangle.
+// top    - The top of the rectangle.
 var
   FPDFPage_SetBleedBox: procedure(page: FPDF_PAGE; left, bottom, right, top: Single); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-
-//**
-//* Set "TrimBox" entry to the page dictionary.
-//*
-//* page   - Handle to a page.
-//* left   - The left of the rectangle.
-//* bottom - The bottom of the rectangle.
-//* right  - The right of the rectangle.
-//* top    - The top of the rectangle.
-//*
+// Set "TrimBox" entry to the page dictionary.
+//
+// page   - Handle to a page.
+// left   - The left of the rectangle.
+// bottom - The bottom of the rectangle.
+// right  - The right of the rectangle.
+// top    - The top of the rectangle.
 var
   FPDFPage_SetTrimBox: procedure(page: FPDF_PAGE; left, bottom, right, top: Single); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-
-//**
-//* Set "ArtBox" entry to the page dictionary.
-//*
-//* page   - Handle to a page.
-//* left   - The left of the rectangle.
-//* bottom - The bottom of the rectangle.
-//* right  - The right of the rectangle.
-//* top    - The top of the rectangle.
-//*
+// Set "ArtBox" entry to the page dictionary.
+//
+// page   - Handle to a page.
+// left   - The left of the rectangle.
+// bottom - The bottom of the rectangle.
+// right  - The right of the rectangle.
+// top    - The top of the rectangle.
 var
   FPDFPage_SetArtBox: procedure(page: FPDF_PAGE; left, bottom, right, top: Single); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//**
-//* Get "MediaBox" entry from the page dictionary.
-//*
-//* page   - Handle to a page.
-//* left   - Pointer to a float value receiving the left of the rectangle.
-//* bottom - Pointer to a float value receiving the bottom of the rectangle.
-//* right  - Pointer to a float value receiving the right of the rectangle.
-//* top    - Pointer to a float value receiving the top of the rectangle.
-//*
-//* On success, return true and write to the out parameters. Otherwise return
-//* false and leave the out parameters unmodified.
-//*
+// Get "MediaBox" entry from the page dictionary.
+//
+// page   - Handle to a page.
+// left   - Pointer to a float value receiving the left of the rectangle.
+// bottom - Pointer to a float value receiving the bottom of the rectangle.
+// right  - Pointer to a float value receiving the right of the rectangle.
+// top    - Pointer to a float value receiving the top of the rectangle.
+//
+// On success, return true and write to the out parameters. Otherwise return
+// false and leave the out parameters unmodified.
 var
   FPDFPage_GetMediaBox: procedure(page: FPDF_PAGE; var left, bottom, right, top: Single); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//**
-//* Get "CropBox" entry from the page dictionary.
-//*
-//* page   - Handle to a page.
-//* left   - Pointer to a float value receiving the left of the rectangle.
-//* bottom - Pointer to a float value receiving the bottom of the rectangle.
-//* right  - Pointer to a float value receiving the right of the rectangle.
-//* top    - Pointer to a float value receiving the top of the rectangle.
-//*
-//* On success, return true and write to the out parameters. Otherwise return
-//* false and leave the out parameters unmodified.
-//*
+// Get "CropBox" entry from the page dictionary.
+//
+// page   - Handle to a page.
+// left   - Pointer to a float value receiving the left of the rectangle.
+// bottom - Pointer to a float value receiving the bottom of the rectangle.
+// right  - Pointer to a float value receiving the right of the rectangle.
+// top    - Pointer to a float value receiving the top of the rectangle.
+//
+// On success, return true and write to the out parameters. Otherwise return
+// false and leave the out parameters unmodified.
 var
   FPDFPage_GetCropBox: procedure(page: FPDF_PAGE; var left, bottom, right, top: Single); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//**
-//* Get "BleedBox" entry from the page dictionary.
-//*
-//* page   - Handle to a page.
-//* left   - Pointer to a float value receiving the left of the rectangle.
-//* bottom - Pointer to a float value receiving the bottom of the rectangle.
-//* right  - Pointer to a float value receiving the right of the rectangle.
-//* top    - Pointer to a float value receiving the top of the rectangle.
-//*
-//* On success, return true and write to the out parameters. Otherwise return
-//* false and leave the out parameters unmodified.
-//*
+// Get "BleedBox" entry from the page dictionary.
+//
+// page   - Handle to a page.
+// left   - Pointer to a float value receiving the left of the rectangle.
+// bottom - Pointer to a float value receiving the bottom of the rectangle.
+// right  - Pointer to a float value receiving the right of the rectangle.
+// top    - Pointer to a float value receiving the top of the rectangle.
+//
+// On success, return true and write to the out parameters. Otherwise return
+// false and leave the out parameters unmodified.
 var
   FPDFPage_GetBleedBox: procedure(page: FPDF_PAGE; var left, bottom, right, top: Single); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//**
-//* Get "TrimBox" entry from the page dictionary.
-//*
-//* page   - Handle to a page.
-//* left   - Pointer to a float value receiving the left of the rectangle.
-//* bottom - Pointer to a float value receiving the bottom of the rectangle.
-//* right  - Pointer to a float value receiving the right of the rectangle.
-//* top    - Pointer to a float value receiving the top of the rectangle.
-//*
-//* On success, return true and write to the out parameters. Otherwise return
-//* false and leave the out parameters unmodified.
-//*
+// Get "TrimBox" entry from the page dictionary.
+//
+// page   - Handle to a page.
+// left   - Pointer to a float value receiving the left of the rectangle.
+// bottom - Pointer to a float value receiving the bottom of the rectangle.
+// right  - Pointer to a float value receiving the right of the rectangle.
+// top    - Pointer to a float value receiving the top of the rectangle.
+//
+// On success, return true and write to the out parameters. Otherwise return
+// false and leave the out parameters unmodified.
 var
   FPDFPage_GetTrimBox: procedure(page: FPDF_PAGE; var left, bottom, right, top: Single); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//**
-//* Get "ArtBox" entry from the page dictionary.
-//*
-//* page   - Handle to a page.
-//* left   - Pointer to a float value receiving the left of the rectangle.
-//* bottom - Pointer to a float value receiving the bottom of the rectangle.
-//* right  - Pointer to a float value receiving the right of the rectangle.
-//* top    - Pointer to a float value receiving the top of the rectangle.
-//*
-//* On success, return true and write to the out parameters. Otherwise return
-//* false and leave the out parameters unmodified.
-//*
+// Get "ArtBox" entry from the page dictionary.
+//
+// page   - Handle to a page.
+// left   - Pointer to a float value receiving the left of the rectangle.
+// bottom - Pointer to a float value receiving the bottom of the rectangle.
+// right  - Pointer to a float value receiving the right of the rectangle.
+// top    - Pointer to a float value receiving the top of the rectangle.
+//
+// On success, return true and write to the out parameters. Otherwise return
+// false and leave the out parameters unmodified.
 var
   FPDFPage_GetArtBox: procedure(page: FPDF_PAGE; var left, bottom, right, top: Single); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//**
-//* Apply transforms to |page|.
-//*
-//* If |matrix| is provided it will be applied to transform the page.
-//* If |clipRect| is provided it will be used to clip the resulting page.
-//* If neither |matrix| or |clipRect| are provided this method returns |false|.
-//* Returns |true| if transforms are applied.
-//*
-//* This function will transform the whole page, and would take effect to all the
-//* objects in the page.
-//*
-//* page        - Page handle.
-//* matrix      - Transform matrix.
-//* clipRect    - Clipping rectangle.
-//*
+// Apply transforms to |page|.
+//
+// If |matrix| is provided it will be applied to transform the page.
+// If |clipRect| is provided it will be used to clip the resulting page.
+// If neither |matrix| or |clipRect| are provided this method returns |false|.
+// Returns |true| if transforms are applied.
+//
+// This function will transform the whole page, and would take effect to all the
+// objects in the page.
+//
+// page        - Page handle.
+// matrix      - Transform matrix.
+// clipRect    - Clipping rectangle.
 var
   FPDFPage_TransFormWithClip: function(page: FPDF_PAGE; matrix: PFS_MATRIX; clipRect: PFS_RECTF): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//**
-//* Transform (scale, rotate, shear, move) the clip path of page object.
-//* page_object - Handle to a page object. Returned by
-//* FPDFPageObj_NewImageObj().
-//*
-//* a  - The coefficient "a" of the matrix.
-//* b  - The coefficient "b" of the matrix.
-//* c  - The coefficient "c" of the matrix.
-//* d  - The coefficient "d" of the matrix.
-//* e  - The coefficient "e" of the matrix.
-//* f  - The coefficient "f" of the matrix.
-//*
+// Transform (scale, rotate, shear, move) the clip path of page object.
+// page_object - Handle to a page object. Returned by
+// FPDFPageObj_NewImageObj().
+//
+// a  - The coefficient "a" of the matrix.
+// b  - The coefficient "b" of the matrix.
+// c  - The coefficient "c" of the matrix.
+// d  - The coefficient "d" of the matrix.
+// e  - The coefficient "e" of the matrix.
+// f  - The coefficient "f" of the matrix.
 var
   FPDFPageObj_TransformClipPath: procedure(page_object: FPDF_PAGEOBJECT; a, b, c, d, e, f: Double); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -8047,38 +7915,32 @@ var
 var
   FPDFClipPath_GetPathSegment: function(clip_path: FPDF_CLIPPATH; path_index, segment_index: Integer): FPDF_PATHSEGMENT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//**
-//* Create a new clip path, with a rectangle inserted.
-//*
-//* Caller takes ownership of the returned FPDF_CLIPPATH. It should be freed with
-//* FPDF_DestroyClipPath().
-//*
-//* left   - The left of the clip box.
-//* bottom - The bottom of the clip box.
-//* right  - The right of the clip box.
-//* top    - The top of the clip box.
-//*
+// Create a new clip path, with a rectangle inserted.
+//
+// Caller takes ownership of the returned FPDF_CLIPPATH. It should be freed with
+// FPDF_DestroyClipPath().
+//
+// left   - The left of the clip box.
+// bottom - The bottom of the clip box.
+// right  - The right of the clip box.
+// top    - The top of the clip box.
 var
   FPDF_CreateClipPath: function(page_object: FPDF_PAGEOBJECT; left, bottom, right, top: Single): FPDF_CLIPPATH; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//**
-//* Destroy the clip path.
-//*
-//* clipPath - A handle to the clip path. It will be invalid after this call.
-//*
+// Destroy the clip path.
+//
+// clipPath - A handle to the clip path. It will be invalid after this call.
 var
   FPDF_DestroyClipPath: procedure(clipPath: FPDF_CLIPPATH); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-//**
-//* Clip the page content, the page content that outside the clipping region
-//* become invisible.
-//*
-//* A clip path will be inserted before the page content stream or content array.
-//* In this way, the page content will be clipped by this clip path.
-//*
-//* page        - A page handle.
-//* clipPath    - A handle to the clip path. (Does not take ownership.)
-//*
+// Clip the page content, the page content that outside the clipping region
+// become invisible.
+//
+// A clip path will be inserted before the page content stream or content array.
+// In this way, the page content will be clipped by this clip path.
+//
+// page        - A page handle.
+// clipPath    - A handle to the clip path. (Does not take ownership.)
 var
   FPDFPage_InsertClipPath: procedure(page: FPDF_PAGE; clipPath: FPDF_CLIPPATH); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -8090,7 +7952,9 @@ var
 // Parameters:
 //          page        -   Handle to the page, as returned by FPDF_LoadPage().
 // Return value:
-//          A handle to the structure tree or NULL on error.
+//          A handle to the structure tree or NULL on error. The caller owns the
+//          returned handle and must use FPDF_StructTree_Close() to release it.
+//          The handle should be released before |page| gets released.
 var
   FPDF_StructTree_GetForPage: function(page: FPDF_PAGE): FPDF_STRUCTTREE; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -8121,7 +7985,12 @@ var
 //                          FPDF_StructTree_LoadPage().
 //          index       -   The index for the child, 0-based.
 // Return value:
-//          The child at the n-th index or NULL on error.
+//          The child at the n-th index or NULL on error. The caller does not
+//          own the handle. The handle remains valid as long as |struct_tree|
+//          remains valid.
+// Comments:
+//          The |index| must be less than the FPDF_StructTree_CountChildren()
+//          return value.
 var
   FPDF_StructTree_GetChildAtIndex: function(struct_tree: FPDF_STRUCTTREE; index: Integer): FPDF_STRUCTELEMENT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -8227,6 +8096,10 @@ var
 // Return value:
 //          The marked content ID of the element. If no ID exists, returns
 //          -1.
+// Comments:
+//          FPDF_StructElement_GetMarkedContentIdAtIndex() may be able to
+//          extract more marked content IDs out of |struct_element|. This API
+//          may be deprecated in the future.
 var
   FPDF_StructElement_GetMarkedContentID: function(struct_element: FPDF_STRUCTELEMENT): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -8304,8 +8177,28 @@ var
 // Comments:
 //          If the child exists but is not an element, then this function will
 //          return NULL. This will also return NULL for out of bounds indices.
+//          The |index| must be less than the FPDF_StructElement_CountChildren()
+//          return value.
 var
   FPDF_StructElement_GetChildAtIndex: function(struct_element: FPDF_STRUCTELEMENT; index: Integer): FPDF_STRUCTELEMENT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDF_StructElement_GetChildMarkedContentID
+//          Get the child's content id
+// Parameters:
+//          struct_element -   Handle to the struct element.
+//          index          -   The index for the child, 0-based.
+// Return value:
+//          The marked content ID of the child. If no ID exists, returns -1.
+// Comments:
+//          If the child exists but is not a stream or object, then this
+//          function will return -1. This will also return -1 for out of bounds
+//          indices. Compared to FPDF_StructElement_GetMarkedContentIdAtIndex,
+//          it is scoped to the current page.
+//          The |index| must be less than the FPDF_StructElement_CountChildren()
+//          return value.
+var
+  FPDF_StructElement_GetChildMarkedContentID: function(struct_element: FPDF_STRUCTELEMENT; index: Integer): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Function: FPDF_StructElement_GetParent
@@ -8340,7 +8233,10 @@ var
 // Comments:
 //          If the attribute object exists but is not a dict, then this
 //          function will return NULL. This will also return NULL for out of
-//          bounds indices.
+//          bounds indices. The caller does not own the handle. The handle
+//          remains valid as long as |struct_element| remains valid.
+//          The |index| must be less than the
+//          FPDF_StructElement_GetAttributeCount() return value.
 var
   FPDF_StructElement_GetAttributeAtIndex: function(struct_element: FPDF_STRUCTELEMENT; index: Integer): FPDF_STRUCTELEMENT_ATTR; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -8376,93 +8272,131 @@ var
     buflen: LongWord; var out_buflen: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
-// Function: FPDF_StructElement_Attr_GetType
-//          Get the type of an attribute in a structure element attribute map.
+// Function: FPDF_StructElement_Attr_GetValue
+//           Get a handle to a value for an attribute in a structure element
+//           attribute map.
 // Parameters:
-//          struct_attribute   - Handle to the struct element attribute.
-//          name               - The attribute name.
+//           struct_attribute   - Handle to the struct element attribute.
+//           name               - The attribute name.
 // Return value:
-//          Returns the type of the value, or FPDF_OBJECT_UNKNOWN in case of
-//          failure.
+//           Returns a handle to the value associated with the input, if any.
+//           Returns NULL on failure. The caller does not own the handle.
+//           The handle remains valid as long as |struct_attribute| remains
+//           valid.
 var
-  FPDF_StructElement_Attr_GetType: function(struct_attribute: FPDF_STRUCTELEMENT_ATTR; name: FPDF_BYTESTRING): FPDF_OBJECT_TYPE; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDF_StructElement_Attr_GetValue: function(struct_attribute: FPDF_STRUCTELEMENT_ATTR;
+    name: FPDF_BYTESTRING): FPDF_STRUCTELEMENT_ATTR_VALUE; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDF_StructElement_Attr_GetType
+//           Get the type of an attribute in a structure element attribute map.
+// Parameters:
+//           value - Handle to the value.
+// Return value:
+//           Returns the type of the value, or FPDF_OBJECT_UNKNOWN in case of
+//           failure. Note that this will never return FPDF_OBJECT_REFERENCE, as
+//           references are always dereferenced.
+var
+  FPDF_StructElement_Attr_GetType: function(struct_attribute: FPDF_STRUCTELEMENT_ATTR_VALUE): FPDF_OBJECT_TYPE; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Function: FPDF_StructElement_Attr_GetBooleanValue
-//          Get the value of a boolean attribute in an attribute map by name as
-//          FPDF_BOOL. FPDF_StructElement_Attr_GetType() should have returned
-//          FPDF_OBJECT_BOOLEAN for this property.
+//           Get the value of a boolean attribute in an attribute map as
+//           FPDF_BOOL. FPDF_StructElement_Attr_GetType() should have returned
+//           FPDF_OBJECT_BOOLEAN for this property.
 // Parameters:
-//          struct_attribute   - Handle to the struct element attribute.
-//          name               - The attribute name.
-//          out_value          - A pointer to variable that will receive the
-//                               value. Not filled if false is returned.
+//           value     - Handle to the value.
+//           out_value - A pointer to variable that will receive the value. Not
+//                       filled if false is returned.
 // Return value:
-//          Returns TRUE if the name maps to a boolean value, FALSE otherwise.
+//           Returns TRUE if the attribute maps to a boolean value, FALSE
+//           otherwise.
 var
-  FPDF_StructElement_Attr_GetBooleanValue: function(struct_attribute: FPDF_STRUCTELEMENT_ATTR; name: FPDF_BYTESTRING;
+  FPDF_StructElement_Attr_GetBooleanValue: function(value: FPDF_STRUCTELEMENT_ATTR_VALUE;
     var out_value: FPDF_BOOL): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Function: FPDF_StructElement_Attr_GetNumberValue
-//          Get the value of a number attribute in an attribute map by name as
-//          float. FPDF_StructElement_Attr_GetType() should have returned
-//          FPDF_OBJECT_NUMBER for this property.
+//           Get the value of a number attribute in an attribute map as float.
+//           FPDF_StructElement_Attr_GetType() should have returned
+//           FPDF_OBJECT_NUMBER for this property.
 // Parameters:
-//          struct_attribute   - Handle to the struct element attribute.
-//          name               - The attribute name.
-//          out_value          - A pointer to variable that will receive the
-//                               value. Not filled if false is returned.
+//           value     - Handle to the value.
+//           out_value - A pointer to variable that will receive the value. Not
+//                       filled if false is returned.
 // Return value:
-//          Returns TRUE if the name maps to a number value, FALSE otherwise.
+//           Returns TRUE if the attribute maps to a number value, FALSE
+//           otherwise.
 var
-  FPDF_StructElement_Attr_GetNumberValue: function(struct_attribute: FPDF_STRUCTELEMENT_ATTR; name: FPDF_BYTESTRING;
+  FPDF_StructElement_Attr_GetNumberValue: function(value: FPDF_STRUCTELEMENT_ATTR_VALUE;
     var out_value: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Function: FPDF_StructElement_Attr_GetStringValue
-//          Get the value of a string attribute in an attribute map by name as
-//          string. FPDF_StructElement_Attr_GetType() should have returned
-//          FPDF_OBJECT_STRING or FPDF_OBJECT_NAME for this property.
+//           Get the value of a string attribute in an attribute map as string.
+//           FPDF_StructElement_Attr_GetType() should have returned
+//           FPDF_OBJECT_STRING or FPDF_OBJECT_NAME for this property.
 // Parameters:
-//          struct_attribute   - Handle to the struct element attribute.
-//          name               - The attribute name.
-//          buffer             - A buffer for holding the returned key in
-//                               UTF-16LE. This is only modified if |buflen| is
-//                               longer than the length of the key. Optional,
-//                               pass null to just retrieve the size of the
-//                               buffer needed.
-//          buflen             - The length of the buffer.
-//          out_buflen         - A pointer to variable that will receive the
-//                               minimum buffer size to contain the key. Not
-//                               filled if FALSE is returned.
+//           value      - Handle to the value.
+//           buffer     - A buffer for holding the returned key in UTF-16LE.
+//                        This is only modified if |buflen| is longer than the
+//                        length of the key. Optional, pass null to just
+//                        retrieve the size of the buffer needed.
+//           buflen     - The length of the buffer.
+//           out_buflen - A pointer to variable that will receive the minimum
+//                        buffer size to contain the key. Not filled if FALSE is
+//                        returned.
 // Return value:
-//          Returns TRUE if the name maps to a string value, FALSE otherwise.
+//           Returns TRUE if the attribute maps to a string value, FALSE
+//           otherwise.
 var
-  FPDF_StructElement_Attr_GetStringValue: function(struct_attribute: FPDF_STRUCTELEMENT_ATTR; name: FPDF_BYTESTRING;
-    buffer: Pointer; buflen: LongWord; var out_buflen: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDF_StructElement_Attr_GetStringValue: function(value: FPDF_STRUCTELEMENT_ATTR; buffer: Pointer; buflen: LongWord;
+    var out_buflen: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Function: FPDF_StructElement_Attr_GetBlobValue
-//          Get the value of a blob attribute in an attribute map by name as
-//          string.
+//           Get the value of a blob attribute in an attribute map as string.
 // Parameters:
-//          struct_attribute   - Handle to the struct element attribute.
-//          name               - The attribute name.
-//          buffer             - A buffer for holding the returned value. This
-//                               is only modified if |buflen| is at least as
-//                               long as the length of the value. Optional, pass
-//                               null to just retrieve the size of the buffer
-//                               needed.
-//          buflen             - The length of the buffer.
-//          out_buflen         - A pointer to variable that will receive the
-//                               minimum buffer size to contain the key. Not
-//                               filled if FALSE is returned.
+//           value      - Handle to the value.
+//           buffer     - A buffer for holding the returned value. This is only
+//                        modified if |buflen| is at least as long as the length
+//                        of the value. Optional, pass null to just retrieve the
+//                        size of the buffer needed.
+//           buflen     - The length of the buffer.
+//           out_buflen - A pointer to variable that will receive the minimum
+//                        buffer size to contain the key. Not filled if FALSE is
+//                        returned.
 // Return value:
-//          Returns TRUE if the name maps to a string value, FALSE otherwise.
+//           Returns TRUE if the attribute maps to a string value, FALSE
+//           otherwise.
 var
-  FPDF_StructElement_Attr_GetBlobValue: function(struct_attribute: FPDF_STRUCTELEMENT_ATTR; name: FPDF_BYTESTRING;
-    buffer: Pointer; buflen: LongWord; var out_buflen: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDF_StructElement_Attr_GetBlobValue: function(value: FPDF_STRUCTELEMENT_ATTR; buffer: Pointer; buflen: LongWord;
+    var out_buflen: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDF_StructElement_Attr_CountChildren
+//           Count the number of children values in an attribute.
+// Parameters:
+//           value - Handle to the value.
+// Return value:
+//           The number of children, or -1 on error.
+var
+  FPDF_StructElement_Attr_CountChildren: function(value: FPDF_STRUCTELEMENT_ATTR_VALUE): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDF_StructElement_Attr_GetChildAtIndex
+//           Get a child from an attribute.
+// Parameters:
+//           value - Handle to the value.
+//           index - The index for the child, 0-based.
+// Return value:
+//           The child at the n-th index or NULL on error.
+// Comments:
+//           The |index| must be less than the
+//           FPDF_StructElement_Attr_CountChildren() return value.
+var
+  FPDF_StructElement_Attr_GetChildAtIndex: function(value: FPDF_STRUCTELEMENT_ATTR_VALUE;
+    index: Integer): FPDF_STRUCTELEMENT_ATTR_VALUE; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Function: FPDF_StructElement_GetMarkedContentIdCount
@@ -8483,6 +8417,10 @@ var
 // Return value:
 //          The marked content ID of the element. If no ID exists, returns
 //          -1.
+// Comments:
+//          The |index| must be less than the
+//          FPDF_StructElement_GetMarkedContentIdCount() return value.
+//          This will likely supersede FPDF_StructElement_GetMarkedContentID().
 var
   FPDF_StructElement_GetMarkedContentIdAtIndex: function(struct_element: FPDF_STRUCTELEMENT; index: Integer): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -8685,9 +8623,9 @@ const
     {$WARN 3175 off : Some fields coming before "$1" were not initialized}
     {$WARN 3177 off : Some fields coming after "$1" were not initialized}
   {$ENDIF FPC}
-  ImportFuncs: array[0..427
+  ImportFuncs: array[0..438
     {$IFDEF MSWINDOWS     } + 2 {$ENDIF}
-    {$IFDEF _SKIA_SUPPORT_} + 2 {$ENDIF}
+    {$IFDEF PDF_USE_SKIA  } + 2 {$ENDIF}
     {$IFDEF PDF_ENABLE_V8 } + 3 {$ENDIF}
     {$IFDEF PDF_ENABLE_XFA} + 3 {$ENDIF}
     ] of TImportFuncRec = (
@@ -8725,9 +8663,9 @@ const
     {$ENDIF MSWINDOWS}
     (P: @@FPDF_RenderPageBitmap;                        N: 'FPDF_RenderPageBitmap'),
     (P: @@FPDF_RenderPageBitmapWithMatrix;              N: 'FPDF_RenderPageBitmapWithMatrix'),
-    {$IFDEF _SKIA_SUPPORT_}
+    {$IFDEF PDF_USE_SKIA}
     (P: @@FPDF_RenderPageSkia;                          N: 'FPDF_RenderPageSkia'; Quirk: True; Optional: True),
-    {$ENDIF _SKIA_SUPPORT_}
+    {$ENDIF PDF_USE_SKIA}
     (P: @@FPDF_ClosePage;                               N: 'FPDF_ClosePage'),
     (P: @@FPDF_CloseDocument;                           N: 'FPDF_CloseDocument'),
     (P: @@FPDF_DeviceToPage;                            N: 'FPDF_DeviceToPage'),
@@ -8781,10 +8719,12 @@ const
     (P: @@FPDFPageObj_HasTransparency;                  N: 'FPDFPageObj_HasTransparency'),
     (P: @@FPDFPageObj_GetType;                          N: 'FPDFPageObj_GetType'),
     (P: @@FPDFPageObj_Transform;                        N: 'FPDFPageObj_Transform'),
+    (P: @@FPDFPageObj_TransformF;                       N: 'FPDFPageObj_TransformF'),
     (P: @@FPDFPageObj_GetMatrix;                        N: 'FPDFPageObj_GetMatrix'),
     (P: @@FPDFPageObj_SetMatrix;                        N: 'FPDFPageObj_SetMatrix'),
     (P: @@FPDFPage_TransformAnnots;                     N: 'FPDFPage_TransformAnnots'),
     (P: @@FPDFPageObj_NewImageObj;                      N: 'FPDFPageObj_NewImageObj'),
+    (P: @@FPDFPageObj_GetMarkedContentID;               N: 'FPDFPageObj_GetMarkedContentID'),
     (P: @@FPDFPageObj_CountMarks;                       N: 'FPDFPageObj_CountMarks'),
     (P: @@FPDFPageObj_GetMark;                          N: 'FPDFPageObj_GetMark'),
     (P: @@FPDFPageObj_AddMark;                          N: 'FPDFPageObj_AddMark'),
@@ -8848,6 +8788,7 @@ const
     (P: @@FPDFText_SetCharcodes;                        N: 'FPDFText_SetCharcodes'),
     (P: @@FPDFText_LoadFont;                            N: 'FPDFText_LoadFont'),
     (P: @@FPDFText_LoadStandardFont;                    N: 'FPDFText_LoadStandardFont'),
+    (P: @@FPDFText_LoadCidType2Font;                    N: 'FPDFText_LoadCidType2Font'),
     (P: @@FPDFTextObj_GetFontSize;                      N: 'FPDFTextObj_GetFontSize'),
     (P: @@FPDFFont_Close;                               N: 'FPDFFont_Close'),
     (P: @@FPDFPageObj_CreateTextObj;                    N: 'FPDFPageObj_CreateTextObj'),
@@ -8856,7 +8797,7 @@ const
     (P: @@FPDFTextObj_GetText;                          N: 'FPDFTextObj_GetText'),
     (P: @@FPDFTextObj_GetRenderedBitmap;                N: 'FPDFTextObj_GetRenderedBitmap'),
     (P: @@FPDFTextObj_GetFont;                          N: 'FPDFTextObj_GetFont'),
-    (P: @@FPDFFont_GetFontName;                         N: 'FPDFFont_GetFontName'),
+    (P: @@FPDFFont_GetFamilyName;                       N: 'FPDFFont_GetFamilyName'),
     (P: @@FPDFFont_GetFontData;                         N: 'FPDFFont_GetFontData'),
     (P: @@FPDFFont_GetIsEmbedded;                       N: 'FPDFFont_GetIsEmbedded'),
     (P: @@FPDFFont_GetFlags;                            N: 'FPDFFont_GetFlags'),
@@ -8889,13 +8830,13 @@ const
     (P: @@FPDFText_ClosePage;                           N: 'FPDFText_ClosePage'),
     (P: @@FPDFText_CountChars;                          N: 'FPDFText_CountChars'),
     (P: @@FPDFText_GetUnicode;                          N: 'FPDFText_GetUnicode'),
+    (P: @@FPDFText_GetTextObject;                       N: 'FPDFText_GetTextObject'),
     (P: @@FPDFText_IsGenerated;                         N: 'FPDFText_IsGenerated'),
     (P: @@FPDFText_IsHyphen;                            N: 'FPDFText_IsHyphen'),
     (P: @@FPDFText_HasUnicodeMapError;                  N: 'FPDFText_HasUnicodeMapError'),
     (P: @@FPDFText_GetFontSize;                         N: 'FPDFText_GetFontSize'),
     (P: @@FPDFText_GetFontInfo;                         N: 'FPDFText_GetFontInfo'),
     (P: @@FPDFText_GetFontWeight;                       N: 'FPDFText_GetFontWeight'),
-    (P: @@FPDFText_GetTextRenderMode;                   N: 'FPDFText_GetTextRenderMode'),
     (P: @@FPDFText_GetFillColor;                        N: 'FPDFText_GetFillColor'),
     (P: @@FPDFText_GetStrokeColor;                      N: 'FPDFText_GetStrokeColor'),
     (P: @@FPDFText_GetCharAngle;                        N: 'FPDFText_GetCharAngle'),
@@ -8976,6 +8917,8 @@ const
 
     // *** _FPDF_SYSFONTINFO_H_ ***
     (P: @@FPDF_GetDefaultTTFMap;                        N: 'FPDF_GetDefaultTTFMap'),
+    (P: @@FPDF_GetDefaultTTFMapCount;                   N: 'FPDF_GetDefaultTTFMapCount'),
+    (P: @@FPDF_GetDefaultTTFMapEntry;                   N: 'FPDF_GetDefaultTTFMapEntry'),
     (P: @@FPDF_AddInstalledFont;                        N: 'FPDF_AddInstalledFont'),
     (P: @@FPDF_SetSystemFontInfo;                       N: 'FPDF_SetSystemFontInfo'),
     (P: @@FPDF_GetDefaultSystemFontInfo;                N: 'FPDF_GetDefaultSystemFontInfo'),
@@ -9034,9 +8977,9 @@ const
     (P: @@FPDF_SetFormFieldHighlightAlpha;              N: 'FPDF_SetFormFieldHighlightAlpha'),
     (P: @@FPDF_RemoveFormFieldHighlight;                N: 'FPDF_RemoveFormFieldHighlight'),
     (P: @@FPDF_FFLDraw;                                 N: 'FPDF_FFLDraw'),
-    {$IFDEF _SKIA_SUPPORT_}
+    {$IFDEF PDF_USE_SKIA}
     (P: @@FPDF_FFLDrawSkia;                             N: 'FPDF_FFLDrawSkia'; Quirk: True; Optional: True),
-    {$ENDIF _SKIA_SUPPORT_}
+    {$ENDIF PDF_USE_SKIA}
 
     (P: @@FPDF_GetFormType;                             N: 'FPDF_GetFormType'),
     (P: @@FORM_SetIndexSelected;                        N: 'FORM_SetIndexSelected'),
@@ -9096,6 +9039,7 @@ const
     (P: @@FPDF_StructElement_GetTitle;                  N: 'FPDF_StructElement_GetTitle'),
     (P: @@FPDF_StructElement_CountChildren;             N: 'FPDF_StructElement_CountChildren'),
     (P: @@FPDF_StructElement_GetChildAtIndex;           N: 'FPDF_StructElement_GetChildAtIndex'),
+    (P: @@FPDF_StructElement_GetChildMarkedContentID;   N: 'FPDF_StructElement_GetChildMarkedContentID'),
     (P: @@FPDF_StructElement_GetParent;                 N: 'FPDF_StructElement_GetParent'),
     (P: @@FPDF_StructElement_GetAttributeCount;         N: 'FPDF_StructElement_GetAttributeCount'),
     (P: @@FPDF_StructElement_GetAttributeAtIndex;       N: 'FPDF_StructElement_GetAttributeAtIndex'),
@@ -9106,6 +9050,8 @@ const
     (P: @@FPDF_StructElement_Attr_GetNumberValue;       N: 'FPDF_StructElement_Attr_GetNumberValue'),
     (P: @@FPDF_StructElement_Attr_GetStringValue;       N: 'FPDF_StructElement_Attr_GetStringValue'),
     (P: @@FPDF_StructElement_Attr_GetBlobValue;         N: 'FPDF_StructElement_Attr_GetBlobValue'),
+    (P: @@FPDF_StructElement_Attr_CountChildren;        N: 'FPDF_StructElement_Attr_CountChildren'),
+    (P: @@FPDF_StructElement_Attr_GetChildAtIndex;      N: 'FPDF_StructElement_Attr_GetChildAtIndex'),
     (P: @@FPDF_StructElement_GetMarkedContentIdCount;   N: 'FPDF_StructElement_GetMarkedContentIdCount'),
     (P: @@FPDF_StructElement_GetMarkedContentIdAtIndex; N: 'FPDF_StructElement_GetMarkedContentIdAtIndex'),
 
@@ -9161,6 +9107,7 @@ const
     (P: @@FPDFAnnot_GetOptionLabel;                     N: 'FPDFAnnot_GetOptionLabel'),
     (P: @@FPDFAnnot_IsOptionSelected;                   N: 'FPDFAnnot_IsOptionSelected'),
     (P: @@FPDFAnnot_GetFontSize;                        N: 'FPDFAnnot_GetFontSize'),
+    (P: @@FPDFAnnot_GetFontColor;                       N: 'FPDFAnnot_GetFontColor'),
     (P: @@FPDFAnnot_IsChecked;                          N: 'FPDFAnnot_IsChecked'),
 
     (P: @@FPDFAnnot_SetFocusableSubtypes;               N: 'FPDFAnnot_SetFocusableSubtypes'),
@@ -9171,6 +9118,8 @@ const
     (P: @@FPDFAnnot_GetFormControlIndex;                N: 'FPDFAnnot_GetFormControlIndex'),
     (P: @@FPDFAnnot_GetFormFieldExportValue;            N: 'FPDFAnnot_GetFormFieldExportValue'),
     (P: @@FPDFAnnot_SetURI;                             N: 'FPDFAnnot_SetURI'),
+    (P: @@FPDFAnnot_GetFileAttachment;                  N: 'FPDFAnnot_GetFileAttachment'),
+    (P: @@FPDFAnnot_AddFileAttachment;                  N: 'FPDFAnnot_AddFileAttachment'),
 
     {$IFDEF PDF_ENABLE_V8}
     // *** _FPDF_LIBS_H_ ***
@@ -9221,12 +9170,12 @@ end;
 
 function PDF_IsSkiaAvailable: Boolean;
 begin
-  {$IFDEF _SKIA_SUPPORT_}
+  {$IFDEF PDF_USE_SKIA}
   Result := Assigned(FPDF_RenderPageSkia) and (@FPDF_RenderPageSkia <> @NotLoaded) and (@FPDF_RenderPageSkia <> @FunctionNotSupported)
             and Assigned(FPDF_FFLDrawSkia) and (@FPDF_FFLDrawSkia <> @NotLoaded) and (@FPDF_FFLDrawSkia <> @FunctionNotSupported);
   {$ELSE}
   Result := False;
-  {$ENDIF _SKIA_SUPPORT_}
+  {$ENDIF PDF_USE_SKIA}
 end;
 
 procedure Init;
@@ -9340,7 +9289,7 @@ begin
   {$IFDEF FPC} {$WARN 5057 off : Local variable "$1" does not seem to be initialized} {$ENDIF FPC}
   FillChar(LibraryConfig, SizeOf(LibraryConfig), 0);
   {$IFDEF FPC} {$WARN 5057 on} {$ENDIF FPC}
-  LibraryConfig.version := 4;
+  LibraryConfig.version := 2;
   LibraryConfig.m_RendererType := FPDF_RENDERERTYPE_AGG;
   {if IsSkiaAvailable and SkiaRendererEnabled then
     LibraryConfig.m_RendererType := FPDF_RENDERERTYPE_SKIA;}
