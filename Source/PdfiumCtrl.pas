@@ -27,8 +27,8 @@ uses
   {$IFDEF FPC}
   LCLType, PrintersDlgs, Win32Extra,
   {$ENDIF FPC}
-  Windows, Messages, ShellAPI, Types, SysUtils, Classes, Graphics, Controls, Forms,
-  Dialogs, PdfiumCore;
+  Windows, Messages, ShellAPI, Types, SysUtils, Classes, Contnrs, Graphics, Controls,
+  Forms, Dialogs, PdfiumCore;
 
 type
   TPdfControlLinkOptionType = (
@@ -97,9 +97,7 @@ type
     FScrollMousePos: TPoint;
     FLinkOptions: TPdfControlLinkOptions;
     FHighlightTextRects: TPdfRectArray;
-    FHighlightText: string;
-    FHighlightMatchCase: Boolean;
-    FHighlightMatchWholeWord: Boolean;
+    FHighlightTexts: TObjectList;
     FFormOutputSelectedRects: TPdfRectArray;
     FFormFieldFocused: Boolean;
     FPageShadowSize: Integer;
@@ -233,7 +231,12 @@ type
     function SelectLine(CharIndex: Integer): Boolean;
 
     function GetTextInRect(const R: TRect): string;
+    { HightlightText() highlights all occurences of the specified text and clears previously
+      hightlighted texts. }
     procedure HightlightText(const SearchText: string; MatchCase, MatchWholeWord: Boolean);
+    { AddHightlightText() highlights all occurences of the specified text but keeps previously
+      hightlighted texts. }
+    procedure AddHightlightText(const SearchText: string; MatchCase, MatchWholeWord: Boolean);
     procedure ClearHighlightText;
 
     function IsWebLinkAt(X, Y: Integer): Boolean; overload;
@@ -348,8 +351,8 @@ type
       If AShowPrintDialog is true the print dialog is shown and the user can select the
       printer, page range and number of copies (if supported by the printer driver).
       Returns true if the page was send to the printer driver. }
-    class function PrintDocument(ADocument: TPdfDocument; const AJobTitle: string; 
-      AShowPrintDialog: Boolean = True; AllowPageRange: Boolean = True; 
+    class function PrintDocument(ADocument: TPdfDocument; const AJobTitle: string;
+      AShowPrintDialog: Boolean = True; AllowPageRange: Boolean = True;
       AParentWnd: HWND = 0): Boolean; static;
   end;
 
@@ -363,6 +366,21 @@ const
   cTrippleClickTimerId = 2;
   cScrollTimerInterval = 50;
   cDefaultScrollOffset = 25;
+
+type
+  THighlightTextInfo = class(TObject)
+  private
+    FText: string;
+    FMatchCase: Boolean;
+    FMatchWholeWord: Boolean;
+  public
+    constructor Create(const AText: string; AMatchCase, AMatchWholeWord: Boolean);
+    function IsSame(const AText: string; AMatchCase, AMatchWholeWord: Boolean): Boolean;
+
+    property Text: string read FText;
+    property MatchCase: Boolean read FMatchCase;
+    property MatchWholeWord: Boolean read FMatchWholeWord;
+  end;
 
 function IsWhitespace(Ch: Char): Boolean;
 begin
@@ -388,6 +406,23 @@ begin
   Result := not Printer.Aborted;
 end;
 
+
+{ THighlightTextInfo }
+
+constructor THighlightTextInfo.Create(const AText: string; AMatchCase, AMatchWholeWord: Boolean);
+begin
+  inherited Create;
+  FText := AText;
+  FMatchCase := AMatchCase;
+  FMatchWholeWord := AMatchWholeWord;
+end;
+
+function THighlightTextInfo.IsSame(const AText: string; AMatchCase, AMatchWholeWord: Boolean): Boolean;
+begin
+  Result := (AMatchCase = FMatchCase) and
+            (AMatchWholeWord = FMatchWholeWord) and
+            (AText = FText);
+end;
 
 { TPdfDocumentVclPrinter }
 
@@ -2694,41 +2729,70 @@ end;
 
 procedure TPdfControl.HightlightText(const SearchText: string; MatchCase, MatchWholeWord: Boolean);
 begin
-  FHighlightText := SearchText;
-  FHighlightMatchCase := MatchCase;
-  FHighlightMatchWholeWord := MatchWholeWord;
+  if FHighlightTexts <> nil then
+    FHighlightTexts.Clear;
+  AddHightlightText(SearchText, MatchCase, MatchWholeWord);
+end;
+
+procedure TPdfControl.AddHightlightText(const SearchText: string; MatchCase, MatchWholeWord: Boolean);
+var
+  HLTextInfo: THighlightTextInfo;
+  I: Integer;
+begin
+  if SearchText = '' then
+    Exit;
+
+  // Prevent duplicates
+  if FHighlightTexts <> nil then
+    for I := 0 to FHighlightTexts.Count - 1 do
+      if (FHighlightTexts[I] as THighlightTextInfo).IsSame(SearchText, MatchCase, MatchWholeWord) then
+        Exit;
+
+  if FHighlightTexts = nil then
+    FHighlightTexts := TObjectList.Create;
+  HLTextInfo := THighlightTextInfo.Create(SearchText, MatchCase, MatchWholeWord);
+  FHighlightTexts.Add(HLTextInfo);
+
   CalcHighlightTextRects;
 end;
 
 procedure TPdfControl.CalcHighlightTextRects;
 var
   OldHighlightTextRects: TPdfRectArray;
+  HLTextInfo: THighlightTextInfo;
   Page: TPdfPage;
-  CharIndex, CharCount, I, Count: Integer;
+  CharIndex, CharCount, I, Count, TextsIndex: Integer;
   Num: Integer;
 begin
   OldHighlightTextRects := FHighlightTextRects;
   FHighlightTextRects := nil;
-  if (FHighlightText <> '') and IsPageValid then
+  if (FHighlightTexts <> nil) and (FHighlightTexts.Count > 0) and IsPageValid then
   begin
     Page := CurrentPage;
     Num := 0;
-    if Page.BeginFind(FHighlightText, FHighlightMatchCase, FHighlightMatchWholeWord, False) then
+    for TextsIndex := 0 to FHighlightTexts.Count - 1 do
     begin
-      try
-        while Page.FindNext(CharIndex, CharCount) do
+      HLTextInfo := FHighlightTexts[TextsIndex] as THighlightTextInfo;
+      if HLTextInfo.Text <> '' then // prevent infinite loop in FPDFText_FindNext()
+      begin
+        if Page.BeginFind(HLTextInfo.Text, HLTextInfo.MatchCase, HLTextInfo.MatchWholeWord, False) then
         begin
-          Count := Page.GetTextRectCount(CharIndex, CharCount);
-          if Num + Count > Length(FHighlightTextRects) then
-            SetLength(FHighlightTextRects, (Num + Count) * 2);
-          for I := 0 to Count - 1 do
-          begin
-            FHighlightTextRects[Num] := Page.GetTextRect(I);
-            Inc(Num);
+          try
+            while Page.FindNext(CharIndex, CharCount) do
+            begin
+              Count := Page.GetTextRectCount(CharIndex, CharCount);
+              if Num + Count > Length(FHighlightTextRects) then
+                SetLength(FHighlightTextRects, (Num + Count) * 2);
+              for I := 0 to Count - 1 do
+              begin
+                FHighlightTextRects[Num] := Page.GetTextRect(I);
+                Inc(Num);
+              end;
+            end;
+          finally
+            Page.EndFind;
           end;
         end;
-      finally
-        Page.EndFind;
       end;
     end;
 
@@ -2741,7 +2805,7 @@ end;
 
 procedure TPdfControl.ClearHighlightText;
 begin
-  FHighlightText := '';
+  FreeAndNil(FHighlightTexts);
   InvalidatePdfRectDiffs(FHighlightTextRects, nil);
   FHighlightTextRects := nil;
 end;

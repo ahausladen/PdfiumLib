@@ -132,7 +132,9 @@ end;
 
 procedure TfrmMain.btnHighlightClick(Sender: TObject);
 begin
-  FCtrl.HightlightText('the', False, False);
+  FCtrl.ClearHighlightText;
+  FCtrl.AddHightlightText('the', False, True);
+  FCtrl.AddHightlightText('in', False, True);
 end;
 
 procedure TfrmMain.btnScaleClick(Sender: TObject);
