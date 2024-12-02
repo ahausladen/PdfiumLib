@@ -5,7 +5,7 @@ interface
 uses
   Classes, Graphics,
   //
-  GR32_Image,
+  GR32_Image, GR32_RangeBars,
   PdfiumCore;
 
 const
@@ -48,6 +48,8 @@ type
 
     FOnPrintDocument: TNotifyEvent;
 
+    FInBitmapResizedFlag: boolean;
+
     procedure FSetScaleMode(const Value: TPdfControlScaleMode); reintroduce;
     procedure FSetRotation(const Value: TPdfPageRotation);
     procedure FSetZoomPercentage(Value: word);
@@ -78,6 +80,8 @@ type
 
   protected
     procedure Paint; override;
+    procedure BitmapResized; override;
+    procedure UpdateImage; override;
 
   public
     constructor Create(AOwner: TComponent); override;
@@ -148,6 +152,8 @@ begin
 
   FDrawOptions := cPdfControlDefaultDrawOptions;
 
+
+  Centered := false;
   ParentColor := false;
   Color := clGray;
 
@@ -265,7 +271,7 @@ begin
   end;
   FPageIndex := Value;
 
-  // TODO: PageContentChanged(false);
+  FOnPageContentChanged(true);
 end;
 
 
@@ -496,13 +502,73 @@ begin
   inherited;
 end;
 
+type
+  _TCustomRangeBar = class(TCustomRangeBar);
+
+procedure TPdfControl32.BitmapResized;
+var
+  hPosition, vPosition: single;
+  hRange, vRange: integer;
+  hWindow, vWindow: integer;
+  zoomRatio, midWindow, delta: double;
+begin
+  hPosition := HScroll.Position;
+  vPosition := VScroll.Position;
+  hRange := HScroll.Range;
+  vRange := VScroll.Range;
+  hWindow := _TCustomRangeBar(HScroll).EffectiveWindow;
+  vWindow := _TCustomRangeBar(VScroll).EffectiveWindow;
+
+  FInBitmapResizedFlag := true;
+  try
+    inherited;
+  finally
+    FInBitmapResizedFlag := false;
+  end;
+
+  if (hRange > 0) then
+  begin
+    zoomRatio := HScroll.Range / hRange;
+    midWindow := hPosition + hWindow / 2;
+    delta := midWindow  * (zoomRatio - 1);
+    HScroll.Position := hPosition + delta;
+  end
+  else
+    HScroll.Position := hPosition;
+
+
+  if (vRange > 0) then
+  begin
+    zoomRatio := VScroll.Range / vRange;
+    midWindow := vPosition + vWindow / 2;
+    delta := midWindow  * (zoomRatio - 1);
+    VScroll.Position := vPosition + delta;
+  end
+  else
+    VScroll.Position := vPosition;
+
+  UpdateImage;
+end;
+
+
+procedure TPdfControl32.UpdateImage;
+begin
+  if (not FInBitmapResizedFlag) then
+    inherited;
+end;
+
 
 procedure TPdfControl32.Paint;
 begin
   if (FIsPageRenderingNeeded) then
   begin
     FIsPageRenderingNeeded := false;
-    FRenderPage;
+    DisableScrollUpdate := true;
+    try
+      FRenderPage;
+    finally
+      DisableScrollUpdate := false;
+    end;
     FIsPageFrameRenderingNeeded := true;
   end;
 
