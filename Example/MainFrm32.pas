@@ -7,16 +7,13 @@ unit MainFrm32;
 interface
 
 uses
-  {Winapi.Windows,} Messages, SysUtils, Variants,
+  Messages, SysUtils, Variants,
   Classes, Graphics, Controls, Forms, Dialogs,
   ExtCtrls, StdCtrls, ComCtrls, Spin, PrintersDlgs,
   //
   PdfiumCore, PdfiumCtrl32;
 
 type
-
-  { TfrmMain }
-
   TfrmMain = class(TForm)
     btnPrev: TButton;
     btnNext: TButton;
@@ -47,14 +44,11 @@ type
     procedure chkChangePageOnMouseScrollingClick(Sender: TObject);
     procedure btnAddAnnotationClick(Sender: TObject);
   private
-    { Private-Deklarationen }
     FCtrl: TPdfControl32;
     procedure WebLinkClick(Sender: TObject; Url: string);
     procedure AnnotationLinkClick(Sender: TObject; LinkInfo: TPdfLinkInfo; var Handled: Boolean);
     procedure PrintDocument(Sender: TObject);
     procedure ListAttachments;
-  public
-    { Public-Deklarationen }
   end;
 
 var
@@ -89,7 +83,7 @@ begin
 //  FCtrl.OnWebLinkClick := WebLinkClick; // disabled due to loTreatWebLinkAsUriAnnotationLink + loAutoOpenURI
 //  FCtrl.OnAnnotationLinkClick := AnnotationLinkClick;
 //  FCtrl.LinkOptions := FCtrl.LinkOptions - [loAutoOpenURI] {+ cPdfControlAllAutoLinkOptions};
-//  FCtrl.OnPrintDocument := PrintDocument;
+  FCtrl.OnPrintDocument := PrintDocument;
 
   edtZoom.Value := FCtrl.ZoomPercentage;
 
@@ -212,17 +206,20 @@ begin
 end;
 
 procedure TfrmMain.btnPrintClick(Sender: TObject);
-{var
-  PdfPrinter: TPdfDocumentPrinter;}
+{
+var
+  PdfPrinter: TPdfDocumentPrinter;
+}
 begin
-  FCtrl.PrintDocument; // calls OnPrintDocument->PrintDocument
+//  FCtrl.PrintDocument; // calls OnPrintDocument->PrintDocument
   //TPdfDocumentVclPrinter.PrintDocument(FCtrl.Document, 'PDF Example Print Job');
 
-{  PrintDialog1.MinPage := 1;
+  PrintDialog1.MinPage := 1;
   PrintDialog1.MaxPage := FCtrl.Document.PageCount;
 
-  if PrintDialog1.Execute(Handle) then
+  if (PrintDialog1.Execute) then
   begin
+{
     PdfPrinter := TPdfDocumentVclPrinter.Create;
     try
       //PdfPrinter.FitPageToPrintArea := False;
@@ -234,7 +231,8 @@ begin
     finally
       PdfPrinter.Free;
     end;
-  end;}
+}
+  end;
 end;
 
 procedure TfrmMain.ListViewAttachmentsDblClick(Sender: TObject);

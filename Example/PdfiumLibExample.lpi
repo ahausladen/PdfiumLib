@@ -20,9 +20,6 @@
     </RunParams>
     <RequiredPackages>
       <Item>
-        <PackageName Value="GR32_Lazarus"/>
-      </Item>
-      <Item>
         <PackageName Value="Printer4Lazarus"/>
       </Item>
       <Item>
@@ -61,8 +58,8 @@
       <Filename Value="PdfiumLibExample"/>
     </Target>
     <SearchPaths>
-      <IncludeFiles Value="../Source;$(ProjOutDir)"/>
-      <OtherUnitFiles Value="../Source"/>
+      <IncludeFiles Value="../Source;lib/graphics32/Source;$(ProjOutDir)"/>
+      <OtherUnitFiles Value="../Source;lib/graphics32/Source"/>
       <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <Parsing>
