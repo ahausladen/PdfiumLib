@@ -1,0 +1,152 @@
+object frmMain: TfrmMain
+  Left = 319
+  Height = 540
+  Top = 91
+  Width = 857
+  Caption = 'PDFium Test'
+  ClientHeight = 540
+  ClientWidth = 857
+  Color = clBtnFace
+  DesignTimePPI = 80
+  Font.Color = clWindowText
+  Font.Height = -9
+  Font.Name = 'Tahoma'
+  OnClose = FormClose
+  OnCreate = FormCreate
+  LCLVersion = '3.2.0.0'
+  object ListViewAttachments: TListView
+    Left = 0
+    Height = 39
+    Top = 501
+    Width = 857
+    Align = alBottom
+    Columns = <>
+    TabOrder = 0
+    Visible = False
+    OnDblClick = ListViewAttachmentsDblClick
+  end
+  object pnlButtons: TPanel
+    Left = 0
+    Height = 32
+    Top = 0
+    Width = 857
+    Align = alTop
+    BevelOuter = bvNone
+    ClientHeight = 32
+    ClientWidth = 857
+    ParentBackground = False
+    TabOrder = 1
+    object btnAddAnnotation: TButton
+      Left = 272
+      Height = 21
+      Top = 3
+      Width = 42
+      Caption = 'Annot'
+      TabOrder = 5
+      OnClick = btnAddAnnotationClick
+    end
+    object btnHighlight: TButton
+      Left = 128
+      Height = 21
+      Top = 3
+      Width = 54
+      Caption = 'Highlight'
+      TabOrder = 2
+      OnClick = btnHighlightClick
+    end
+    object btnNext: TButton
+      Left = 62
+      Height = 21
+      Top = 3
+      Width = 62
+      Caption = '>'
+      TabOrder = 0
+      OnClick = btnNextClick
+    end
+    object btnPrev: TButton
+      Left = 0
+      Height = 21
+      Top = 3
+      Width = 62
+      Caption = '<'
+      TabOrder = 1
+      OnClick = btnPrevClick
+    end
+    object btnPrint: TButton
+      Left = 230
+      Height = 21
+      Top = 3
+      Width = 42
+      Caption = 'Print'
+      TabOrder = 4
+      OnClick = btnPrintClick
+    end
+    object btnScale: TButton
+      Left = 182
+      Height = 21
+      Top = 3
+      Width = 47
+      Caption = 'Scale'
+      TabOrder = 3
+      OnClick = btnScaleClick
+    end
+    object chkChangePageOnMouseScrolling: TCheckBox
+      Left = 569
+      Height = 23
+      Top = 3
+      Width = 171
+      Caption = 'ChangePageOnMouseScrolling'
+      TabOrder = 9
+      OnClick = chkChangePageOnMouseScrollingClick
+    end
+    object chkLCDOptimize: TCheckBox
+      Left = 324
+      Height = 23
+      Top = 3
+      Width = 87
+      Caption = 'LCDOptimize'
+      TabOrder = 6
+      OnClick = chkLCDOptimizeClick
+    end
+    object chkSmoothScroll: TCheckBox
+      Left = 417
+      Height = 23
+      Top = 3
+      Width = 90
+      Caption = 'SmoothScroll'
+      TabOrder = 7
+      OnClick = chkSmoothScrollClick
+    end
+    object edtZoom: TSpinEdit
+      Left = 513
+      Height = 27
+      Top = 0
+      Width = 48
+      MaxValue = 10000
+      MinValue = 1
+      OnChange = edtZoomChange
+      TabOrder = 8
+      Value = 100
+    end
+  end
+  object PrintDialog1: TPrintDialog
+    MinPage = 1
+    MaxPage = 10
+    Options = [poPageNums]
+    Left = 80
+    Top = 27
+  end
+  object OpenDialog1: TOpenDialog
+    Title = 'Open PDF file'
+    DefaultExt = '.pdf'
+    Filter = 'PDF file (*.pdf)|*.pdf'
+    Left = 27
+    Top = 27
+  end
+  object SaveDialog1: TSaveDialog
+    Title = 'Save attachment'
+    Options = [ofOverwritePrompt, ofHideReadOnly, ofPathMustExist, ofCreatePrompt, ofEnableSizing]
+    Left = 133
+    Top = 27
+  end
+end

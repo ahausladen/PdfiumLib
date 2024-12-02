@@ -1575,7 +1575,7 @@ begin
                 Inc(Offset, NumRead);
               end;
             finally
-              CloseHandle(FFileHandle);
+              FileClose(FFileHandle);
               FFileHandle := INVALID_HANDLE_VALUE;
             end;
 
@@ -2456,9 +2456,9 @@ end;
 procedure TPdfPage.Draw(APdfBitmap: TPdfBitmap; X, Y, Width, Height: Integer; Rotate: TPdfPageRotation = prNormal;
   const Options: TPdfPageRenderOptions = []; PageBackground: TColorRef = $FFFFFF);
 begin
-  APdfBitmap.FillRect(0, 0, Width, Height, $FF000000 or PageBackground);
-  DrawToPdfBitmap(APdfBitmap, 0, 0, Width, Height, Rotate, Options);
-  DrawFormToPdfBitmap(APdfBitmap, 0, 0, Width, Height, Rotate, Options);
+  APdfBitmap.FillRect(X, Y, Width, Height, $FF000000 or PageBackground);
+  DrawToPdfBitmap(APdfBitmap, X, Y, Width, Height, Rotate, Options);
+  DrawFormToPdfBitmap(APdfBitmap, X, Y, Width, Height, Rotate, Options);
 end;
 
 procedure TPdfPage.DrawToPdfBitmap(APdfBitmap: TPdfBitmap; X, Y, Width, Height: Integer;
