@@ -1,6 +1,6 @@
 // Use DLLs (x64, x86) from https://github.com/bblanchon/pdfium-binaries
 //
-// DLL Version: chromium/6611
+// DLL Version: chromium/7242
 
 unit PdfiumLib;
 {$IFDEF FPC}
@@ -734,6 +734,8 @@ var
 // Return value:
 //          Page width (excluding non-displayable area) measured in points.
 //          One point is 1/72 inch (around 0.3528 mm).
+// Comments:
+//          Changing the rotation of |page| affects the return value.
 var
   FPDF_GetPageWidthF: function(page: FPDF_PAGE): Single; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -748,6 +750,8 @@ var
 // Note:
 //          Prefer FPDF_GetPageWidthF() above. This will be deprecated in the
 //          future.
+// Comments:
+//          Changing the rotation of |page| affects the return value.
 var
   FPDF_GetPageWidth: function(page: FPDF_PAGE): Double; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -759,6 +763,8 @@ var
 // Return value:
 //          Page height (excluding non-displayable area) measured in points.
 //          One point is 1/72 inch (around 0.3528 mm)
+// Comments:
+//          Changing the rotation of |page| affects the return value.
 var
   FPDF_GetPageHeightF: function(page: FPDF_PAGE): Single; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -772,6 +778,8 @@ var
 // Note:
 //          Prefer FPDF_GetPageHeightF() above. This will be deprecated in the
 //          future.
+// Comments:
+//          Changing the rotation of |page| affects the return value.
 var
   FPDF_GetPageHeight: function(page: FPDF_PAGE): Double; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -875,10 +883,10 @@ type
 //          flags       -   0 for normal display, or combination of flags
 //                          defined above.
 // Return value:
-//          None.
+//          Returns true if the page is rendered successfully, false otherwise.
 var
-  FPDF_RenderPage: procedure(DC: HDC; page: FPDF_PAGE; start_x, start_y, size_x, size_y: Integer;
-    rotate: Integer; flags: Integer); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDF_RenderPage: function(DC: HDC; page: FPDF_PAGE; start_x, start_y, size_x, size_y: Integer;
+    rotate: Integer; flags: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 {$ENDIF MSWINDOWS}
 
 // Function: FPDF_RenderPageBitmap
@@ -1075,11 +1083,16 @@ var
 
 const
   // More DIB formats
-  FPDFBitmap_Unknown = 0; // Unknown or unsupported format.
-  FPDFBitmap_Gray    = 1; // Gray scale bitmap, one byte per pixel.
-  FPDFBitmap_BGR     = 2; // 3 bytes per pixel, byte order: blue, green, red.
-  FPDFBitmap_BGRx    = 3; // 4 bytes per pixel, byte order: blue, green, red, unused.
-  FPDFBitmap_BGRA    = 4; // 4 bytes per pixel, byte order: blue, green, red, alpha.
+  FPDFBitmap_Unknown     = 0; // Unknown or unsupported format.
+  FPDFBitmap_Gray        = 1; // Gray scale bitmap, one byte per pixel.
+  FPDFBitmap_BGR         = 2; // 3 bytes per pixel, byte order: blue, green, red.
+  FPDFBitmap_BGRx        = 3; // 4 bytes per pixel, byte order: blue, green, red, unused.
+  FPDFBitmap_BGRA        = 4; // 4 bytes per pixel, byte order: blue, green, red, alpha.
+                              //   Pixel components are independent of alpha.
+  FPDFBitmap_BGRA_Premul = 5; // 4 bytes per pixel, byte order: blue, green, red, alpha.
+                              //   Pixel components are premultiplied by alpha.
+                              //   Note that this is experimental and only supported when rendering with
+                              //   |FPDF_RENDERER_TYPE| is set to |FPDF_RENDERERTYPE_SKIA|.
 
 // Function: FPDFBitmap_CreateEx
 //          Create a device independent bitmap (FXDIB)
@@ -1146,7 +1159,7 @@ var
 //          color       -   A 32-bit value specifing the color, in 8888 ARGB
 //                          format.
 // Return value:
-//          None.
+//          Returns whether the operation succeeded or not.
 // Comments:
 //          This function sets the color and (optionally) alpha value in the
 //          specified region of the bitmap.
@@ -1157,7 +1170,7 @@ var
 //
 //          If the alpha channel is not used, the alpha parameter is ignored.
 var
-  FPDFBitmap_FillRect: procedure(bitmap: FPDF_BITMAP; left, top, width, height: Integer; color: FPDF_DWORD); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDFBitmap_FillRect: function(bitmap: FPDF_BITMAP; left, top, width, height: Integer; color: FPDF_DWORD): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Function: FPDFBitmap_GetBuffer
 //          Get data buffer of a bitmap.
@@ -1625,6 +1638,22 @@ var
 var
   FPDFPage_InsertObject: procedure(page: FPDF_PAGE; page_object: FPDF_PAGEOBJECT); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Insert |page_object| into |page| at the specified |index|.
+//
+//   page        - handle to a page
+//   page_object - handle to a page object as previously obtained by
+//                 FPDFPageObj_CreateNew{Path|Rect}() or
+//                 FPDFPageObj_New{Text|Image}Obj(). Ownership of the object
+//                 is transferred back to PDFium.
+//   index       - the index position to insert the object at. If index equals
+//                 the current object count, the object will be appended to the
+//                 end. If index is greater than the object count, the function
+//                 will fail and return false.
+//
+// Returns true if successful.
+var
+  FPDFPage_InsertObjectAtIndex: function(page: FPDF_PAGE; page_object: FPDF_PAGEOBJECT; index: SIZE_T): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 // Experimental API.
 // Remove |page_object| from |page|.
 //
@@ -1702,6 +1731,38 @@ var
 // error.
 var
   FPDFPageObj_GetType: function(page_object: FPDF_PAGEOBJECT): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Gets active state for |page_object| within page.
+//
+//   page_object - handle to a page object.
+//   active      - pointer to variable that will receive if the page object is
+//                 active. This is a required parameter. Not filled if FALSE
+//                 is returned.
+//
+// For page objects where |active| is filled with FALSE, the |page_object| is
+// treated as if it wasn't in the document even though it is still held
+// internally.
+//
+// Returns TRUE if the operation succeeded, FALSE if it failed.
+var
+  FPDFPageObj_GetIsActive: function(page_object: FPDF_PAGEOBJECT; var active: FPDF_BOOL): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Sets if |page_object| is active within page.
+//
+//   page_object - handle to a page object.
+//   active      - a boolean specifying if the object is active.
+//
+// Returns TRUE on success.
+//
+// Page objects all start in the active state by default, and remain in that
+// state unless this function is called.
+//
+// When |active| is false, this makes the |page_object| be treated as if it
+// wasn't in the document even though it is still held internally.
+var
+  FPDFPageObj_SetIsActive: function(page_object: FPDF_PAGEOBJECT; active: FPDF_BOOL): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Transform |page_object| by the given matrix.
 //
@@ -1856,17 +1917,18 @@ var
 //
 //   mark       - handle to a content mark.
 //   buffer     - buffer for holding the returned name in UTF-16LE. This is only
-//                modified if |buflen| is longer than the length of the name.
+//                modified if |buflen| is large enough to store the name.
 //                Optional, pass null to just retrieve the size of the buffer
 //                needed.
-//   buflen     - length of the buffer.
+//   buflen     - length of the buffer in bytes.
 //   out_buflen - pointer to variable that will receive the minimum buffer size
-//                to contain the name. Not filled if FALSE is returned.
+//                in bytes to contain the name. This is a required parameter.
+//                Not filled if FALSE is returned.
 //
 // Returns TRUE if the operation succeeded, FALSE if it failed.
 var
-  FPDFPageObjMark_GetName: function(mark: FPDF_PAGEOBJECTMARK; buffer: Pointer; buflen: LongWord;
-    out_buflen: PLongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDFPageObjMark_GetName: function(mark: FPDF_PAGEOBJECTMARK; buffer: PFPDF_WCHAR; buflen: LongWord;
+    var out_buflen: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Get the number of key/value pair parameters in |mark|.
@@ -1884,17 +1946,18 @@ var
 //   mark       - handle to a content mark.
 //   index      - index of the property.
 //   buffer     - buffer for holding the returned key in UTF-16LE. This is only
-//                modified if |buflen| is longer than the length of the key.
+//                modified if |buflen| is large enough to store the key.
 //                Optional, pass null to just retrieve the size of the buffer
 //                needed.
-//   buflen     - length of the buffer.
+//   buflen     - length of the buffer in bytes.
 //   out_buflen - pointer to variable that will receive the minimum buffer size
-//                to contain the key. Not filled if FALSE is returned.
+//                in bytes to contain the name. This is a required parameter.
+//                Not filled if FALSE is returned.
 //
 // Returns TRUE if the operation was successful, FALSE otherwise.
 var
-  FPDFPageObjMark_GetParamKey: function(mark: FPDF_PAGEOBJECTMARK; index: LongWord; buffer: Pointer; buflen: LongWord;
-    out_buflen: PLongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDFPageObjMark_GetParamKey: function(mark: FPDF_PAGEOBJECTMARK; index: LongWord; buffer: PFPDF_WCHAR; buflen: LongWord;
+    var out_buflen: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Get the type of the value of a property in a content mark by key.
@@ -1928,18 +1991,18 @@ var
 //   mark       - handle to a content mark.
 //   key        - string key of the property.
 //   buffer     - buffer for holding the returned value in UTF-16LE. This is
-//                only modified if |buflen| is longer than the length of the
-//                value.
+//                only modified if |buflen| is large enough to store the value.
 //                Optional, pass null to just retrieve the size of the buffer
 //                needed.
-//   buflen     - length of the buffer.
+//   buflen     - length of the buffer in bytes.
 //   out_buflen - pointer to variable that will receive the minimum buffer size
-//                to contain the value. Not filled if FALSE is returned.
+//                in bytes to contain the name. This is a required parameter.
+//                Not filled if FALSE is returned.
 //
 // Returns TRUE if the key maps to a string/blob value, FALSE otherwise.
 var
-  FPDFPageObjMark_GetParamStringValue: function(mark: FPDF_PAGEOBJECTMARK; key: FPDF_BYTESTRING; buffer: Pointer;
-    buflen: LongWord; out_buflen: PLongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDFPageObjMark_GetParamStringValue: function(mark: FPDF_PAGEOBJECTMARK; key: FPDF_BYTESTRING; buffer: PFPDF_WCHAR;
+    buflen: LongWord; var out_buflen: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Get the value of a blob property in a content mark by key.
@@ -1947,17 +2010,18 @@ var
 //   mark       - handle to a content mark.
 //   key        - string key of the property.
 //   buffer     - buffer for holding the returned value. This is only modified
-//                if |buflen| is at least as long as the length of the value.
+//                if |buflen| is large enough to store the value.
 //                Optional, pass null to just retrieve the size of the buffer
 //                needed.
-//   buflen     - length of the buffer.
+//   buflen     - length of the buffer in bytes.
 //   out_buflen - pointer to variable that will receive the minimum buffer size
-//                to contain the value. Not filled if FALSE is returned.
+//                in bytes to contain the name. This is a required parameter.
+//                Not filled if FALSE is returned.
 //
 // Returns TRUE if the key maps to a string/blob value, FALSE otherwise.
 var
-  FPDFPageObjMark_GetParamBlobValue: function(mark: FPDF_PAGEOBJECTMARK; key: FPDF_BYTESTRING; buffer: Pointer;
-    buflen: LongWord; out_buflen: PLongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDFPageObjMark_GetParamBlobValue: function(mark: FPDF_PAGEOBJECTMARK; key: FPDF_BYTESTRING; buffer: PByte;
+    buflen: LongWord; var out_buflen: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Set the value of an int property in a content mark by key. If a parameter
@@ -2006,7 +2070,7 @@ var
 // Returns TRUE if the operation succeeded, FALSE otherwise.
 var
   FPDFPageObjMark_SetBlobParam: function(document: FPDF_DOCUMENT; page_object: FPDF_PAGEOBJECT;
-    mark: FPDF_PAGEOBJECTMARK; key: FPDF_BYTESTRING; value: Pointer; value_len: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+    mark: FPDF_PAGEOBJECTMARK; key: FPDF_BYTESTRING; value: PByte; value_len: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Removes a property from a content mark by key.
@@ -2194,6 +2258,28 @@ var
 // Returns true if successful.
 var
   FPDFImageObj_GetImagePixelSize: function(image_object: FPDF_PAGEOBJECT; var width, height: UInt32): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Get ICC profile decoded data of |image_object|. If the |image_object| is not
+// an image object or if it does not have an image, then the return value will
+// be false. It also returns false if the |image_object| has no ICC profile.
+// |buffer| is only modified if ICC profile exists and |buflen| is longer than
+// the length of the ICC profile decoded data.
+//
+//   image_object - handle to an image object; must not be NULL.
+//   page         - handle to the page containing |image_object|; must not be
+//                  NULL. Required for retrieving the image's colorspace.
+//   buffer       - Buffer to receive ICC profile data; may be NULL if querying
+//                  required size via |out_buflen|.
+//   buflen       - Length of the buffer in bytes. Ignored if |buffer| is NULL.
+//   out_buflen   - Pointer to receive the ICC profile data size in bytes; must
+//                  not be NULL. Will be set if this API returns true.
+//
+// Returns true if |out_buflen| is not null and an ICC profile exists for the
+// given |image_object|.
+var
+  FPDFImageObj_GetIccProfileDataDecoded: function(image_object: FPDF_PAGEOBJECT; page: FPDF_PAGE; buffer: PByte;
+    buflen: SIZE_T; var out_buflen: SIZE_T): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Create a new path object at an initial position.
 //
@@ -2703,6 +2789,23 @@ var
   FPDFTextObj_GetFont: function(text: FPDF_PAGEOBJECT): FPDF_FONT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
+// Get the base name of a font.
+//
+// font   - the handle to the font object.
+// buffer - the address of a buffer that receives the base font name.
+// length - the size, in bytes, of |buffer|.
+//
+// Returns the number of bytes in the base name (including the trailing NUL
+// character) on success, 0 on error. The base name is typically the font's
+// PostScript name. See descriptions of "BaseFont" in ISO 32000-1:2008 spec.
+//
+// Regardless of the platform, the |buffer| is always in UTF-8 encoding.
+// If |length| is less than the returned length, or |buffer| is NULL, |buffer|
+// will not be modified.
+var
+  FPDFFont_GetBaseFontName: function(font: FPDF_FONT; buffer: PAnsiChar; length: SIZE_T): SIZE_T; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
 // Get the family name of a font.
 //
 // font   - the handle to the font object.
@@ -2716,7 +2819,7 @@ var
 // If |length| is less than the returned length, or |buffer| is NULL, |buffer|
 // will not be modified.
 var
-  FPDFFont_GetFamilyName: function(font: FPDF_FONT; buffer: PAnsiChar; length: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDFFont_GetFamilyName: function(font: FPDF_FONT; buffer: PAnsiChar; length: SIZE_T): SIZE_T; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Get the decoded data from the |font| object.
@@ -2871,6 +2974,20 @@ var
 // Returns the handle to the page object, or NULL on error.
 var
   FPDFFormObj_GetObject: function(form_object: FPDF_PAGEOBJECT; index: LongWord): FPDF_PAGEOBJECT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+//
+// Remove |page_object| from |form_object|.
+//
+//   form_object - handle to a form object.
+//   page_object - handle to a page object to be removed from the form.
+//
+// Returns TRUE on success.
+//
+// Ownership of the removed |page_object| is transferred to the caller.
+// Call FPDFPageObj_Destroy() on the removed page_object to free it.
+var
+  FPDFFormObj_RemoveObject: function(form_object: FPDF_PAGEOBJECT; page_object: FPDF_PAGEOBJECT): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // *** _FPDF_PPO_H_ ***
 
@@ -4590,7 +4707,7 @@ var
 // Function: FPDF_SetSystemFontInfo
 //          Set the system font info interface into PDFium
 // Parameters:
-//          pFontInfo       -   Pointer to a FPDF_SYSFONTINFO structure
+//          font_info       -   Pointer to a FPDF_SYSFONTINFO structure
 // Return Value:
 //          None
 // Comments:
@@ -4601,7 +4718,7 @@ var
 //          Call this with NULL to tell PDFium to stop using a previously set
 //          |FPDF_SYSFONTINFO|.
 var
-  FPDF_SetSystemFontInfo: procedure(pFontInfo: PFPDF_SYSFONTINFO); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDF_SetSystemFontInfo: procedure(font_info: PFPDF_SYSFONTINFO); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Function: FPDF_GetDefaultSystemFontInfo
 //          Get default system font info interface for current platform
@@ -4622,14 +4739,14 @@ var
 // Function: FPDF_FreeDefaultSystemFontInfo
 //           Free a default system font info interface
 // Parameters:
-//           pFontInfo       -   Pointer to a FPDF_SYSFONTINFO structure
+//           font_info       -   Pointer to a FPDF_SYSFONTINFO structure
 // Return Value:
 //           None
 // Comments:
 //           This function should be called on the output from
 //           FPDF_GetDefaultSystemFontInfo() once it is no longer needed.
 var
-  FPDF_FreeDefaultSystemFontInfo: procedure(pFontInfo: PFPDF_SYSFONTINFO); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDF_FreeDefaultSystemFontInfo: procedure(font_info: PFPDF_SYSFONTINFO); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 
 // *** _FPDF_EXT_H_ ***
@@ -6876,7 +6993,7 @@ var
 // Experimental API.
 // Set the color of an annotation. Fails when called on annotations with
 // appearance streams already defined; instead use
-// FPDFPath_Set{Stroke|Fill}Color().
+// FPDFPageObj_Set{Stroke|Fill}Color().
 //
 //   annot    - handle to an annotation.
 //   type     - type of the color to be set.
@@ -6891,7 +7008,7 @@ var
 // Get the color of an annotation. If no color is specified, default to yellow
 // for highlight annotation, black for all else. Fails when called on
 // annotations with appearance streams already defined; instead use
-// FPDFPath_Get{Stroke|Fill}Color().
+// FPDFPageObj_Get{Stroke|Fill}Color().
 //
 //   annot    - handle to an annotation.
 //   type     - type of the color requested.
@@ -7238,6 +7355,18 @@ var
   FPDFAnnot_GetFormFieldFlags: function(hHandle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
+// Sets the form field flags for an interactive form annotation.
+//
+//   handle       -   the handle to the form fill module, returned by
+//                    FPDFDOC_InitFormFillEnvironment().
+//   annot        -   handle to an interactive form annotation.
+//   flags        -   the form field flags to be set.
+//
+// Returns true if successful.
+var
+  FPDFAnnot_SetFormFieldFlags: function(handle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION; flags: Integer): FPDF_BOOL {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
 // Retrieves an interactive form annotation whose rectangle contains a given
 // point on a page. Must call FPDFPage_CloseAnnot() when the annotation returned
 // is no longer needed.
@@ -7383,6 +7512,24 @@ var
 var
   FPDFAnnot_GetFontSize: function(hHandle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION; var value: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
+// Set the text color of an annotation.
+//
+//   handle   - handle to the form fill module, returned by
+//              FPDFDOC_InitFormFillEnvironment.
+//   annot    - handle to an annotation.
+//   R        - the red component for the text color.
+//   G        - the green component for the text color.
+//   B        - the blue component for the text color.
+//
+// Returns true if successful.
+//
+// Currently supported subtypes: freetext.
+// The range for the color components is 0 to 255.
+var
+  FPDFAnnot_SetFontColor: function(handle: FPDF_FORMHANDLE; annot: FPDF_ANNOTATION; R, G, B: Cardinal): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
 // Get the RGB value of the font color for an |annot| with variable text.
 //
 //   hHandle  - handle to the form fill module, returned by
@@ -7550,6 +7697,16 @@ var
 var
   FPDFCatalog_IsTagged: function(document: FPDF_DOCUMENT): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
+// Sets the language of |document| to |language|.
+//
+// document - handle to a document.
+// language - the language to set to.
+//
+// Returns TRUE on success.
+var
+  FPDFCatalog_SetLanguage: function(document: FPDF_DOCUMENT; language: FPDF_BYTESTRING): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 
 // *** _FPDF_ATTACHMENT_H_ ***
 
@@ -7704,6 +7861,20 @@ var
   FPDFAttachment_GetFile: function(attachment: FPDF_ATTACHMENT; buffer: Pointer; buflen: LongWord;
     var out_buflen: LongWord): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+// Experimental API.
+// Get the MIME type (Subtype) of the embedded file |attachment|. |buffer| is
+// only modified if |buflen| is longer than the length of the MIME type string.
+// If the Subtype is not found or if there is no file stream, an empty string
+// would be copied to |buffer| and the return value would be 2. On other errors,
+// nothing would be added to |buffer| and the return value would be 0.
+//
+//   attachment - handle to an attachment.
+//   buffer     - buffer for holding the MIME type string encoded in UTF-16LE.
+//   buflen     - length of the buffer in bytes.
+//
+// Returns the length of the MIME type string in bytes.
+var
+  FPDFAttachment_GetSubtype: function(attachment: FPDF_ATTACHMENT; buffer: PFPDF_WCHAR; buflen: LongWord): Cardinal; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // *** _FPDF_FWLEVENT_H_ ***
 
@@ -8424,25 +8595,6 @@ var
 var
   FPDF_StructElement_GetMarkedContentIdAtIndex: function(struct_element: FPDF_STRUCTELEMENT; index: Integer): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
-
-// *** _FPDF_LIBS_H_ ***
-
-{$IFDEF PDF_ENABLE_V8}
-
-// Function: FPDF_InitEmbeddedLibraries
-//          Initialize embedded libraries (v8, iuctl) included in pdfium
-// Parameters:
-//          resourcePath - a path to v8 resources (snapshot_blob.bin, icudtl.dat, ...)
-// Return value:
-//          None.
-// Comments:
-//          This function must be called before calling FPDF_InitLibrary()
-//          if v8 suppport is enabled
-var
-  FPDF_InitEmbeddedLibraries: procedure(const resourcePath: PAnsiChar); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
-{$ENDIF PDF_ENABLE_V8}
-
-
 // *** _FPDF_JAVASCRIPT_H_ ***
 
 // Experimental API.
@@ -8541,8 +8693,8 @@ var
 
 // ***********************************************************************
 
-procedure InitPDFium(const DllPath: string = '' {$IFDEF PDF_ENABLE_V8}; const ResPath: string = ''{$ENDIF});
-procedure InitPDFiumEx(const DllFileName: string{$IFDEF PDF_ENABLE_V8}; const ResPath: string{$ENDIF});
+procedure InitPDFium(const DllPath: string = '');
+procedure InitPDFiumEx(const DllFileName: string);
 
 implementation
 
@@ -8623,10 +8775,10 @@ const
     {$WARN 3175 off : Some fields coming before "$1" were not initialized}
     {$WARN 3177 off : Some fields coming after "$1" were not initialized}
   {$ENDIF FPC}
-  ImportFuncs: array[0..438
+  ImportFuncs: array[0..448
     {$IFDEF MSWINDOWS     } + 2 {$ENDIF}
     {$IFDEF PDF_USE_SKIA  } + 2 {$ENDIF}
-    {$IFDEF PDF_ENABLE_V8 } + 3 {$ENDIF}
+    {$IFDEF PDF_ENABLE_V8 } + 2 {$ENDIF}
     {$IFDEF PDF_ENABLE_XFA} + 3 {$ENDIF}
     ] of TImportFuncRec = (
 
@@ -8710,6 +8862,7 @@ const
     (P: @@FPDFPage_GetRotation;                         N: 'FPDFPage_GetRotation'),
     (P: @@FPDFPage_SetRotation;                         N: 'FPDFPage_SetRotation'),
     (P: @@FPDFPage_InsertObject;                        N: 'FPDFPage_InsertObject'),
+    (P: @@FPDFPage_InsertObjectAtIndex;                 N: 'FPDFPage_InsertObjectAtIndex'),
     (P: @@FPDFPage_RemoveObject;                        N: 'FPDFPage_RemoveObject'),
     (P: @@FPDFPage_CountObjects;                        N: 'FPDFPage_CountObjects'),
     (P: @@FPDFPage_GetObject;                           N: 'FPDFPage_GetObject'),
@@ -8718,6 +8871,8 @@ const
     (P: @@FPDFPageObj_Destroy;                          N: 'FPDFPageObj_Destroy'),
     (P: @@FPDFPageObj_HasTransparency;                  N: 'FPDFPageObj_HasTransparency'),
     (P: @@FPDFPageObj_GetType;                          N: 'FPDFPageObj_GetType'),
+    (P: @@FPDFPageObj_GetIsActive;                      N: 'FPDFPageObj_GetIsActive'),
+    (P: @@FPDFPageObj_SetIsActive;                      N: 'FPDFPageObj_SetIsActive'),
     (P: @@FPDFPageObj_Transform;                        N: 'FPDFPageObj_Transform'),
     (P: @@FPDFPageObj_TransformF;                       N: 'FPDFPageObj_TransformF'),
     (P: @@FPDFPageObj_GetMatrix;                        N: 'FPDFPageObj_GetMatrix'),
@@ -8752,6 +8907,7 @@ const
     (P: @@FPDFImageObj_GetImageFilter;                  N: 'FPDFImageObj_GetImageFilter'),
     (P: @@FPDFImageObj_GetImageMetadata;                N: 'FPDFImageObj_GetImageMetadata'),
     (P: @@FPDFImageObj_GetImagePixelSize;               N: 'FPDFImageObj_GetImagePixelSize'),
+    (P: @@FPDFImageObj_GetIccProfileDataDecoded;        N: 'FPDFImageObj_GetIccProfileDataDecoded'),
     (P: @@FPDFPageObj_CreateNewPath;                    N: 'FPDFPageObj_CreateNewPath'),
     (P: @@FPDFPageObj_CreateNewRect;                    N: 'FPDFPageObj_CreateNewRect'),
     (P: @@FPDFPageObj_GetBounds;                        N: 'FPDFPageObj_GetBounds'),
@@ -8797,6 +8953,7 @@ const
     (P: @@FPDFTextObj_GetText;                          N: 'FPDFTextObj_GetText'),
     (P: @@FPDFTextObj_GetRenderedBitmap;                N: 'FPDFTextObj_GetRenderedBitmap'),
     (P: @@FPDFTextObj_GetFont;                          N: 'FPDFTextObj_GetFont'),
+    (P: @@FPDFFont_GetBaseFontName;                     N: 'FPDFFont_GetBaseFontName'),
     (P: @@FPDFFont_GetFamilyName;                       N: 'FPDFFont_GetFamilyName'),
     (P: @@FPDFFont_GetFontData;                         N: 'FPDFFont_GetFontData'),
     (P: @@FPDFFont_GetIsEmbedded;                       N: 'FPDFFont_GetIsEmbedded'),
@@ -8811,6 +8968,7 @@ const
     (P: @@FPDFGlyphPath_GetGlyphPathSegment;            N: 'FPDFGlyphPath_GetGlyphPathSegment'),
     (P: @@FPDFFormObj_CountObjects;                     N: 'FPDFFormObj_CountObjects'),
     (P: @@FPDFFormObj_GetObject;                        N: 'FPDFFormObj_GetObject'),
+    (P: @@FPDFFormObj_RemoveObject;                     N: 'FPDFFormObj_RemoveObject'),
 
     // *** _FPDF_PPO_H_ ***
     (P: @@FPDF_ImportPagesByIndex;                      N: 'FPDF_ImportPagesByIndex'),
@@ -8988,6 +9146,7 @@ const
 
     // *** _FPDF_CATALOG_H_ ***
     (P: @@FPDFCatalog_IsTagged;                         N: 'FPDFCatalog_IsTagged'),
+    (P: @@FPDFCatalog_SetLanguage;                      N: 'FPDFCatalog_SetLanguage'),
 
     // *** _FPDF_ATTACHMENT_H_ ***
     (P: @@FPDFDoc_GetAttachmentCount;                   N: 'FPDFDoc_GetAttachmentCount'),
@@ -9001,6 +9160,7 @@ const
     (P: @@FPDFAttachment_GetStringValue;                N: 'FPDFAttachment_GetStringValue'),
     (P: @@FPDFAttachment_SetFile;                       N: 'FPDFAttachment_SetFile'),
     (P: @@FPDFAttachment_GetFile;                       N: 'FPDFAttachment_GetFile'),
+    (P: @@FPDFAttachment_GetSubtype;                    N: 'FPDFAttachment_GetSubtype'),
 
     // *** _FPDF_TRANSFORMPAGE_H_ ***
     (P: @@FPDFPage_SetMediaBox;                         N: 'FPDFPage_SetMediaBox'),
@@ -9098,6 +9258,7 @@ const
     (P: @@FPDFAnnot_GetFlags;                           N: 'FPDFAnnot_GetFlags'),
     (P: @@FPDFAnnot_SetFlags;                           N: 'FPDFAnnot_SetFlags'),
     (P: @@FPDFAnnot_GetFormFieldFlags;                  N: 'FPDFAnnot_GetFormFieldFlags'),
+    (P: @@FPDFAnnot_SetFormFieldFlags;                  N: 'FPDFAnnot_SetFormFieldFlags'),
     (P: @@FPDFAnnot_GetFormFieldAtPoint;                N: 'FPDFAnnot_GetFormFieldAtPoint'),
     (P: @@FPDFAnnot_GetFormFieldName;                   N: 'FPDFAnnot_GetFormFieldName'),
     (P: @@FPDFAnnot_GetFormFieldAlternateName;          N: 'FPDFAnnot_GetFormFieldAlternateName'),
@@ -9108,6 +9269,7 @@ const
     (P: @@FPDFAnnot_IsOptionSelected;                   N: 'FPDFAnnot_IsOptionSelected'),
     (P: @@FPDFAnnot_GetFontSize;                        N: 'FPDFAnnot_GetFontSize'),
     (P: @@FPDFAnnot_GetFontColor;                       N: 'FPDFAnnot_GetFontColor'),
+    (P: @@FPDFAnnot_SetFontColor;                       N: 'FPDFAnnot_SetFontColor'),
     (P: @@FPDFAnnot_IsChecked;                          N: 'FPDFAnnot_IsChecked'),
 
     (P: @@FPDFAnnot_SetFocusableSubtypes;               N: 'FPDFAnnot_SetFocusableSubtypes'),
@@ -9120,11 +9282,6 @@ const
     (P: @@FPDFAnnot_SetURI;                             N: 'FPDFAnnot_SetURI'),
     (P: @@FPDFAnnot_GetFileAttachment;                  N: 'FPDFAnnot_GetFileAttachment'),
     (P: @@FPDFAnnot_AddFileAttachment;                  N: 'FPDFAnnot_AddFileAttachment'),
-
-    {$IFDEF PDF_ENABLE_V8}
-    // *** _FPDF_LIBS_H_ ***
-    (P: @@FPDF_InitEmbeddedLibraries;                   N: 'FPDF_InitEmbeddedLibraries'; Optional: True),
-    {$ENDIF PDF_ENABLE_V8}
 
     // *** _FPDF_JAVASCRIPT_H_ ***
     (P: @@FPDFDoc_GetJavaScriptActionCount;             N: 'FPDFDoc_GetJavaScriptActionCount'),
@@ -9186,15 +9343,15 @@ begin
     ImportFuncs[I].P^ := @NotLoaded;
 end;
 
-procedure InitPDFium(const DllPath: string{$IFDEF PDF_ENABLE_V8}; const ResPath: string{$ENDIF});
+procedure InitPDFium(const DllPath: string);
 begin
   if DllPath <> '' then
-    InitPDFiumEx(IncludeTrailingPathDelimiter(DllPath) + pdfium_dll{$IFDEF PDF_ENABLE_V8}, ResPath{$ENDIF})
+    InitPDFiumEx(IncludeTrailingPathDelimiter(DllPath) + pdfium_dll)
   else
-    InitPDFiumEx(''{$IFDEF PDF_ENABLE_V8}, ResPath{$ENDIF});
+    InitPDFiumEx('');
 end;
 
-procedure InitPDFiumEx(const DllFileName: string{$IFDEF PDF_ENABLE_V8}; const ResPath: string{$ENDIF});
+procedure InitPDFiumEx(const DllFileName: string);
 var
   I: Integer;
   Path: string;
@@ -9257,33 +9414,6 @@ begin
       end;
     end;
   end;
-
-  {$IFDEF PDF_ENABLE_V8}
-  // Initialize the V8 engine if available
-  if Assigned(FPDF_InitEmbeddedLibraries) then
-  begin
-    if ResPath <> '' then
-      Path := IncludeTrailingPathDelimiter(ResPath)
-    else if DllFileName <> '' then
-    begin
-      Path := ExtractFileDir(DllFileName);
-      if Path <> '' then
-        Path := IncludeTrailingPathDelimiter(Path);
-    end;
-
-    if Path = '' then
-    begin
-      // If the DLL was already loaded we can use its path
-      Path := GetModuleName(PdfiumModule);
-      if Path <> '' then
-        Path := IncludeTrailingPathDelimiter(ExtractFilePath(Path));
-    end;
-
-    FPDF_InitEmbeddedLibraries(PAnsiChar(AnsiString(Path))); // requires trailing path delimiter
-  end
-  else
-    @FPDF_InitEmbeddedLibraries := @FunctionNotSupported;
-  {$ENDIF PDF_ENABLE_V8}
 
   // Initialize the pdfium library
   {$IFDEF FPC} {$WARN 5057 off : Local variable "$1" does not seem to be initialized} {$ENDIF FPC}

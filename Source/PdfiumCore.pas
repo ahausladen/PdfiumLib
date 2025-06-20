@@ -843,9 +843,6 @@ function SetThreadPdfUnsupportedFeatureHandler(const Handler: TPdfUnsupportedFea
 var
   PDFiumDllDir: string = '';
   PDFiumDllFileName: string = ''; // use this instead of PDFiumDllDir if you want to change the DLLs file name
-  {$IF declared(FPDF_InitEmbeddedLibraries)}
-  PDFiumResDir: string = '';
-  {$IFEND}
 
 implementation
 
@@ -996,9 +993,9 @@ begin
       if Initialized = 0 then
       begin
         if PDFiumDllFileName <> '' then
-          InitPDFiumEx(PDFiumDllFileName {$IF declared(FPDF_InitEmbeddedLibraries)}, PDFiumResDir{$IFEND})
+          InitPDFiumEx(PDFiumDllFileName)
         else
-          InitPDFium(PDFiumDllDir {$IF declared(FPDF_InitEmbeddedLibraries)}, PDFiumResDir{$IFEND});
+          InitPDFium(PDFiumDllDir);
         FSDK_SetUnSpObjProcessHandler(@UnsupportInfo);
         Initialized := 1;
       end;

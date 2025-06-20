@@ -1528,7 +1528,7 @@ begin
         Proceed := False;
         case Page.HasFormFieldAtPoint(PagePt.X, PagePt.Y) of
           fftUnknown:
-            // Could be a annotation link with a URL
+            // Could be an annotation link with a URL
             Proceed := True;
           fftTextField:
             NewCursor := crIBeam;

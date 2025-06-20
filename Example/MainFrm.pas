@@ -63,6 +63,7 @@ begin
   //PDFiumDllDir := ExtractFilePath(ParamStr(0)) + 'x64\V8XFA';
   PDFiumDllDir := ExtractFilePath(ParamStr(0)) + 'x64';
   {$ELSE}
+  //PDFiumDllDir := ExtractFilePath(ParamStr(0)) + 'x86\V8XFA';
   PDFiumDllDir := ExtractFilePath(ParamStr(0)) + 'x86';
   {$ENDIF CPUX64}
 
