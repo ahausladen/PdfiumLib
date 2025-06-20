@@ -1572,7 +1572,7 @@ begin
                 Inc(Offset, NumRead);
               end;
             finally
-              CloseHandle(FFileHandle);
+              FileClose(FFileHandle);
               FFileHandle := INVALID_HANDLE_VALUE;
             end;
 
