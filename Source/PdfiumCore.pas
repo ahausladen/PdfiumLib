@@ -2494,6 +2494,8 @@ begin
   FHeight := FPDF_GetPageHeightF(FPage);
   FTransparency := FPDFPage_HasTransparency(FPage) <> 0;
   FRotation := TPdfPageRotation(FPDFPage_GetRotation(FPage));
+  if Ord(FRotation) = -1 then
+    FRotation := prNormal;
 end;
 
 function TPdfPage.DeviceToPage(X, Y, Width, Height: Integer; DeviceX, DeviceY: Integer; Rotate: TPdfPageRotation): TPdfPoint;
@@ -2535,6 +2537,8 @@ begin
   Open;
   FPDFPage_SetRotation(FPage, Ord(Value));
   FRotation := TPdfPageRotation(FPDFPage_GetRotation(FPage));
+  if Ord(FRotation) = -1 then
+    FRotation := prNormal;
 end;
 
 procedure TPdfPage.ApplyChanges;

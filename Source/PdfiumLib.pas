@@ -1,6 +1,6 @@
 // Use DLLs (x64, x86) from https://github.com/bblanchon/pdfium-binaries
 //
-// DLL Version: chromium/7242
+// DLL Version: chromium/7857
 
 unit PdfiumLib;
 {$IFDEF FPC}
@@ -271,6 +271,16 @@ const
   // Skia - https://skia.org/
   FPDF_RENDERERTYPE_SKIA = 1;
 
+// PDF font library types - Experimental.
+// Selection of font backend library to use.
+type
+  FPDF_FONT_BACKEND_TYPE = Integer;
+const
+  // FreeType - https://freetype.org/
+  FPDF_FONTBACKENDTYPE_FREETYPE = 0;
+  // Fontations - https://github.com/googlefonts/fontations/
+  FPDF_FONTBACKENDTYPE_FONTATIONS = 1;
+
 type
   // Process-wide options for initializing the library.
   PFPDF_LIBRARY_CONFIG = ^FPDF_LIBRARY_CONFIG;
@@ -303,13 +313,26 @@ type
 
     // Version 4 - Experimental.
 
-    // Explicit specification of core renderer to use. |m_RendererType| must be
-    // a valid value for |FPDF_LIBRARY_CONFIG| versions of this level or higher,
-    // or else the initialization will fail with an immediate crash.
+    // Explicit specification of 2D graphics rendering library to use.
+    // |m_RendererType| must be a valid value for |FPDF_LIBRARY_CONFIG| versions
+    // of this level or higher, or else the initialization will fail with an
+    // immediate crash.
     // Note that use of a specified |FPDF_RENDERER_TYPE| value for which the
-    // corresponding render library is not included in the build will similarly
-    // fail with an immediate crash.
+    // corresponding 2D graphics rendering library is not included in the build
+    // will similarly fail with an immediate crash.
     m_RendererType: FPDF_RENDERER_TYPE;
+
+    // Version 5 - Experimental.
+
+    // Explicit specification of font library to use when |m_RendererType| is set
+    // to |FPDF_RENDERERTYPE_SKIA|.
+    // |m_FontLibraryType| must be a valid value for |FPDF_LIBRARY_CONFIG|
+    // versions of this level or higher, or else the initialization will fail with
+    // an immediate crash.
+    // Note that use of a specified |FPDF_FONT_BACKEND_TYPE| value for which the
+    // corresponding font library is not included in the build will similarly fail
+    // with an immediate crash.
+    m_FontLibraryType: FPDF_FONT_BACKEND_TYPE;
   end;
   PFPdfLibraryConfig = ^TFPdfLibraryConfig;
   TFPdfLibraryConfig = FPDF_LIBRARY_CONFIG;
@@ -1084,6 +1107,7 @@ var
 const
   // More DIB formats
   FPDFBitmap_Unknown     = 0; // Unknown or unsupported format.
+                              // All of the colors are listed in order of LSB to MSB.
   FPDFBitmap_Gray        = 1; // Gray scale bitmap, one byte per pixel.
   FPDFBitmap_BGR         = 2; // 3 bytes per pixel, byte order: blue, green, red.
   FPDFBitmap_BGRx        = 3; // 4 bytes per pixel, byte order: blue, green, red, unused.
@@ -1616,6 +1640,8 @@ var
 //   1 - Rotated 90 degrees clockwise.
 //   2 - Rotated 180 degrees clockwise.
 //   3 - Rotated 270 degrees clockwise.
+//
+// Or returns -1 on error.
 var
   FPDFPage_GetRotation: function(page: FPDF_PAGE): Integer; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -1632,11 +1658,15 @@ var
 
 // Insert |page_object| into |page|.
 //
-//   page        - handle to a page
-//   page_object - handle to a page object. The |page_object| will be
-//                 automatically freed.
+//   page        - Handle to a page.
+//   page_object - Handle to a page object. FPDFPage_InsertObject() takes
+//                 ownership. Ownership of |page_object| transfers to |page| on
+//                 success. |page_object| is freed on failure. Null
+//                 |page_object| causes a failure.
+//
+// Returns true if successful.
 var
-  FPDFPage_InsertObject: procedure(page: FPDF_PAGE; page_object: FPDF_PAGEOBJECT); {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDFPage_InsertObject: function(page: FPDF_PAGE; page_object: FPDF_PAGEOBJECT): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Insert |page_object| into |page| at the specified |index|.
 //
@@ -1986,6 +2016,21 @@ var
     out_value: PInteger): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
+// Get the value of a number property in a content mark by key as float.
+// FPDFPageObjMark_GetParamValueType() should have returned FPDF_OBJECT_NUMBER
+// for this property.
+//
+//   mark      - handle to a content mark.
+//   key       - string key of the property.
+//   out_value - pointer to variable that will receive the value. Not filled if
+//               false is returned.
+//
+// Returns TRUE if the key maps to a number value, FALSE otherwise.
+var
+  FPDFPageObjMark_GetParamFloatValue: function(mark: FPDF_PAGEOBJECTMARK; key: FPDF_BYTESTRING;
+    out_value: PSingle): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
 // Get the value of a string property in a content mark by key.
 //
 //   mark       - handle to a content mark.
@@ -2038,6 +2083,22 @@ var
 var
   FPDFPageObjMark_SetIntParam: function(document: FPDF_DOCUMENT; page_object: FPDF_PAGEOBJECT;
     mark: FPDF_PAGEOBJECTMARK; key: FPDF_BYTESTRING; value: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Set the value of a float property in a content mark by key. If a parameter
+// with key |key| exists, its value is set to |value|. Otherwise, it is added as
+// a new parameter.
+//
+//   document    - handle to the document.
+//   page_object - handle to the page object with the mark.
+//   mark        - handle to a content mark.
+//   key         - string key of the property.
+//   value       - float value to set.
+//
+// Returns TRUE if the operation succeeded, FALSE otherwise.
+var
+  FPDFPageObjMark_SetFloatParam: function(document: FPDF_DOCUMENT; page_object: FPDF_PAGEOBJECT;
+    mark: FPDF_PAGEOBJECTMARK; key: FPDF_BYTESTRING; value: Single): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Experimental API.
 // Set the value of a string property in a content mark by key. If a parameter
@@ -2633,7 +2694,8 @@ var
 // text_object  - handle to the text object.
 // text         - the UTF-16LE encoded string containing the text to be added.
 //
-// Returns TRUE on success
+// Returns TRUE on success. Fails if |text_object| is null or if |text| is
+// empty.
 var
   FPDFText_SetText: function(text_object: FPDF_PAGEOBJECT; text: FPDF_WIDESTRING): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -2645,9 +2707,30 @@ var
 // charcodes    - pointer to an array of charcodes to be added.
 // count        - number of elements in |charcodes|.
 //
-// Returns TRUE on success
+// Returns TRUE on success. Fails if |text_object| or |charcodes| is null, or
+// |count| is 0.
 var
   FPDFText_SetCharcodes: function(text_object: FPDF_PAGEOBJECT; const charcodes: PUINT; count: SIZE_T): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Set the character positions for a text object.
+//
+// text_object  - handle to the text object.
+// positions    - pointer to an array of character positions to be set.
+// count        - number of elements in |positions|.
+//
+// The |positions| array specifies the position in points for each character
+// except the first one. The first character has an implied position value of 0.
+// All positions are relative to the origin of the text object. The direction is
+// either horizontal or vertical, depending on the direction of text in
+// |text_object|.
+//
+// For a text object with N characters, |count| must be N - 1. Therefore this
+// API fails when N <= 1.
+//
+// Returns TRUE on success.
+var
+  FPDFText_SetPositions: function(text_object: FPDF_PAGEOBJECT; const positions: PSingle; count: SIZE_T): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Returns a font object loaded from a stream of data. The font is loaded
 // into the document. Various font data structures, such as the ToUnicode data,
@@ -3049,7 +3132,8 @@ var
 // |src_page_index|, for use in |dest_doc|.
 //
 // Returns a handle on success, or NULL on failure. Caller owns the newly
-// created object.
+// created object. The returned handle's lifetime is tied to |dest_doc| and not
+// |src_doc|. It must be closed before |dest_doc|.
 var
   FPDF_NewXObjectFromPage: function(dest_doc, src_doc: FPDF_DOCUMENT; src_page_index: Integer): FPDF_XOBJECT; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
@@ -3098,50 +3182,59 @@ type
     // Comments:
     //          Called by function FPDF_SaveDocument
     // Parameters:
-    //          pThis       -   Pointer to the structure itself
-    //          pData       -   Pointer to a buffer to output
+    //          self        -   Pointer to the structure itself
+    //          data        -   Pointer to a buffer to output
     //          size        -   The size of the buffer.
     // Return value:
     //          Should be non-zero if successful, zero for error.
     //
-    WriteBlock: function(pThis: PFPDF_FILEWRITE; pData: Pointer; size: LongWord): Integer; cdecl;
+    WriteBlock: function(self: PFPDF_FILEWRITE; data: Pointer; size: LongWord): Integer; cdecl;
   end;
   PFPdfFileWrite = ^TFPdfFileWrite;
   TFPdfFileWrite = FPDF_FILEWRITE;
 
 const
-  // Flags for FPDF_SaveAsCopy()
-  FPDF_INCREMENTAL     = 1;
-  FPDF_NO_INCREMENTAL  = 2;
-  FPDF_REMOVE_SECURITY = 3;
+  // Flags for FPDF_SaveAsCopy().
+  // FPDF_INCREMENTAL and FPDF_NO_INCREMENTAL cannot be used together.
+  FPDF_INCREMENTAL = 1 shl 0;
+  FPDF_NO_INCREMENTAL = 1 shl 1;
+  // Deprecated. Use FPDF_REMOVE_SECURITY instead.
+  // TODO(crbug.com/42270430): Remove FPDF_REMOVE_SECURITY_DEPRECATED.
+  FPDF_REMOVE_SECURITY_DEPRECATED = 3;
+  FPDF_REMOVE_SECURITY = 1 shl 2;
+  // Experimental. Subsets any embedded font files for new text objects added to
+  // the document.
+  FPDF_SUBSET_NEW_FONTS = 1 shl 3;
 
 // Function: FPDF_SaveAsCopy
 //          Saves the copy of specified document in custom way.
 // Parameters:
 //          document        -   Handle to document, as returned by
 //                              FPDF_LoadDocument() or FPDF_CreateNewDocument().
-//          pFileWrite      -   A pointer to a custom file write structure.
-//          flags           -   The creating flags.
+//          file_write      -   A pointer to a custom file write structure.
+//          flags           -   Flags above that affect how the PDF gets saved.
+//                              Pass in 0 when there are no flags.
 // Return value:
 //          TRUE for succeed, FALSE for failed.
 //
 var
-  FPDF_SaveAsCopy: function(document: FPDF_DOCUMENT; pFileWrite: PFPDF_FILEWRITE; flags: FPDF_DWORD): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDF_SaveAsCopy: function(document: FPDF_DOCUMENT; file_write: PFPDF_FILEWRITE; flags: FPDF_DWORD): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Function: FPDF_SaveWithVersion
 //          Same as FPDF_SaveAsCopy(), except the file version of the
 //          saved document can be specified by the caller.
 // Parameters:
 //          document        -   Handle to document.
-//          pFileWrite      -   A pointer to a custom file write structure.
+//          file_write      -   A pointer to a custom file write structure.
 //          flags           -   The creating flags.
-//          fileVersion     -   The PDF file version. File version: 14 for 1.4, 15 for 1.5, ...
+//          file_version    -   The PDF file version. File version: 14 for 1.4,
+//                              15 for 1.5, ...
 // Return value:
 //          TRUE if succeed, FALSE if failed.
 //
 var
-  FPDF_SaveWithVersion: function(document: FPDF_DOCUMENT; pFileWrite: PFPDF_FILEWRITE;
-    flags: FPDF_DWORD; fileVersion: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDF_SaveWithVersion: function(document: FPDF_DOCUMENT; file_write: PFPDF_FILEWRITE;
+    flags: FPDF_DWORD; file_version: Integer): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 
 // *** _FPDF_FLATTEN_H_ ***
@@ -4488,14 +4581,17 @@ const
 type
   PFPDF_SYSFONTINFO = ^FPDF_SYSFONTINFO;
   FPDF_SYSFONTINFO = record
-    // Version number of the interface. Currently must be 1.
+    // Version number of the interface. Currently must be 1 or 2.
+    // Version 1: Traditional behavior - calls EnumFonts during initialization.
+    // Version 2: Per-request behavior - skips EnumFonts, relies on MapFont.
+    //            Experimental: Subject to change based on feedback.
     version: Integer;
 
     // Method: Release
     //          Give implementation a chance to release any data after the
     //          interface is no longer used.
     // Interface Version:
-    //          1
+    //          1 and 2
     // Implementation Required:
     //          No
     // Parameters:
@@ -4504,12 +4600,14 @@ type
     //          None
     // Comments:
     //          Called by PDFium during the final cleanup process.
+    //          NOTE: This method will not be called when version is set to 2.
+    //          Version 2 relies entirely on MapFont() for per-request matching.
     Release: procedure(pThis: PFPDF_SYSFONTINFO); cdecl;
 
     // Method: EnumFonts
     //          Enumerate all fonts installed on the system
     // Interface Version:
-    //          1
+    //          1 and 2
     // Implementation Required:
     //          No
     // Parameters:
@@ -4559,7 +4657,7 @@ type
     // Method: GetFont
     //          Get a handle to a particular font by its internal ID
     // Interface Version:
-    //          1
+    //          1 and 2
     // Implementation Required:
     //          Required if MapFont method is not implemented.
     // Return Value:
@@ -4575,7 +4673,7 @@ type
     // Method: GetFontData
     //          Get font data from a font
     // Interface Version:
-    //          1
+    //          1 and 2
     // Implementation Required:
     //          Yes
     // Parameters:
@@ -4598,7 +4696,7 @@ type
     // Method: GetFaceName
     //          Get face name from a font handle
     // Interface Version:
-    //          1
+    //          1 and 2
     // Implementation Required:
     //          No
     // Parameters:
@@ -4615,7 +4713,7 @@ type
     // Method: GetFontCharset
     //          Get character set information for a font handle
     // Interface Version:
-    //          1
+    //          1 and 2
     // Implementation Required:
     //          No
     // Parameters:
@@ -4628,7 +4726,7 @@ type
     // Method: DeleteFont
     //          Delete a font handle
     // Interface Version:
-    //          1
+    //          1 and 2
     // Implementation Required:
     //          Yes
     // Parameters:
@@ -7697,6 +7795,28 @@ var
 var
   FPDFCatalog_IsTagged: function(document: FPDF_DOCUMENT): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
+
+// Experimental API.
+// Gets the language of |document| from the catalog's /Lang entry.
+//
+//   document - handle to a document.
+//   buffer   - a buffer for the language string. May be NULL.
+//   buflen   - the length of the buffer, in bytes. May be 0.
+//
+// Returns the number of bytes in the language string, including the
+// trailing NUL character. The number of bytes is returned regardless of the
+// |buffer| and |buflen| parameters.
+//
+// Regardless of the platform, the |buffer| is always in UTF-16LE
+// encoding. The string is terminated by a UTF16 NUL character. If
+// |buflen| is less than the required length, or |buffer| is NULL,
+// |buffer| will not be modified.
+//
+// If |document| has no /Lang entry, an empty string is written to |buffer| and
+// 2 is returned. On error, nothing is written to |buffer| and 0 is returned.
+var
+  FPDFCatalog_GetLanguage: function(document: FPDF_DOCUMENT; buffer: PFPDF_WCHAR; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
 // Experimental API.
 // Sets the language of |document| to |language|.
 //
@@ -7705,7 +7825,7 @@ var
 //
 // Returns TRUE on success.
 var
-  FPDFCatalog_SetLanguage: function(document: FPDF_DOCUMENT; language: FPDF_BYTESTRING): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+  FPDFCatalog_SetLanguage: function(document: FPDF_DOCUMENT; language: FPDF_WIDESTRING): FPDF_BOOL; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 
 // *** _FPDF_ATTACHMENT_H_ ***
@@ -8201,6 +8321,26 @@ var
 //          |buffer| will not be modified.
 var
   FPDF_StructElement_GetActualText: function(struct_element: FPDF_STRUCTELEMENT; buffer: Pointer; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
+
+// Experimental API.
+// Function: FPDF_StructElement_GetExpansion
+//          Get the expansion of an abbreviation or acronym for a given element.
+// Parameters:
+//          struct_element -   Handle to the struct element.
+//          buffer         -   A buffer for output the expansion text. May be
+//                             NULL.
+//          buflen         -   The length of the buffer, in bytes. May be 0.
+// Return value:
+//          The number of bytes in the expansion text, including the terminating
+//          NUL character. The number of bytes is returned regardless of the
+//          |buffer| and |buflen| parameters.
+// Comments:
+//          Regardless of the platform, the |buffer| is always in UTF-16LE
+//          encoding. The string is terminated by a UTF16 NUL character. If
+//          |buflen| is less than the required length, or |buffer| is NULL,
+//          |buffer| will not be modified.
+var
+  FPDF_StructElement_GetExpansion: function(struct_element: FPDF_STRUCTELEMENT; buffer: Pointer; buflen: LongWord): LongWord; {$IFDEF DLLEXPORT}stdcall{$ELSE}cdecl{$ENDIF};
 
 // Function: FPDF_StructElement_GetID
 //          Get the ID for a given element.
@@ -8775,7 +8915,7 @@ const
     {$WARN 3175 off : Some fields coming before "$1" were not initialized}
     {$WARN 3177 off : Some fields coming after "$1" were not initialized}
   {$ENDIF FPC}
-  ImportFuncs: array[0..448
+  ImportFuncs: array[0..453
     {$IFDEF MSWINDOWS     } + 2 {$ENDIF}
     {$IFDEF PDF_USE_SKIA  } + 2 {$ENDIF}
     {$IFDEF PDF_ENABLE_V8 } + 2 {$ENDIF}
@@ -8889,9 +9029,11 @@ const
     (P: @@FPDFPageObjMark_GetParamKey;                  N: 'FPDFPageObjMark_GetParamKey'),
     (P: @@FPDFPageObjMark_GetParamValueType;            N: 'FPDFPageObjMark_GetParamValueType'),
     (P: @@FPDFPageObjMark_GetParamIntValue;             N: 'FPDFPageObjMark_GetParamIntValue'),
+    (P: @@FPDFPageObjMark_GetParamFloatValue;           N: 'FPDFPageObjMark_GetParamFloatValue'),
     (P: @@FPDFPageObjMark_GetParamStringValue;          N: 'FPDFPageObjMark_GetParamStringValue'),
     (P: @@FPDFPageObjMark_GetParamBlobValue;            N: 'FPDFPageObjMark_GetParamBlobValue'),
     (P: @@FPDFPageObjMark_SetIntParam;                  N: 'FPDFPageObjMark_SetIntParam'),
+    (P: @@FPDFPageObjMark_SetFloatParam;                N: 'FPDFPageObjMark_SetFloatParam'),
     (P: @@FPDFPageObjMark_SetStringParam;               N: 'FPDFPageObjMark_SetStringParam'),
     (P: @@FPDFPageObjMark_SetBlobParam;                 N: 'FPDFPageObjMark_SetBlobParam'),
     (P: @@FPDFPageObjMark_RemoveParam;                  N: 'FPDFPageObjMark_RemoveParam'),
@@ -8942,6 +9084,7 @@ const
     (P: @@FPDFPageObj_NewTextObj;                       N: 'FPDFPageObj_NewTextObj'),
     (P: @@FPDFText_SetText;                             N: 'FPDFText_SetText'),
     (P: @@FPDFText_SetCharcodes;                        N: 'FPDFText_SetCharcodes'),
+    (P: @@FPDFText_SetPositions;                        N: 'FPDFText_SetPositions'),
     (P: @@FPDFText_LoadFont;                            N: 'FPDFText_LoadFont'),
     (P: @@FPDFText_LoadStandardFont;                    N: 'FPDFText_LoadStandardFont'),
     (P: @@FPDFText_LoadCidType2Font;                    N: 'FPDFText_LoadCidType2Font'),
@@ -9146,6 +9289,7 @@ const
 
     // *** _FPDF_CATALOG_H_ ***
     (P: @@FPDFCatalog_IsTagged;                         N: 'FPDFCatalog_IsTagged'),
+    (P: @@FPDFCatalog_GetLanguage;                      N: 'FPDFCatalog_GetLanguage'),
     (P: @@FPDFCatalog_SetLanguage;                      N: 'FPDFCatalog_SetLanguage'),
 
     // *** _FPDF_ATTACHMENT_H_ ***
@@ -9190,6 +9334,7 @@ const
     (P: @@FPDF_StructTree_GetChildAtIndex;              N: 'FPDF_StructTree_GetChildAtIndex'),
     (P: @@FPDF_StructElement_GetAltText;                N: 'FPDF_StructElement_GetAltText'),
     (P: @@FPDF_StructElement_GetActualText;             N: 'FPDF_StructElement_GetActualText'),
+    (P: @@FPDF_StructElement_GetExpansion;              N: 'FPDF_StructElement_GetExpansion'),
     (P: @@FPDF_StructElement_GetID;                     N: 'FPDF_StructElement_GetID'),
     (P: @@FPDF_StructElement_GetLang;                   N: 'FPDF_StructElement_GetLang'),
     (P: @@FPDF_StructElement_GetStringAttribute;        N: 'FPDF_StructElement_GetStringAttribute'),
