@@ -1543,9 +1543,9 @@ begin
       end;
     end;
 
-    if AllowUserTextSelection and not FFormFieldFocused then
+    if AllowUserTextSelection then
     begin
-      if FMousePressed then
+      if FMousePressed and not FFormFieldFocused then
       begin
         // Auto scroll
         FScrollMousePos := Point(X, Y);
