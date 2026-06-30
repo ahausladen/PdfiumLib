@@ -1,0 +1,48 @@
+﻿	<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+		<PropertyGroup>
+			<ProjectGuid>{F6944D63-D855-4AB6-8344-3AD0F595EEA4}</ProjectGuid>
+		</PropertyGroup>
+		<ItemGroup>
+			<Projects Include="PdfiumLibD.dproj">
+				<Dependencies/>
+			</Projects>
+			<Projects Include="PdfiumLibR.dproj">
+				<Dependencies/>
+			</Projects>
+		</ItemGroup>
+		<ProjectExtensions>
+			<Borland.Personality>Default.Personality.12</Borland.Personality>
+			<Borland.ProjectType/>
+			<BorlandProject>
+				<Default.Personality/>
+			</BorlandProject>
+		</ProjectExtensions>
+		<Target Name="PdfiumLibD">
+			<MSBuild Projects="PdfiumLibD.dproj"/>
+		</Target>
+		<Target Name="PdfiumLibD:Clean">
+			<MSBuild Projects="PdfiumLibD.dproj" Targets="Clean"/>
+		</Target>
+		<Target Name="PdfiumLibD:Make">
+			<MSBuild Projects="PdfiumLibD.dproj" Targets="Make"/>
+		</Target>
+		<Target Name="PdfiumLibR">
+			<MSBuild Projects="PdfiumLibR.dproj"/>
+		</Target>
+		<Target Name="PdfiumLibR:Clean">
+			<MSBuild Projects="PdfiumLibR.dproj" Targets="Clean"/>
+		</Target>
+		<Target Name="PdfiumLibR:Make">
+			<MSBuild Projects="PdfiumLibR.dproj" Targets="Make"/>
+		</Target>
+		<Target Name="Build">
+			<CallTarget Targets="PdfiumLibD;PdfiumLibR"/>
+		</Target>
+		<Target Name="Clean">
+			<CallTarget Targets="PdfiumLibD:Clean;PdfiumLibR:Clean"/>
+		</Target>
+		<Target Name="Make">
+			<CallTarget Targets="PdfiumLibD:Make;PdfiumLibR:Make"/>
+		</Target>
+		<Import Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')" Project="$(BDS)\Bin\CodeGear.Group.Targets"/>
+	</Project>
