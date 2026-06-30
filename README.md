@@ -4,10 +4,28 @@ Example of a PDF VCL Control using PDFium
 ## Requirements
 pdfium.dll (x86/x64) from the [pdfium-binaries](https://github.com/bblanchon/pdfium-binaries)
 
-Binary release: [chromium/7857](https://github.com/bblanchon/pdfium-binaries/releases/tag/chromium%2F7857)
+Binary release: [chromium/7920](https://github.com/bblanchon/pdfium-binaries/releases/tag/chromium%2F7920)
 
 ## Required pdfium.dll version
-chromium/7857 / PDFium 150.0.7857.0
+chromium/7920 / PDFium 151.0.7920.0
+
+## Installing
+
+### DPM
+
+Using the dpm command line
+
+`dpm install VSoft.PdfiumLib`
+
+or using the dpm ide plugin, in the dpm manage packages window, search for VSoft.PdfiumLib, select it and click the + icon at the top right.
+
+This package depends on VSoft.Pdfium.Binaries v151.0.7920 (dpm will install it automatically and copy the pdfium.dll to your project output folder).
+
+### Manually
+
+Clone this repository and add the Source folder to your Library Path or the project's Search Path.
+
+Design time and Runtime packages are provided for Delphi XE2-13.x - open the relevant PdfiumLib.groupproj and build it, then right click on the PdfiumLibD project to install the component.
 
 ## Features
 - Multiple PDF load functions:

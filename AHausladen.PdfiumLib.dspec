@@ -1,0 +1,37 @@
+# DPM package spec file
+min dpm client version: 1.0.0
+metadata:
+  id: AHausladen.PdfiumLib
+  version: 1.0.0
+  description: Pdfium library for Delphi
+  authors:
+    - Andreas Hausladen
+  projectUrl: https://github.com/ahausladen/PdfiumLib
+  repositoryUrl: https://github.com/ahausladen/PdfiumLib
+  license: MPL-2.0
+  copyright: Andreas Hausladen
+  tags:
+    - pdf
+    - pdfium
+  readme: README.md
+variables:
+  packagesource: RAD Studio $compilerNoPrefix$
+targetPlatforms:
+  - compiler from: delphixe2
+    compiler to: delphi13.0
+    platforms:
+      - win32
+      - win64
+templates:
+  - name: default
+    dependencies:
+      - id: VSoft.Pdfium.Binaries
+        version: 151.0.7920
+    source:
+      - src: ./Source/*.pas
+      - src: ./packages/$packageSource$/*.dpk
+      - src: ./packages/$packageSource$/*.dproj
+    build:
+      - project: /packages/$packageSource$/PdfiumLibR.dproj
+    design:
+      - project: /packages/$packageSource$/PdfiumLibD.dproj
